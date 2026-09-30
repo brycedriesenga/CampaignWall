@@ -1,0 +1,21 @@
+{
+  "name": "Campaign Wall (test)",
+  "id": "1428761953216907420",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "editorType": ["figma"],
+  "documentAccess": "dynamic-page",
+  "enablePrivatePluginApi": true,
+  "networkAccess": {
+    "allowedDomains": [
+      "https://api.figma.com",
+      "https://figma-alpha-api.s3.us-west-2.amazonaws.com",
+      "https://s3-alpha-sig.figma.com"
+    ],
+    "reasoning": "Reads campaign frames from other Figma files through Figma's own REST API and shows their rendered images."
+  },
+  "relaunchButtons": [
+    { "command": "open", "name": "Open Campaign Wall" }
+  ]
+}

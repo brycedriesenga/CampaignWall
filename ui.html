@@ -1,0 +1,867 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+:root {
+  --bg: var(--figma-color-bg, #ffffff);
+  --bg2: var(--figma-color-bg-secondary, #f5f5f5);
+  --bg3: var(--figma-color-bg-tertiary, #ebebeb);
+  --text: var(--figma-color-text, #1e1e1e);
+  --muted: var(--figma-color-text-secondary, #6b6b6b);
+  --border: var(--figma-color-border, #e3e3e3);
+  --brand: var(--figma-color-bg-brand, #0d99ff);
+  --onbrand: var(--figma-color-text-onbrand, #ffffff);
+  --danger: var(--figma-color-text-danger, #dc3412);
+  --warn-bg: var(--figma-color-bg-warning-tertiary, #fff3d6);
+  --warn: var(--figma-color-text-warning, #8a5300);
+  --ok: var(--figma-color-text-success, #14804a);
+  --ink: var(--figma-color-bg-inverse, #1e1e1e);
+  --onink: var(--figma-color-text-oninverse, #ffffff);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+  font: 12px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.btn { height: 32px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg);
+  font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+.btn:hover:not(:disabled) { background: var(--bg2); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.primary { background: var(--ink); color: var(--onink); border-color: var(--ink); }
+.btn.primary:hover:not(:disabled) { background: var(--ink); opacity: .9; }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.danger { color: var(--danger); }
+.btn.block { width: 100%; height: 38px; }
+.icon { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.icon:hover { background: var(--bg2); color: var(--text); }
+input.field, select.field, textarea.field { width: 100%; height: 34px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg); padding: 0 10px; outline: none; }
+textarea.field { height: 90px; padding: 8px 10px; resize: vertical; font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace; }
+.field:focus { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+.label { font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 6px; display: block; }
+.muted { color: var(--muted); }
+.small { font-size: 11px; }
+.card { border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.row { display: flex; align-items: center; gap: 8px; }
+.stack { display: flex; flex-direction: column; gap: 8px; }
+.pill { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 99px;
+  background: var(--bg3); color: var(--muted); font-size: 10.5px; font-weight: 500; white-space: nowrap; }
+.pill.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.pill.warn { background: var(--warn-bg); color: var(--warn); }
+.notice { padding: 9px 11px; border-radius: 8px; background: var(--bg2); color: var(--muted); font-size: 11.5px; }
+.notice.warn { background: var(--warn-bg); color: var(--warn); }
+.notice.error { background: color-mix(in srgb, var(--danger) 10%, var(--bg)); color: var(--danger); }
+.hint { border: 1px dashed var(--border); border-radius: 10px; padding: 14px; display: flex; gap: 12px; align-items: center; }
+.hint .ico { width: 32px; height: 32px; border-radius: 8px; background: var(--bg2); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.sep { height: 1px; background: var(--border); }
+.hidden { display: none !important; }
+
+/* ---------- panel ---------- */
+.view { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.top { height: 52px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--border); }
+.top select { flex: 1; min-width: 0; height: 34px; border: 0; background: transparent; font-size: 14px; font-weight: 600; padding: 0 4px; border-radius: 7px; }
+.top select:hover { background: var(--bg2); }
+.scroll { flex: 1; min-height: 0; overflow: auto; padding: 14px 14px 16px; display: flex; flex-direction: column; gap: 18px; }
+.sel-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 12px; }
+.sel-row .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grow { flex: 1; min-width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.item { display: flex; align-items: center; gap: 8px; padding: 7px 4px 7px 10px; border-radius: 8px; }
+.item:hover { background: var(--bg2); }
+.item .open { flex: 1; min-width: 0; text-align: left; border: 0; background: transparent; padding: 0; }
+.item .nm { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item .mt { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.foot { height: 40px; flex-shrink: 0; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 8px; padding: 0 8px 0 14px; font-size: 11px; color: var(--muted); }
+.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+
+/* ---------- wall ---------- */
+.wallbar { height: 48px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-bottom: 1px solid var(--border); background: var(--bg); position: relative; z-index: 3; }
+.wallbar .title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wallbar .status { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.zoomval { width: 48px; text-align: center; font-size: 11px; color: var(--muted); border: 0; background: transparent; }
+#banner { position: absolute; left: 12px; right: 12px; top: 58px; z-index: 4; }
+body.walling, body.walling * { user-select: none; -webkit-user-select: none; }
+body.walling input, body.walling textarea { user-select: text; -webkit-user-select: text; }
+#viewport { flex: 1; min-height: 0; position: relative; overflow: hidden; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+  background-color: var(--bg2); background-image: radial-gradient(color-mix(in srgb, var(--text) 12%, transparent) 1px, transparent 1px); background-size: 20px 20px; }
+#viewport.panning { cursor: grabbing; }
+#world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.fr { position: absolute; background: var(--bg); box-shadow: 0 0 0 calc(1px * var(--inv)) color-mix(in srgb, var(--text) 16%, transparent); }
+.fr.sel { outline: calc(2px * var(--inv)) solid var(--brand); outline-offset: calc(2px * var(--inv)); }
+.fr img { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; pointer-events: none; }
+.fr .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px;
+  background: repeating-linear-gradient(45deg, var(--bg2) 0 12px, var(--bg3) 12px 24px); color: var(--muted);
+  font-size: calc(12px * var(--inv)); }
+.fr.missing .ph { color: var(--danger); }
+.lbl { position: absolute; left: 0; bottom: 100%; transform-origin: 0 100%; transform: scale(var(--inv)); padding-bottom: 6px;
+  width: max-content; max-width: max(24px, calc(var(--w) * var(--z) * 1px)); pointer-events: none; }
+.lbl .nm { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lbl .upd { margin-right: 5px; vertical-align: 1px; }
+.lbl .mt { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.upd { background: var(--brand); color: var(--onbrand); font-size: 9.5px; font-weight: 600; padding: 1px 6px; border-radius: 99px; }
+.ch { position: absolute; right: 100%; transform-origin: 100% 0; transform: scale(var(--inv)); padding-right: 24px; text-align: right;
+  font-size: 15px; font-weight: 700; white-space: nowrap; }
+.ch em { display: block; font-style: normal; font-size: 11px; color: var(--muted); font-weight: 500; }
+.far .lbl .mt { display: none; }
+.fr .edge { position: absolute; pointer-events: none; outline: calc(1px * var(--inv)) dashed color-mix(in srgb, var(--brand) 70%, transparent); }
+.ch { pointer-events: auto; cursor: pointer; }
+.ch:hover { color: var(--brand); }
+.marquee { position: absolute; z-index: 2; border: 1px solid var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); pointer-events: none; }
+#inspector { position: absolute; left: 12px; bottom: 12px; width: 290px; z-index: 4; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
+#grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 5;
+  background: linear-gradient(135deg, transparent 50%, var(--muted) 50%, var(--muted) 56%, transparent 56%, transparent 70%, var(--muted) 70%, var(--muted) 76%, transparent 76%); opacity: .6; }
+.empty-wall { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--muted); padding: 24px; }
+#toast { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); max-width: calc(100% - 28px); background: var(--ink); color: var(--onink);
+  padding: 8px 12px; border-radius: 8px; font-size: 11.5px; z-index: 10; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
+#toast.error { background: var(--danger); color: #fff; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" class="hidden" role="status"></div>
+<script>
+'use strict'
+// ---------------------------------------------------------------------------
+// Campaign Wall UI. Talks to code.js via postMessage and to Figma's REST API via fetch.
+// ---------------------------------------------------------------------------
+const API = 'https://api.figma.com/v1'
+const PANEL = { width: 360, height: 620 }
+const IMAGE_MAX_AGE = 20 * 24 * 3600 * 1000   // render URLs from the API expire; re-render after 20 days
+const S = {
+  view: 'loading', data: null, token: '', cache: { files: {} }, prefs: {}, selection: { items: [], skipped: 0, total: 0 },
+  file: { key: '', name: '', keyFromApi: false }, channelChoice: 'auto', creating: false,
+  wall: { zoom: 1, tx: 40, ty: 80, selected: [], busy: false, status: '', banner: null, fitted: false },
+}
+
+// ---------- plumbing ----------
+function send(type, data) { parent.postMessage({ pluginMessage: Object.assign({ type: type }, data || {}) }, '*') }
+function $(id) { return document.getElementById(id) }
+function esc(value) { return String(value == null ? '' : value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])) }
+let toastTimer = null
+function toast(text, isError) {
+  const el = $('toast'); el.textContent = text; el.className = isError ? 'error' : ''
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.add('hidden'), isError ? 6000 : 2800)
+}
+function ago(ts) {
+  if (!ts) return ''
+  const t = typeof ts === 'string' ? Date.parse(ts) : ts
+  const s = Math.max(0, (Date.now() - t) / 1000)
+  if (s < 60) return 'just now'
+  if (s < 3600) return Math.round(s / 60) + ' min ago'
+  if (s < 86400) return Math.round(s / 3600) + ' h ago'
+  if (s < 86400 * 14) return Math.round(s / 86400) + ' d ago'
+  return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+function hashStr(str) {
+  let h = 2166136261
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) }
+  return (h >>> 0).toString(36) + '-' + str.length.toString(36)
+}
+function icon(name, size) {
+  const s = size || 16
+  const paths = {
+    gear: '<path d="M2.5 5h6.5M12 5h1.5M2.5 11h2M7.5 11h6"/><circle cx="10.5" cy="5" r="1.5"/><circle cx="6" cy="11" r="1.5"/>',
+    plus: '<path d="M8 3.5v9M3.5 8h9"/>', x: '<path d="M4 4l8 8M12 4l-8 8"/>', left: '<path d="M9.5 4.5L6 8l3.5 3.5"/>',
+    wall: '<rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M2.5 6.5h11M7 6.5v7"/>',
+    refresh: '<path d="M13 8a5 5 0 1 1-1.46-3.54M13.2 2.8v2.9h-2.9"/>', ext: '<path d="M9.5 2.5h4v4M13.5 2.5L7.5 8.5M11.5 9.5v4h-9v-9h4"/>',
+    pointer: '<path d="M3.5 2.5l9 4-4 1.5-1.5 4z"/>', fit: '<path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/>',
+    minus: '<path d="M3.5 8h9"/>', check: '<path d="M3.5 8.5l3 3 6-6.5"/>',
+  }
+  return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths[name] + '</svg>'
+}
+function campaign() {
+  if (!S.data) return null
+  return S.data.campaigns.find((c) => c.id === S.data.activeCampaignId) || S.data.campaigns[0] || null
+}
+function nodeInfo(item) {
+  const f = S.cache.files[item.fileKey]
+  return f && f.nodes ? f.nodes[item.nodeId] : null
+}
+function isUpdated(item) {
+  const n = nodeInfo(item)
+  return !!(n && n.hash && item.seenHash && n.hash !== item.seenHash)
+}
+
+// ---------- Figma REST API ----------
+class ApiError extends Error {}
+async function api(path) {
+  let res
+  try {
+    res = await fetch(API + path, { headers: { 'X-Figma-Token': S.token } })
+  } catch (e) {
+    const err = new ApiError('Couldn’t reach Figma’s API from the plugin (' + (e && e.message ? e.message : 'network error') + ').')
+    err.kind = 'network'; throw err
+  }
+  if (res.status === 429) {
+    const wait = res.headers.get('Retry-After')
+    const err = new ApiError('Figma’s rate limit was reached' + (wait ? '. Try again in ' + wait + ' s.' : '. Try again in a minute.'))
+    err.kind = 'rate'; throw err
+  }
+  if (!res.ok) {
+    let detail = ''
+    try { const body = await res.json(); detail = body.err || body.message || '' } catch (e) {}
+    const err = new ApiError(detail || ('HTTP ' + res.status))
+    err.kind = res.status === 403 ? 'forbidden' : res.status === 404 ? 'notfound' : 'http'
+    err.status = res.status; throw err
+  }
+  return res.json()
+}
+
+async function testToken(token) {
+  const saved = S.token
+  S.token = token
+  try {
+    const me = await api('/me')
+    return me
+  } finally { S.token = saved }
+}
+
+// Three kinds of check, all built on syncItems():
+//  'auto'     (opening the wall): 1 light metadata call per file; frames are re-read only if Figma
+//             reports the file changed (new version or new last-saved time).
+//  'manual'   (refresh button): also re-reads every file's frames, because Figma's version marker can
+//             lag behind recent edits. Only frames whose contents changed are re-rendered.
+//  'selected' (refresh on selected frames): re-reads every campaign frame in the same files (same
+//             cost) and always re-renders the picked frames.
+async function refreshWall(mode) {
+  const c = campaign()
+  if (!c) return
+  return syncItems(c.items, { readFrames: mode === 'manual' ? 'always' : 'if-changed', forceRender: [], fullFile: true })
+}
+
+async function refreshSelected() {
+  const c = campaign()
+  if (!c) return
+  // Figma's limits count requests, not frames, so re-reading every campaign frame in the same files
+  // costs nothing extra. Only the frames you picked are force re-rendered; others only if they changed.
+  const picked = c.items.filter((it) => S.wall.selected.indexOf(it.id) >= 0)
+  const files = new Set(picked.map((it) => it.fileKey))
+  const inFiles = c.items.filter((it) => files.has(it.fileKey))
+  if (picked.length) return syncItems(inFiles, { readFrames: 'always', forceRender: picked.map((it) => it.nodeId), fullFile: true })
+}
+
+function frameGeometry(doc) {
+  const bb = doc.absoluteBoundingBox || doc.absoluteRenderBounds || {}
+  const rb = doc.absoluteRenderBounds || bb
+  // Figma renders everything that's visible, including content that spills outside a
+  // non-clipping frame, so the tile is sized to the render bounds, not the frame's own box.
+  return {
+    width: Math.round(bb.width || 0), height: Math.round(bb.height || 0),
+    viewW: Math.round(rb.width || bb.width || 0), viewH: Math.round(rb.height || bb.height || 0),
+    offX: Math.round((bb.x || 0) - (rb.x || bb.x || 0)), offY: Math.round((bb.y || 0) - (rb.y || bb.y || 0)),
+  }
+}
+
+async function syncItems(list, opts) {
+  const c = campaign()
+  if (!c || S.wall.busy) return
+  if (!S.token) { S.wall.banner = { kind: 'warn', text: 'Add your Figma token in Settings to load previews.' }; renderWall(); return }
+  S.wall.busy = true; S.wall.banner = null
+  const byFile = {}
+  for (const item of list) (byFile[item.fileKey] = byFile[item.fileKey] || []).push(item)
+  const keys = Object.keys(byFile)
+  let problems = 0
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i]
+    const items = byFile[key]
+    S.wall.status = 'Checking file ' + (i + 1) + ' of ' + keys.length + '…'
+    renderWallBar()
+    const fc = S.cache.files[key] || { nodes: {} }
+    try {
+      const meta = (await api('/files/' + key + '/meta')).file || {}
+      fc.name = meta.name || fc.name
+      fc.lastTouchedAt = meta.last_touched_at || fc.lastTouchedAt
+      fc.lastTouchedBy = meta.last_touched_by ? (meta.last_touched_by.handle || '') : (fc.lastTouchedBy || '')
+      fc.checkedAt = Date.now()
+      fc.error = ''
+      const ids = items.map((it) => it.nodeId)
+      const stamp = String(meta.version || '') + '|' + String(meta.last_touched_at || '')
+      const read = opts.readFrames === 'always' || fc.stamp !== stamp || ids.some((id) => !fc.nodes[id] || !fc.nodes[id].viewW)
+      if (read) {
+        S.wall.status = 'Reading ' + (ids.length === 1 ? 'frame' : ids.length + ' frames') + ' in “' + (fc.name || 'file') + '”…'; renderWallBar()
+        const res = await api('/files/' + key + '/nodes?ids=' + encodeURIComponent(ids.join(',')))
+        for (const id of ids) {
+          const entry = res.nodes ? res.nodes[id] : null
+          const prev = fc.nodes[id] || {}
+          if (!entry || !entry.document) { fc.nodes[id] = Object.assign({}, prev, { missing: true, url: '', urlAt: 0 }); continue }
+          const doc = entry.document
+          const hash = hashStr(JSON.stringify(doc))
+          const same = prev.hash === hash
+          fc.nodes[id] = Object.assign({ name: doc.name, hash: hash }, frameGeometry(doc), {
+            url: same ? prev.url : '', urlAt: same ? prev.urlAt : 0,
+            changedAt: prev.hash && !same ? (Date.parse(fc.lastTouchedAt) || Date.now()) : (prev.changedAt || 0),
+          })
+        }
+        fc.version = meta.version
+        // Only a read of every campaign frame in the file makes the file “known current”.
+        if (opts.fullFile) fc.stamp = stamp
+      }
+      const toRender = ids.filter((id) => {
+        const n = fc.nodes[id]
+        if (!n || n.missing) return false
+        return opts.forceRender.indexOf(id) >= 0 || !n.url || Date.now() - (n.urlAt || 0) > IMAGE_MAX_AGE
+      })
+      if (toRender.length) {
+        S.wall.status = 'Rendering ' + toRender.length + ' frame' + (toRender.length === 1 ? '' : 's') + '…'; renderWallBar()
+        await renderImages(key, toRender, fc, 1)
+        const failed = toRender.filter((id) => !fc.nodes[id].url || fc.nodes[id].renderFailed)
+        if (failed.length) await renderImages(key, failed, fc, 0.5)   // very large frames can fail at 1x
+      }
+    } catch (e) {
+      problems += 1
+      fc.error = e.message
+      if (e.kind === 'network' || e.kind === 'rate') {
+        S.cache.files[key] = fc
+        S.wall.banner = { kind: 'error', text: e.message }
+        break
+      }
+      if (e.kind === 'forbidden') fc.error = 'Your token can’t read this file. Check it has File content and File metadata access, and that you can open the file.'
+      if (e.kind === 'notfound') fc.error = 'File not found, or you don’t have access to it.'
+    }
+    S.cache.files[key] = fc
+    renderWall()
+  }
+  S.wall.busy = false
+  S.wall.status = problems ? problems + ' file' + (problems === 1 ? '' : 's') + ' had problems' : 'Checked ' + ago(Date.now())
+  S.wall.checkedAt = Date.now()
+  S.cache.savedAt = Date.now()
+  send('save-cache', { cache: S.cache })
+  // First time a frame is seen, remember its version so later edits show as “Updated”.
+  const seen = {}
+  for (const item of c.items) { const n = nodeInfo(item); if (n && n.hash && !item.seenHash) seen[item.id] = n.hash }
+  if (Object.keys(seen).length) send('mark-seen', { campaignId: c.id, seen: seen })
+  renderWall()
+}
+
+async function renderImages(key, ids, fc, scale) {
+  const res = await api('/images/' + key + '?ids=' + encodeURIComponent(ids.join(',')) + '&format=png&scale=' + scale)
+  const images = res.images || {}
+  for (const id of ids) {
+    if (images[id]) { fc.nodes[id].url = images[id]; fc.nodes[id].urlAt = Date.now(); fc.nodes[id].renderFailed = false }
+    else fc.nodes[id].renderFailed = true
+  }
+}
+
+// ---------- rendering: shell ----------
+function render() {
+  const app = $('app')
+  document.body.classList.toggle('walling', S.view === 'wall')
+  if (S.view === 'loading') { app.innerHTML = '<div class="empty-wall">Loading…</div>'; return }
+  if (S.view === 'wall') return renderWallShell()
+  if (S.view === 'setup') return renderSetup()
+  return renderPanel()
+}
+
+// ---------- panel ----------
+function renderPanel() {
+  const c = campaign()
+  const campaigns = S.data.campaigns
+  let html = '<div class="view">'
+  html += '<div class="top">'
+  if (campaigns.length) {
+    html += '<select id="campaign" aria-label="Campaign">' + campaigns.map((x) => '<option value="' + esc(x.id) + '"' + (c && x.id === c.id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select>'
+    html += '<button class="icon" id="new-campaign" aria-label="New campaign" title="New campaign">' + icon('plus') + '</button>'
+  } else html += '<div class="grow" style="font-size:14px;font-weight:600;padding-left:4px">Campaign Wall</div>'
+  html += '<button class="icon" id="settings" aria-label="Settings" title="Settings">' + icon('gear') + '</button></div>'
+  html += '<div class="scroll">'
+
+  if (!campaigns.length || S.creating) {
+    html += '<div class="stack"><div style="font-size:15px;font-weight:600">' + (campaigns.length ? 'New campaign' : 'Start a campaign') + '</div>'
+    html += '<div class="muted small">Add frames from any file, in any channel folder, then see them together on one wall.</div>'
+    html += '<input class="field" id="campaign-name" placeholder="e.g. Holiday 2026" maxlength="80" aria-label="Campaign name">'
+    html += '<div class="row"><button class="btn primary grow" id="create">Create campaign</button>' + (campaigns.length ? '<button class="btn" id="cancel-create">Cancel</button>' : '') + '</div></div>'
+    html += '</div>' + footer() + '</div>'
+    $('app').innerHTML = html
+    bindPanel(); setTimeout(() => { const el = $('campaign-name'); if (el) el.focus() }, 0)
+    return
+  }
+
+  // Selection
+  const sel = S.selection
+  html += '<div class="stack"><div class="label" style="margin:0">Selection</div>'
+  if (!sel.items.length) {
+    html += '<div class="hint"><span class="ico">' + icon('pointer') + '</span><div><div style="font-weight:600">Add frames</div><div class="muted small">Select frames in this file to add them to ' + esc(c.name) + '.</div></div></div>'
+    if (sel.skipped) html += '<div class="notice small">' + sel.skipped + ' selected layer' + (sel.skipped === 1 ? ' isn’t a frame' : 's aren’t frames') + '. Select top-level frames, components or sections.</div>'
+  } else {
+    if (!S.file.key) {
+      html += '<div class="notice warn stack"><div><b>One-time step for this file.</b> Figma didn’t give the plugin this file’s ID. Paste its link (Share › Copy link) so the wall can find these frames.</div>'
+      html += '<div class="row"><input class="field" id="file-link" placeholder="https://www.figma.com/design/…"><button class="btn" id="save-file-link">Save</button></div></div>'
+    }
+    const already = sel.items.filter((it) => it.inCampaigns.indexOf(c.id) >= 0).length
+    html += '<div class="card">'
+    sel.items.slice(0, 4).forEach((it, i) => {
+      if (i) html += '<div class="sep"></div>'
+      const inThis = it.inCampaigns.indexOf(c.id) >= 0
+      html += '<div class="sel-row"><div class="grow"><div class="nm">' + esc(it.name) + '</div><div class="muted small">' + it.width + ' × ' + it.height + ' · ' + esc(S.channelChoice === 'auto' ? it.guess : S.channelChoice) + '</div></div>' + (inThis ? '<span class="pill ok">' + icon('check', 11) + 'In campaign</span>' : '') + '</div>'
+    })
+    if (sel.items.length > 4) html += '<div class="sep"></div><div class="sel-row muted small">+ ' + (sel.items.length - 4) + ' more</div>'
+    html += '</div>'
+    html += '<div><label class="label" for="channel">Channel</label><select class="field" id="channel"><option value="auto"' + (S.channelChoice === 'auto' ? ' selected' : '') + '>Auto (guess from size)</option>' + S.data.channels.map((ch) => '<option' + (S.channelChoice === ch ? ' selected' : '') + '>' + esc(ch) + '</option>').join('') + '</select></div>'
+    const label = already === sel.items.length
+      ? 'Update ' + (sel.items.length === 1 ? 'frame' : sel.items.length + ' frames') + ' in ' + c.name
+      : 'Add ' + (sel.items.length === 1 ? 'frame' : sel.items.length + ' frames') + ' to ' + c.name
+    html += '<button class="btn primary block" id="add"' + (S.file.key ? '' : ' disabled') + '>' + esc(label) + '</button>'
+  }
+  html += '</div>'
+
+  // Campaign summary + wall
+  const byChannel = {}
+  c.items.forEach((it) => { byChannel[it.channel] = (byChannel[it.channel] || 0) + 1 })
+  const files = new Set(c.items.map((it) => it.fileKey)).size
+  const updated = c.items.filter(isUpdated).length
+  html += '<div class="card stack" style="padding:14px;gap:10px">'
+  html += '<div class="row" style="align-items:baseline"><span style="font-size:22px;font-weight:600;letter-spacing:-0.02em">' + c.items.length + '</span><span class="muted">frame' + (c.items.length === 1 ? '' : 's') + ' from ' + files + ' file' + (files === 1 ? '' : 's') + '</span>' + (updated ? '<span class="pill warn" style="margin-left:auto">' + updated + ' updated</span>' : '') + '</div>'
+  if (c.items.length) html += '<div class="chips">' + S.data.channels.filter((ch) => byChannel[ch]).map((ch) => '<span class="pill">' + esc(ch) + ' ' + byChannel[ch] + '</span>').join('') + '</div>'
+  html += '<button class="btn primary block" id="open-wall"' + (c.items.length ? '' : ' disabled') + '>' + icon('wall') + (S.token ? 'Open wall' : 'Connect Figma to open the wall') + '</button>'
+  html += '</div>'
+
+  // Items
+  if (c.items.length) {
+    html += '<div><div class="label">Frames in this campaign</div><div>'
+    const sorted = c.items.slice().sort((a, b) => S.data.channels.indexOf(a.channel) - S.data.channels.indexOf(b.channel) || a.name.localeCompare(b.name))
+    sorted.forEach((it) => {
+      const n = nodeInfo(it)
+      const name = n && n.name ? n.name : it.name
+      const here = it.fileKey === S.file.key
+      html += '<div class="item"><button class="open" data-open="' + esc(it.id) + '" title="' + (here ? 'Select in this file' : 'Open in its file') + '"><div class="nm">' + esc(name) + (isUpdated(it) ? ' <span class="upd">Updated</span>' : '') + '</div><div class="mt">' + esc(it.channel) + ' · ' + (here ? 'this file' : esc((S.cache.files[it.fileKey] || {}).name || it.fileName)) + '</div></button>'
+      html += '<button class="icon" data-remove="' + esc(it.id) + '" aria-label="Remove ' + esc(name) + ' from campaign" title="Remove from campaign">' + icon('x', 14) + '</button></div>'
+    })
+    html += '</div></div>'
+  }
+  html += '</div>' + footer() + '</div>'
+  $('app').innerHTML = html
+  bindPanel()
+}
+
+function footer() {
+  const me = S.prefs.me
+  if (!S.token) return '<div class="foot"><span class="dot" style="background:var(--danger)"></span><span class="grow">Not connected to Figma’s API</span><button class="btn ghost" id="connect" style="height:28px">Connect</button></div>'
+  return '<div class="foot"><span class="dot" style="background:var(--ok)"></span><span class="grow">Connected' + (me && me.handle ? ' as ' + esc(me.handle) : '') + '</span></div>'
+}
+
+function bindPanel() {
+  const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn) }
+  on('campaign', 'change', (e) => send('set-active', { campaignId: e.target.value }))
+  on('new-campaign', 'click', () => { S.creating = true; render() })
+  on('cancel-create', 'click', () => { S.creating = false; render() })
+  on('create', 'click', () => { const name = $('campaign-name').value.trim(); if (!name) return $('campaign-name').focus(); S.creating = false; send('create-campaign', { name: name }) })
+  on('campaign-name', 'keydown', (e) => { if (e.key === 'Enter') $('create').click() })
+  on('settings', 'click', () => { S.view = 'setup'; render() })
+  on('connect', 'click', () => { S.view = 'setup'; render() })
+  on('channel', 'change', (e) => { S.channelChoice = e.target.value; render() })
+  on('add', 'click', () => { const c = campaign(); send('add-selection', { campaignId: c.id, channel: S.channelChoice }) })
+  on('save-file-link', 'click', () => send('set-file-key', { url: $('file-link').value }))
+  on('open-wall', 'click', () => { if (!S.token) { S.view = 'setup'; render(); return } openWall() })
+  document.querySelectorAll('[data-open]').forEach((el) => el.addEventListener('click', () => openItem(el.dataset.open)))
+  document.querySelectorAll('[data-remove]').forEach((el) => el.addEventListener('click', () => send('remove-item', { campaignId: campaign().id, itemId: el.dataset.remove })))
+}
+
+function openItem(itemId) {
+  const c = campaign(); const it = c && c.items.find((x) => x.id === itemId)
+  if (it) send('open-item', { fileKey: it.fileKey, nodeId: it.nodeId })
+}
+
+// ---------- settings ----------
+function renderSetup() {
+  const c = campaign()
+  let html = '<div class="view"><div class="top"><button class="icon" id="back" aria-label="Back">' + icon('left') + '</button><div class="grow" style="font-size:14px;font-weight:600">Settings</div></div><div class="scroll">'
+  html += '<div class="stack"><div style="font-size:14px;font-weight:600">Connect to Figma</div>'
+  html += '<div class="muted small">The wall reads frames from other files with Figma’s API, using a personal access token. It’s stored only on this computer.</div>'
+  html += '<ol class="steps small muted"><li>In Figma, open <b>Settings › Security › Personal access tokens</b>.</li><li>Generate a token with <b>File content</b>, <b>File metadata</b> and <b>Current user</b> set to read-only.</li><li>Paste it below.</li></ol>'
+  html += '<input class="field" id="token" type="password" placeholder="figd_…" autocomplete="off" aria-label="Personal access token" value="' + esc(S.token) + '">'
+  html += '<div class="row"><button class="btn primary grow" id="test-token">Test and save</button>' + (S.token ? '<button class="btn danger" id="clear-token">Remove</button>' : '') + '</div>'
+  html += '<div id="token-result">' + (S.tokenResult || '') + '</div></div>'
+  html += '<div class="sep"></div>'
+  html += '<div class="stack"><div style="font-size:14px;font-weight:600">This file</div>'
+  if (S.file.keyFromApi) html += '<div class="muted small">Figma provides this file’s ID automatically.</div>'
+  else {
+    html += '<div class="muted small">' + (S.file.key ? 'Linked to file ID ' + esc(S.file.key) + '. Paste a new link to change it.' : 'Paste this file’s link (Share › Copy link) so frames added from here can be found.') + '</div>'
+    html += '<div class="row"><input class="field" id="file-link" placeholder="https://www.figma.com/design/…"><button class="btn" id="save-file-link">Save</button></div>'
+  }
+  html += '</div>'
+  if (c) {
+    html += '<div class="sep"></div><div class="stack"><div style="font-size:14px;font-weight:600">Share “' + esc(c.name) + '”</div>'
+    html += '<div class="muted small">Test builds keep campaigns on this computer. To give a teammate the same campaign, copy this and have them paste it under Import.</div>'
+    html += '<textarea class="field" id="export" readonly aria-label="Campaign data">' + esc(JSON.stringify({ type: 'campaign-wall', campaign: { id: c.id, name: c.name, createdAt: c.createdAt, items: c.items.map((it) => ({ id: it.id, fileKey: it.fileKey, fileName: it.fileName, nodeId: it.nodeId, name: it.name, width: it.width, height: it.height, pageName: it.pageName, channel: it.channel, addedAt: it.addedAt })) } })) + '</textarea>'
+    html += '<button class="btn" id="copy-export">Copy</button></div>'
+  }
+  html += '<div class="stack"><div class="label" style="margin:0">Import a campaign</div><textarea class="field" id="import" placeholder="Paste campaign data" aria-label="Campaign data to import"></textarea><button class="btn" id="do-import">Import</button></div>'
+  if (c) {
+    html += '<div class="sep"></div><div class="stack"><div style="font-size:14px;font-weight:600">Campaign</div>'
+    html += '<div class="row"><input class="field" id="rename" value="' + esc(c.name) + '" aria-label="Campaign name"><button class="btn" id="do-rename">Rename</button></div>'
+    html += '<button class="btn danger" id="delete">Delete “' + esc(c.name) + '”</button></div>'
+  }
+  html += '</div></div>'
+  $('app').innerHTML = html
+  const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn) }
+  on('back', 'click', () => { S.view = 'panel'; S.tokenResult = ''; render() })
+  on('test-token', 'click', async () => {
+    const token = $('token').value.trim()
+    const out = { set innerHTML(v) { S.tokenResult = v; const el = $('token-result'); if (el) el.innerHTML = v } }
+    if (!token) { out.innerHTML = '<div class="notice error">Paste a token first.</div>'; return }
+    out.innerHTML = '<div class="notice">Checking…</div>'
+    try {
+      const me = await testToken(token)
+      S.prefs.me = { handle: me.handle, email: me.email }
+      send('save-prefs', { prefs: { me: S.prefs.me } })
+      send('save-token', { token: token })
+      out.innerHTML = '<div class="notice" style="color:var(--ok)">Connected as ' + esc(me.handle) + (me.email ? ' (' + esc(me.email) + ')' : '') + '.</div>'
+    } catch (e) {
+      out.innerHTML = '<div class="notice error">' + esc(e.message) + (e.kind === 'network' ? '<br><br>This is the main thing this test checks. Send Claude a screenshot of this message.' : '') + '</div>'
+    }
+  })
+  on('clear-token', 'click', () => { S.tokenResult = ''; S.prefs.me = null; send('save-prefs', { prefs: { me: null } }); send('save-token', { token: '' }) })
+  on('save-file-link', 'click', () => send('set-file-key', { url: $('file-link').value }))
+  on('copy-export', 'click', () => { const t = $('export'); t.select(); try { document.execCommand('copy'); toast('Copied.') } catch (e) { toast('Select the text and copy it.', true) } })
+  on('do-import', 'click', () => send('import-campaign', { json: $('import').value }))
+  on('do-rename', 'click', () => send('rename-campaign', { campaignId: c.id, name: $('rename').value }))
+  on('delete', 'click', (e) => {
+    const b = e.currentTarget
+    if (b.dataset.armed) { send('delete-campaign', { campaignId: c.id }); S.view = 'panel'; return }
+    b.dataset.armed = '1'; b.textContent = 'Click again to delete. Frames in files are not changed.'
+  })
+}
+
+// ---------- wall ----------
+function openWall() {
+  S.view = 'wall'; S.wall.fitted = false; S.wall.selected = []; S.wall.touched = false
+  const size = S.prefs.wallSize || { width: 1200, height: 800 }
+  send('resize', size)
+  render()
+  setTimeout(() => refreshWall('auto'), 60)
+}
+function closeWall() {
+  S.view = 'panel'
+  send('resize', PANEL)
+  render()
+}
+
+function layout(c) {
+  const channels = S.data.channels.slice()
+  c.items.forEach((it) => { if (channels.indexOf(it.channel) < 0) channels.push(it.channel) })
+  const GAP = 80, LABEL = 60, ROW_GAP = 240, MAX_ROW = 9000
+  const groups = []
+  let y = 0
+  let maxX = 0
+  for (const ch of channels) {
+    const items = c.items.filter((it) => it.channel === ch)
+    if (!items.length) continue
+    const g = { channel: ch, y: y + LABEL, items: [] }
+    let x = 0, rowY = y + LABEL, rowH = 0
+    for (const it of items) {
+      const n = nodeInfo(it)
+      const w = Math.max(40, (n && (n.viewW || n.width)) || it.width || 400)
+      const h = Math.max(40, (n && (n.viewH || n.height)) || it.height || 300)
+      if (x > 0 && x + w > MAX_ROW) { x = 0; rowY += rowH + LABEL + GAP; rowH = 0 }
+      g.items.push({ it: it, n: n, x: x, y: rowY, w: w, h: h })
+      x += w + GAP; rowH = Math.max(rowH, h); maxX = Math.max(maxX, x - GAP)
+    }
+    groups.push(g)
+    y = rowY + rowH + ROW_GAP
+  }
+  return { groups: groups, width: maxX, height: Math.max(0, y - ROW_GAP) }
+}
+
+function renderWallShell() {
+  const c = campaign()
+  let html = '<div class="view">'
+  html += '<div class="wallbar"><button class="btn ghost" id="wall-back" style="padding:0 8px">' + icon('left') + 'Panel</button>'
+  html += '<div class="title">' + esc(c ? c.name : '') + '</div><div class="status grow" id="wall-status"></div>'
+  html += '<button class="btn ghost hidden" id="mark-seen">Mark all seen</button>'
+  html += '<button class="icon" id="wall-refresh" title="Check every frame for changes" aria-label="Check every frame for changes">' + icon('refresh') + '</button>'
+  html += '<div class="sep" style="width:1px;height:20px"></div>'
+  html += '<button class="icon" id="zoom-out" aria-label="Zoom out">' + icon('minus') + '</button><button class="zoomval" id="zoom-val" title="Zoom to 100%">100%</button><button class="icon" id="zoom-in" aria-label="Zoom in">' + icon('plus') + '</button>'
+  html += '<button class="icon" id="zoom-fit" title="Fit everything" aria-label="Fit everything">' + icon('fit') + '</button></div>'
+  html += '<div id="viewport"><div id="world"></div><div id="banner"></div></div>'
+  html += '<div id="inspector" class="card hidden"></div><div id="grip" title="Drag to resize"></div></div>'
+  $('app').innerHTML = html
+  bindWall()
+  renderWall()
+}
+
+function renderWallBar() {
+  const c = campaign()
+  const st = $('wall-status'); if (!st) return
+  st.textContent = S.wall.busy ? S.wall.status : (S.wall.status || '')
+  const updated = c ? c.items.filter(isUpdated).length : 0
+  const mark = $('mark-seen')
+  if (mark) { mark.classList.toggle('hidden', !updated); mark.textContent = 'Mark ' + updated + ' seen' }
+  const refresh = $('wall-refresh'); if (refresh) refresh.disabled = S.wall.busy
+}
+
+function renderWall() {
+  if (S.view !== 'wall') return
+  const c = campaign()
+  const world = $('world'); if (!world) return
+  const banner = $('banner')
+  banner.innerHTML = S.wall.banner ? '<div class="notice ' + (S.wall.banner.kind === 'error' ? 'error' : 'warn') + '">' + esc(S.wall.banner.text) + '</div>' : ''
+  if (!c || !c.items.length) { world.innerHTML = ''; banner.innerHTML = '<div class="notice">No frames in this campaign yet.</div>'; renderWallBar(); return }
+  const L = layout(c)
+  S.wall.bounds = L
+  S.wall.selected = S.wall.selected.filter((id) => c.items.some((it) => it.id === id))
+  let html = ''
+  for (const g of L.groups) {
+    html += '<div class="ch" data-channel="' + esc(g.channel) + '" title="Select all ' + esc(g.channel) + ' frames" style="top:' + g.y + 'px">' + esc(g.channel) + '<em>' + g.items.length + ' frame' + (g.items.length === 1 ? '' : 's') + '</em></div>'
+    for (const p of g.items) {
+      const it = p.it, n = p.n
+      const fc = S.cache.files[it.fileKey] || {}
+      const name = n && n.name ? n.name : it.name
+      let body
+      if (n && n.missing) body = '<div class="ph">Not found in its file. It may have been deleted.</div>'
+      else if (n && n.url) body = '<img src="' + esc(n.url) + '" alt="' + esc(name) + '" draggable="false">'
+      else if (fc.error) body = '<div class="ph">' + esc(fc.error) + '</div>'
+      else if (n && n.renderFailed) body = '<div class="ph">Figma couldn’t render this frame.</div>'
+      else body = '<div class="ph">' + (S.token ? 'Loading…' : 'Connect Figma to see this') + '</div>'
+      const meta = (fc.name || it.fileName) + (fc.lastTouchedAt ? ' · file edited ' + ago(fc.lastTouchedAt) + (fc.lastTouchedBy ? ' by ' + fc.lastTouchedBy : '') : '')
+      const edge = n && n.url && n.viewW && (Math.abs(n.viewW - n.width) > 1 || Math.abs(n.viewH - n.height) > 1)
+        ? '<div class="edge" style="left:' + n.offX + 'px;top:' + n.offY + 'px;width:' + n.width + 'px;height:' + n.height + 'px"></div>' : ''
+      html += '<div class="fr' + (S.wall.selected.indexOf(it.id) >= 0 ? ' sel' : '') + (n && n.missing ? ' missing' : '') + '" data-id="' + esc(it.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px;width:' + p.w + 'px;height:' + p.h + 'px;--w:' + p.w + '">'
+      html += '<div class="lbl"><div class="nm">' + (isUpdated(it) ? '<span class="upd">Updated</span>' : '') + esc(name) + '</div><div class="mt">' + esc(meta) + '</div></div>' + body + edge + '</div>'
+    }
+  }
+  world.innerHTML = html
+  if (!S.wall.fitted) { fit(); S.wall.fitted = true } else applyTransform()
+  renderInspector()
+  renderWallBar()
+}
+
+window.addEventListener('resize', () => { if (S.view === 'wall' && !S.wall.touched) fit() })
+
+function applyTransform() {
+  const world = $('world'); if (!world) return
+  const z = S.wall.zoom
+  world.style.transform = 'translate(' + S.wall.tx + 'px,' + S.wall.ty + 'px) scale(' + z + ')'
+  world.style.setProperty('--inv', String(1 / z))
+  world.style.setProperty('--z', String(z))
+  world.classList.toggle('far', z < 0.18)
+  const zv = $('zoom-val'); if (zv) zv.textContent = Math.round(z * 100) + '%'
+}
+
+function fit() {
+  const vp = $('viewport'); const b = S.wall.bounds
+  if (!vp || !b || !b.width) return applyTransform()
+  const pad = 48, gutter = 150   // gutter: room for channel names, which stay screen-sized
+  const z = Math.max(0.02, Math.min(1, Math.min((vp.clientWidth - pad * 2 - gutter) / b.width, (vp.clientHeight - pad * 2) / b.height)))
+  S.wall.zoom = z
+  S.wall.tx = Math.round(gutter + Math.max(0, (vp.clientWidth - gutter - pad - b.width * z) / 2))
+  S.wall.ty = Math.round(pad)
+  applyTransform()
+}
+
+function zoomAt(factor, cx, cy) {
+  S.wall.touched = true
+  const z0 = S.wall.zoom
+  const z = Math.max(0.02, Math.min(4, z0 * factor))
+  S.wall.tx = cx - (cx - S.wall.tx) * (z / z0)
+  S.wall.ty = cy - (cy - S.wall.ty) * (z / z0)
+  S.wall.zoom = z
+  applyTransform()
+}
+
+function selectedItems() {
+  const c = campaign()
+  return c ? c.items.filter((x) => S.wall.selected.indexOf(x.id) >= 0) : []
+}
+
+function setSelection(ids) {
+  S.wall.selected = ids
+  document.querySelectorAll('#world .fr').forEach((el) => el.classList.toggle('sel', ids.indexOf(el.dataset.id) >= 0))
+  renderInspector()
+}
+
+function renderInspector() {
+  const box = $('inspector'); if (!box) return
+  const c = campaign()
+  const items = selectedItems()
+  if (!items.length) { box.classList.add('hidden'); return }
+  const busy = S.wall.busy ? ' disabled' : ''
+  const channelSelect = (current) => '<select class="field" id="insp-channel">' + (current ? '' : '<option value="" selected>Move to channel…</option>') +
+    S.data.channels.map((ch) => '<option' + (ch === current ? ' selected' : '') + '>' + esc(ch) + '</option>').join('') + '</select>'
+  let html = ''
+  if (items.length === 1) {
+    const it = items[0]
+    const n = nodeInfo(it) || {}
+    const fc = S.cache.files[it.fileKey] || {}
+    html += '<div class="row" style="align-items:flex-start"><div class="grow"><div style="font-weight:600;font-size:13px">' + esc(n.name || it.name) + '</div>'
+    html += '<div class="muted small">' + (n.width || it.width) + ' × ' + (n.height || it.height) + ' · ' + esc(fc.name || it.fileName) + (it.pageName ? ' / ' + esc(it.pageName) : '') + '</div></div>'
+    html += '<button class="icon" id="insp-close" aria-label="Close">' + icon('x', 14) + '</button></div>'
+    if (fc.checkedAt) html += '<div class="muted small" style="margin-top:6px">Checked ' + esc(ago(fc.checkedAt)) + (fc.error ? ' · ' + esc(fc.error) : '') + '</div>'
+    if (fc.lastTouchedAt) html += '<div class="muted small" style="margin-top:2px">File edited ' + esc(ago(fc.lastTouchedAt)) + (fc.lastTouchedBy ? ' by ' + esc(fc.lastTouchedBy) : '') + (n.changedAt ? ' · this frame changed ' + esc(ago(n.changedAt)) : '') + '</div>'
+    if (n.viewW && (Math.abs(n.viewW - n.width) > 1 || Math.abs(n.viewH - n.height) > 1)) html += '<div class="muted small" style="margin-top:2px">Content extends outside the frame; the dashed line is the frame’s edge.</div>'
+    if (isUpdated(it)) html += '<div style="margin-top:6px"><span class="upd">Updated since you last marked it seen</span></div>'
+    html += '<div style="margin-top:10px"><label class="label" for="insp-channel">Channel</label>' + channelSelect(it.channel) + '</div>'
+    html += '<div class="row" style="margin-top:10px"><button class="btn primary grow" id="insp-open">' + icon('ext', 14) + 'Open in Figma</button><button class="btn" id="insp-refresh" title="Reload this frame from its file now"' + busy + '>' + icon('refresh', 14) + 'Refresh</button></div>'
+    html += '<button class="btn ghost danger" id="insp-remove" style="margin-top:4px;padding:0 4px">Remove from campaign</button>'
+  } else {
+    html += '<div class="row" style="align-items:flex-start"><div class="grow"><div style="font-weight:600;font-size:13px">' + items.length + ' frames selected</div>'
+    const names = items.slice(0, 3).map((it) => esc((nodeInfo(it) || {}).name || it.name)).join(', ')
+    html += '<div class="muted small" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + names + (items.length > 3 ? ' +' + (items.length - 3) + ' more' : '') + '</div></div>'
+    html += '<button class="icon" id="insp-close" aria-label="Clear selection">' + icon('x', 14) + '</button></div>'
+    const channels = Array.from(new Set(items.map((it) => it.channel)))
+    html += '<div style="margin-top:10px"><label class="label" for="insp-channel">Channel</label>' + channelSelect(channels.length === 1 ? channels[0] : '') + '</div>'
+    html += '<div class="row" style="margin-top:10px"><button class="btn primary grow" id="insp-refresh" title="Reload these frames from their files now"' + busy + '>' + icon('refresh', 14) + 'Refresh ' + items.length + ' frames</button></div>'
+    html += '<button class="btn ghost danger" id="insp-remove" style="margin-top:4px;padding:0 4px">Remove ' + items.length + ' from campaign</button>'
+  }
+  box.innerHTML = html
+  box.classList.remove('hidden')
+  const ids = items.map((it) => it.id)
+  $('insp-close').addEventListener('click', () => setSelection([]))
+  const open = $('insp-open'); if (open) open.addEventListener('click', () => openItem(ids[0]))
+  $('insp-refresh').addEventListener('click', () => refreshSelected())
+  $('insp-channel').addEventListener('change', (e) => { if (e.target.value) send('set-channel', { campaignId: c.id, itemIds: ids, channel: e.target.value }) })
+  $('insp-remove').addEventListener('click', (e) => {
+    const b = e.currentTarget
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again to remove. Frames in files aren’t changed.'; return }
+    setSelection([])
+    send('remove-item', { campaignId: c.id, itemIds: ids })
+  })
+}
+
+function bindWall() {
+  $('wall-back').addEventListener('click', closeWall)
+  $('wall-refresh').addEventListener('click', () => refreshWall('manual'))
+  $('zoom-in').addEventListener('click', () => { const vp = $('viewport'); zoomAt(1.25, vp.clientWidth / 2, vp.clientHeight / 2) })
+  $('zoom-out').addEventListener('click', () => { const vp = $('viewport'); zoomAt(0.8, vp.clientWidth / 2, vp.clientHeight / 2) })
+  $('zoom-val').addEventListener('click', () => { const vp = $('viewport'); zoomAt(1 / S.wall.zoom, vp.clientWidth / 2, vp.clientHeight / 2) })
+  $('zoom-fit').addEventListener('click', fit)
+  $('mark-seen').addEventListener('click', () => {
+    const c = campaign(); const seen = {}
+    c.items.forEach((it) => { const n = nodeInfo(it); if (n && n.hash) seen[it.id] = n.hash })
+    send('mark-seen', { campaignId: c.id, seen: seen })
+  })
+
+  const vp = $('viewport')
+  vp.addEventListener('wheel', (e) => {
+    e.preventDefault()
+    const r = vp.getBoundingClientRect()
+    if (e.ctrlKey || e.metaKey) zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top)
+    else { S.wall.touched = true; S.wall.tx -= e.deltaX; S.wall.ty -= e.deltaY; applyTransform() }
+  }, { passive: false })
+
+  let drag = null
+  let lastClick = { id: '', at: 0 }
+  const marquee = document.createElement('div')
+  marquee.className = 'marquee hidden'
+  vp.appendChild(marquee)
+  vp.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 && e.button !== 1) return
+    const r = vp.getBoundingClientRect()
+    const target = e.target.closest('.fr')
+    drag = { x: e.clientX, y: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, tx: S.wall.tx, ty: S.wall.ty, moved: false,
+      target: target, heading: e.target.closest('.ch'), additive: e.shiftKey || e.metaKey || e.ctrlKey,
+      box: e.shiftKey && !target }
+    vp.setPointerCapture(e.pointerId)
+  })
+  vp.addEventListener('pointermove', (e) => {
+    if (!drag) return
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y
+    if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 3) { drag.moved = true; if (!drag.box) vp.classList.add('panning') }
+    if (!drag.moved) return
+    if (drag.box) {
+      const x = Math.min(drag.ox, drag.ox + dx), y = Math.min(drag.oy, drag.oy + dy)
+      marquee.style.cssText = 'left:' + x + 'px;top:' + y + 'px;width:' + Math.abs(dx) + 'px;height:' + Math.abs(dy) + 'px'
+      marquee.classList.remove('hidden')
+      return
+    }
+    S.wall.touched = true; S.wall.tx = drag.tx + dx; S.wall.ty = drag.ty + dy; applyTransform()
+  })
+  vp.addEventListener('pointerup', (e) => {
+    if (!drag) return
+    vp.classList.remove('panning')
+    const d = drag
+    drag = null
+    if (d.box && d.moved) {
+      marquee.classList.add('hidden')
+      const z = S.wall.zoom
+      const x1 = (Math.min(d.ox, d.ox + e.clientX - d.x) - S.wall.tx) / z, x2 = (Math.max(d.ox, d.ox + e.clientX - d.x) - S.wall.tx) / z
+      const y1 = (Math.min(d.oy, d.oy + e.clientY - d.y) - S.wall.ty) / z, y2 = (Math.max(d.oy, d.oy + e.clientY - d.y) - S.wall.ty) / z
+      const hit = []
+      for (const g of (S.wall.bounds || { groups: [] }).groups) for (const p of g.items) {
+        if (p.x < x2 && p.x + p.w > x1 && p.y < y2 && p.y + p.h > y1) hit.push(p.it.id)
+      }
+      setSelection(Array.from(new Set(S.wall.selected.concat(hit))))
+      return
+    }
+    if (d.moved) return
+    if (d.heading) {
+      const c = campaign()
+      const ids = c.items.filter((it) => it.channel === d.heading.dataset.channel).map((it) => it.id)
+      setSelection(d.additive ? Array.from(new Set(S.wall.selected.concat(ids))) : ids)
+      return
+    }
+    const id = d.target ? d.target.dataset.id : ''
+    const now = Date.now()
+    if (id && !d.additive && lastClick.id === id && now - lastClick.at < 400) { lastClick = { id: '', at: 0 }; openItem(id); return }
+    lastClick = { id: id, at: now }
+    if (d.additive) {
+      if (id) setSelection(S.wall.selected.indexOf(id) >= 0 ? S.wall.selected.filter((x) => x !== id) : S.wall.selected.concat(id))
+      return
+    }
+    setSelection(id ? [id] : [])
+  })
+  // Plugin windows can't be dragged to resize, so this corner handle asks Figma to resize it.
+  const grip = $('grip')
+  let rs = null
+  grip.addEventListener('pointerdown', (e) => { rs = { x: e.screenX, y: e.screenY, w: window.innerWidth, h: window.innerHeight }; grip.setPointerCapture(e.pointerId); e.stopPropagation() })
+  grip.addEventListener('pointermove', (e) => {
+    if (!rs) return
+    const size = { width: Math.max(560, Math.round(rs.w + e.screenX - rs.x)), height: Math.max(400, Math.round(rs.h + e.screenY - rs.y)) }
+    rs.last = size
+    send('resize', size)
+  })
+  grip.addEventListener('pointerup', () => { if (rs && rs.last) { S.prefs.wallSize = rs.last; send('save-prefs', { prefs: { wallSize: rs.last } }) } rs = null })
+
+  // Page-wide listeners: added once, not every time the wall opens.
+  if (S.docBound) return
+  S.docBound = true
+  document.addEventListener('selectionchange', () => {
+    if (S.view !== 'wall' || /INPUT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return
+    const sel = window.getSelection(); if (sel && sel.rangeCount && !sel.isCollapsed) sel.removeAllRanges()
+  })
+  document.addEventListener('keydown', (e) => {
+    if (S.view !== 'wall' || /INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return
+    if (e.key === 'Escape') setSelection([])
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); const c = campaign(); setSelection(c ? c.items.map((it) => it.id) : []) }
+  })
+}
+
+// Another open copy of the plugin may have checked files more recently; keep whichever is newer.
+function mergeCache(incoming) {
+  for (const key of Object.keys(incoming.files)) {
+    const mine = S.cache.files[key], theirs = incoming.files[key]
+    if (!mine || (theirs.checkedAt || 0) > (mine.checkedAt || 0)) S.cache.files[key] = theirs
+  }
+}
+
+// ---------- messages from code.js ----------
+window.onmessage = (event) => {
+  const msg = event.data && event.data.pluginMessage
+  if (!msg) return
+  if (msg.type === 'state') {
+    const firstLoad = S.view === 'loading'
+    S.data = msg.data; S.token = msg.token || ''; S.prefs = msg.prefs || {}; S.selection = msg.selection; S.file = msg.file
+    if (firstLoad) S.cache = msg.cache && msg.cache.files ? msg.cache : { files: {} }
+    else if (msg.cache && msg.cache.files && !S.wall.busy) mergeCache(msg.cache)
+    if (msg.external && S.view === 'setup') return
+    if (firstLoad) S.view = 'panel'
+    if (msg.message) toast(msg.message)
+    if (S.view === 'wall') { renderWall(); return }
+    if (S.view === 'setup' && document.activeElement && document.activeElement.tagName === 'INPUT') return
+    render()
+    return
+  }
+  if (msg.type === 'selection') {
+    S.selection = msg.selection
+    if (S.view === 'panel') render()
+    return
+  }
+  if (msg.type === 'error') toast(msg.message, true)
+}
+
+send('init')
+</script>
+</body>
+</html>
