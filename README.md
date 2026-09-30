@@ -86,3 +86,4 @@ Each person uses their own token, so API limits are per person. Figma's heavier 
 - `code.js`: runs inside Figma. Handles the selection, the campaign list saved in each file, local storage and navigation.
 - `ui.html`: the panel, the wall, the history view, the folder search and all Figma API calls.
 - `tests/plugin.test.cjs`: end-to-end tests.
+- `tools/test-variables-index.mjs`: a one-off check of whether a Figma file's variables can hold a shared team index (Enterprise only). Instructions are at the top of the file.
