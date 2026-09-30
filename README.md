@@ -1,4 +1,6 @@
-# Campaign Wall
+# Showroom
+
+*Formerly Campaign Wall.*
 
 A Figma plugin for reviewing a campaign across channels. Add frames from any file, in any channel folder, to a campaign. Then see every frame together, at real size, on one zoomable wall inside the plugin.
 

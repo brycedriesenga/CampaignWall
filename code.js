@@ -1,4 +1,4 @@
-// Campaign Wall — code.js
+// Showroom — code.js
 // Runs in Figma's plugin sandbox. It owns this computer's storage, the current selection,
 // this file's identity, the campaign list stored inside this file, and navigation.
 // All calls to Figma's REST API happen in ui.html, because only the UI window can use the network.
@@ -489,4 +489,4 @@ setInterval(() => {
   }).catch(() => {});
 }, 3000);
 
-figma.showUI(__html__, { width: PANEL_SIZE.width, height: PANEL_SIZE.height, themeColors: true, title: 'Campaign Wall' });
+figma.showUI(__html__, { width: PANEL_SIZE.width, height: PANEL_SIZE.height, themeColors: true, title: 'Showroom' });

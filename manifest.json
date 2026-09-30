@@ -1,5 +1,5 @@
 {
-  "name": "Campaign Wall",
+  "name": "Showroom",
   "id": "1428761953216907420",
   "api": "1.0.0",
   "main": "code.js",
@@ -20,7 +20,7 @@
   "relaunchButtons": [
     {
       "command": "open",
-      "name": "Open Campaign Wall"
+      "name": "Open Showroom"
     }
   ],
   "permissions": [

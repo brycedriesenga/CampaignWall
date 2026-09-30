@@ -138,7 +138,7 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 <script>
 'use strict'
 // ---------------------------------------------------------------------------
-// Campaign Wall UI. Talks to code.js via postMessage and to Figma's REST API via fetch.
+// Showroom UI. Talks to code.js via postMessage and to Figma's REST API via fetch.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // TEAM SETUP: the Figma folders (projects) where your team keeps channel files.
@@ -628,7 +628,7 @@ function renderPanel() {
   if (campaigns.length) {
     html += '<select id="campaign" aria-label="Campaign">' + campaigns.map((x) => '<option value="' + esc(x.id) + '"' + (c && x.id === c.id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select>'
     html += '<button class="icon" id="new-campaign" aria-label="New campaign" title="New campaign">' + icon('plus') + '</button>'
-  } else html += '<div class="grow" style="font-size:14px;font-weight:600;padding-left:4px">Campaign Wall</div>'
+  } else html += '<div class="grow" style="font-size:14px;font-weight:600;padding-left:4px">Showroom</div>'
   html += '<button class="icon" id="settings" aria-label="Settings" title="Settings">' + icon('gear') + '</button></div>'
   html += '<div class="scroll">'
 

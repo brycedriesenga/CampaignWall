@@ -1,6 +1,11 @@
-# Campaign Wall — project notes
+# Showroom — project notes
 
 Classic (non-generative) Figma plugin. Bryce's team keeps design files in per-channel Figma folders (Site, Email, Social, Ads…). This plugin lets you add specific frames from any of those files to a campaign, then view every campaign frame together at real size on a pan/zoom wall inside the plugin window. It replaces an earlier generative plugin ("Campaign Hub") that copied snapshots between files. Copies went stale and the wall file couldn't see source changes.
+
+**Name:** the plugin was renamed from "Campaign Wall" to **Showroom** on 2026-09-30. Internal identifiers deliberately keep the old name so existing data keeps working. Don't rename these:
+- the shared plugin data namespace `campaignwall` (tags and manifests already saved in design files);
+- the clientStorage keys `cw.*`;
+- the manifest `id`, because clientStorage is scoped to the plugin ID.
 
 The owner is a designer who vibe-codes. Keep the code plain JavaScript with no build step, explain changes in plain language, and keep files readable.
 

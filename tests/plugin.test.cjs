@@ -1,4 +1,4 @@
-// End-to-end tests for Campaign Wall.
+// End-to-end tests for Showroom.
 // Runs code.js in a mock Figma sandbox and ui.html in jsdom, against a fake Figma REST API.
 // Usage: npm install && npm test
 const fs = require('fs')
