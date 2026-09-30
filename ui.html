@@ -202,8 +202,8 @@ function icon(name, size) {
 }
 // ---------- campaigns: what the team has (file manifests) + your drafts ----------
 // A campaign's frames come from the manifests stored inside each design file: this file's
-// (read live) plus every file the folder search found. Frames added before team sharing,
-// in files you haven't opened since, are still listed from this computer's storage.
+// (read live) plus every file the folder search found. This computer only adds drafts
+// (campaigns with no frames yet) and personal things like hidden frames.
 function manifests() {
   const out = []
   for (const key of Object.keys(S.scan.files || {})) {
@@ -236,17 +236,13 @@ function allCampaigns() {
     const c = get(lc.id)
     const localAt = lc.renamedAt || (c.nameAt < 0 ? lc.createdAt || 0 : -1)
     if (!c.name || localAt > c.nameAt) { c.name = lc.name; c.nameAt = Math.max(c.nameAt, localAt) }
-    for (const it of (lc.items || [])) {
-      if (c.items.some((x) => x.id === it.id)) continue
-      c.items.push(Object.assign({}, it, { shared: false }))
-    }
   }
   const hidden = (S.data && S.data.hidden) || []
   return Object.keys(map).map((id) => map[id]).filter((c) => hidden.indexOf(c.id) < 0).map((c) => {
     const skip = hiddenItems[c.id] || []
     c.hiddenCount = c.items.filter((it) => skip.indexOf(it.id) >= 0).length
     c.items = c.items.filter((it) => skip.indexOf(it.id) < 0)
-    c.items.forEach((it) => { it.seenHash = seen[it.id] || it.seenHash })
+    c.items.forEach((it) => { it.seenHash = seen[it.id] || '' })
     return c
   }).sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -357,7 +353,7 @@ async function listFolder(folder) {
 function readManifestFromDocument(doc) {
   const parse = (node) => {
     try {
-      const raw = node && node.sharedPluginData && node.sharedPluginData.campaignwall && node.sharedPluginData.campaignwall.manifest
+      const raw = node && node.sharedPluginData && node.sharedPluginData.showroom && node.sharedPluginData.showroom.manifest
       const m = raw ? JSON.parse(raw) : null
       return m && m.campaigns ? m : null
     } catch (e) { return null }
@@ -685,11 +681,6 @@ function renderPanel() {
   html += '<button class="btn primary block" id="open-wall"' + (c.items.length ? '' : ' disabled') + '>' + icon('wall') + (S.token ? 'Open wall' : 'Connect Figma to open the wall') + '</button>'
   html += '</div>'
 
-  const localOnly = c.items.filter((it) => !it.shared)
-  if (localOnly.length) {
-    const fileNames = Array.from(new Set(localOnly.map((it) => (S.cache.files[it.fileKey] || {}).name || it.fileName)))
-    html += '<div class="notice small"><b>' + localOnly.length + ' frame' + (localOnly.length === 1 ? ' is' : 's are') + ' only on your computer.</b> They were added before team sharing. Open the plugin once in ' + esc(fileNames.slice(0, 3).join(', ')) + (fileNames.length > 3 ? ' and ' + (fileNames.length - 3) + ' more' : '') + ' to share ' + (localOnly.length === 1 ? 'it' : 'them') + ' with your team.</div>'
-  }
   if (c.hiddenCount) html += '<div class="notice small row" style="gap:8px"><span class="grow">' + c.hiddenCount + ' frame' + (c.hiddenCount === 1 ? ' is' : 's are') + ' hidden on your wall.</span><button class="btn ghost" id="unhide-items" style="height:26px">Show</button></div>'
 
   // Items
@@ -702,7 +693,7 @@ function renderPanel() {
       const here = it.fileKey === S.file.key
       const where = here ? 'this file' : esc((S.cache.files[it.fileKey] || {}).name || it.fileName)
       html += '<div class="item"><button class="open" data-open="' + esc(it.id) + '" title="' + (here ? 'Select in this file' : 'Open in its file') + '"><div class="nm">' + esc(name) + (isUpdated(it) ? ' <span class="upd">Updated</span>' : '') + '</div><div class="mt">' + esc(it.channel) + ' · ' + where + (it.addedBy ? ' · added by ' + esc(it.addedBy) : '') + '</div></button>'
-      html += '<button class="icon" data-remove="' + esc(it.id) + '" aria-label="Remove ' + esc(name) + ' from campaign" title="' + (here || !it.shared ? 'Remove from campaign' : 'Hide on my wall (it lives in another file)') + '">' + icon('x', 14) + '</button></div>'
+      html += '<button class="icon" data-remove="' + esc(it.id) + '" aria-label="Remove ' + esc(name) + ' from campaign" title="' + (here ? 'Remove from campaign' : 'Hide on my wall (it lives in another file)') + '">' + icon('x', 14) + '</button></div>'
     })
     html += '</div></div>'
   }
@@ -1021,7 +1012,7 @@ function renderInspector() {
     if (fc.lastTouchedAt) html += '<div class="muted small" style="margin-top:2px">File edited ' + esc(ago(fc.lastTouchedAt)) + (fc.lastTouchedBy ? ' by ' + esc(fc.lastTouchedBy) : '') + (n.changedAt ? ' · this frame changed ' + esc(ago(n.changedAt)) : '') + '</div>'
     if (n.viewW && (Math.abs(n.viewW - n.width) > 1 || Math.abs(n.viewH - n.height) > 1)) html += '<div class="muted small" style="margin-top:2px">Content extends outside the frame; the dashed line is the frame’s edge.</div>'
     if (isUpdated(it)) html += '<div style="margin-top:6px"><span class="upd">Updated since you last marked it seen</span></div>'
-    const editable = it.fileKey === S.file.key || !it.shared
+    const editable = it.fileKey === S.file.key
     if (it.addedBy) html += '<div class="muted small" style="margin-top:2px">Added by ' + esc(it.addedBy) + '</div>'
     if (editable) html += '<div style="margin-top:10px"><label class="label" for="insp-channel">Channel</label>' + channelSelect(it.channel) + '</div>'
     else html += '<div class="muted small" style="margin-top:8px">Channel: <b>' + esc(it.channel) + '</b>. Change it from its own file.</div>'

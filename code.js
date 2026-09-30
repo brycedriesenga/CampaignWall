@@ -9,13 +9,16 @@
 //   manifests by searching the team's channel folders through the API (see discover() in ui.html).
 //   This computer's storage only keeps personal things: token, cache, what you've seen, hidden items.
 
-const NS = 'campaignwall';                 // shared plugin data namespace
+const NS = 'showroom';                     // shared plugin data namespace
 const MANIFEST_KEY = 'manifest';           // file root (+ first page, as a backup copy)
-const DATA_KEY = 'cw.data.v1';             // personal: active campaign, drafts, seen, hidden
-const TOKEN_KEY = 'cw.token';              // personal access token (this computer only)
-const CACHE_KEY = 'cw.cache.v1';           // what the wall last saw from the API
-const SCAN_KEY = 'cw.scan.v1';             // what the folder search found
-const PREFS_KEY = 'cw.prefs.v1';           // window size, extra folders, etc.
+const DATA_KEY = 'showroom.data';          // personal: active campaign, drafts, seen, hidden
+const TOKEN_KEY = 'showroom.token';        // personal access token (this computer only)
+const CACHE_KEY = 'showroom.cache';        // what the wall last saw from the API
+const SCAN_KEY = 'showroom.scan';          // what the folder search found
+const PREFS_KEY = 'showroom.prefs';        // window size, extra folders, etc.
+// Storage from the "Campaign Wall" test builds. The token and a few preferences carry over
+// once; everything else is cleared, since the team starts fresh with Showroom.
+const OLD_KEYS = ['cw.data.v1', 'cw.token', 'cw.cache.v1', 'cw.scan.v1', 'cw.prefs.v1'];
 const PANEL_SIZE = { width: 360, height: 640 };
 const MANIFEST_LIMIT = 95000;              // Figma allows 100 kB per plugin data entry
 const ELIGIBLE = ['FRAME', 'COMPONENT', 'COMPONENT_SET', 'INSTANCE', 'GROUP', 'SECTION'];
@@ -25,7 +28,7 @@ const AD_SIZES = ['300x250', '728x90', '160x600', '300x600', '320x50', '320x100'
 
 // ---------- personal storage ----------
 function emptyData() {
-  return { version: 2, campaigns: [], activeCampaignId: '', channels: DEFAULT_CHANNELS.slice(), seen: {}, hidden: [], hiddenItems: {} };
+  return { version: 1, campaigns: [], activeCampaignId: '', channels: DEFAULT_CHANNELS.slice(), seen: {}, hidden: [], hiddenItems: {} };
 }
 async function loadData() {
   const d = await figma.clientStorage.getAsync(DATA_KEY);
@@ -34,8 +37,6 @@ async function loadData() {
   if (!d.seen) d.seen = {};
   if (!Array.isArray(d.hidden)) d.hidden = [];
   if (!d.hiddenItems) d.hiddenItems = {};
-  // v1 kept seen-fingerprints on each item; move them to the shared "seen" map.
-  for (const c of d.campaigns) for (const it of (c.items || [])) if (it.seenHash && !d.seen[it.id]) d.seen[it.id] = it.seenHash;
   return d;
 }
 async function saveData(d) {
@@ -185,33 +186,20 @@ function localCampaign(data, id, name) {
   return c;
 }
 
-// v1 kept every frame on this computer only. When the plugin runs in a file, move that file's
-// frames into the file's manifest so the rest of the team can see them.
-async function migrateCurrentFile() {
-  const key = currentFileKey();
-  if (!key) return 0;
-  const data = await loadData();
-  const manifest = readManifest();
-  let moved = 0;
-  for (const c of data.campaigns) {
-    const keep = [];
-    for (const it of (c.items || [])) {
-      if (it.fileKey !== key) { keep.push(it); continue; }
-      const node = await figma.getNodeByIdAsync(it.nodeId);
-      if (node && 'setSharedPluginData' in node) {
-        const camp = manifest.campaigns[c.id] || (manifest.campaigns[c.id] = { name: c.name, updatedAt: Date.now(), items: {} });
-        if (!camp.items[it.nodeId]) {
-          camp.items[it.nodeId] = { name: it.name, w: it.width, h: it.height, pageName: it.pageName || '', channel: it.channel,
-            addedBy: whoAmI(), addedAt: it.addedAt || Date.now(), updatedAt: Date.now() };
-        }
-        tagNode(node, c.id, true);
-        moved += 1;
-      }
-    }
-    c.items = keep;
+// One-time move from the "Campaign Wall" test builds: keep the token and window/folder
+// preferences, drop the old campaigns and caches.
+async function carryOverOldStorage() {
+  const keys = await figma.clientStorage.keysAsync();
+  if (!OLD_KEYS.some((k) => keys.indexOf(k) >= 0)) return;
+  if (keys.indexOf(TOKEN_KEY) < 0) {
+    const token = await figma.clientStorage.getAsync('cw.token');
+    if (token) await figma.clientStorage.setAsync(TOKEN_KEY, token);
   }
-  if (moved) { writeManifest(manifest); await saveData(data); }
-  return moved;
+  if (keys.indexOf(PREFS_KEY) < 0) {
+    const prefs = await figma.clientStorage.getAsync('cw.prefs.v1');
+    if (prefs) await figma.clientStorage.setAsync(PREFS_KEY, prefs);
+  }
+  for (const k of OLD_KEYS) if (keys.indexOf(k) >= 0) await figma.clientStorage.deleteAsync(k);
 }
 
 // ---------- actions ----------
@@ -222,6 +210,7 @@ async function addSelection(msg) {
   const name = String(msg.campaignName || '').trim();
   const local = localCampaign(data, msg.campaignId, name);
   const campaignName = name || (local && local.name) || 'Campaign';
+  if (local) local.items = [];
   const manifest = readManifest();
   const camp = manifest.campaigns[msg.campaignId] || (manifest.campaigns[msg.campaignId] = { name: campaignName, updatedAt: Date.now(), items: {} });
   const page = figma.currentPage;
@@ -239,8 +228,6 @@ async function addSelection(msg) {
     };
     if (existing) updated += 1; else added += 1;
     tagNode(node, msg.campaignId, true);
-    // If this frame was also in the old on-this-computer list, the file's copy replaces it.
-    if (local) local.items = (local.items || []).filter((it) => !(it.fileKey === fileKey && it.nodeId === node.id));
     const hiddenList = data.hiddenItems[msg.campaignId];
     if (hiddenList) data.hiddenItems[msg.campaignId] = hiddenList.filter((id) => id !== fileKey + '|' + node.id);
   }
@@ -259,7 +246,6 @@ async function removeItems(msg) {
   const key = currentFileKey();
   const manifest = readManifest();
   const ids = Array.isArray(msg.itemIds) ? msg.itemIds : [msg.itemId];
-  const local = data.campaigns.find((c) => c.id === msg.campaignId);
   let removed = 0;
   let hidden = 0;
   let manifestChanged = false;
@@ -273,11 +259,6 @@ async function removeItems(msg) {
       manifestChanged = true;
       const node = await figma.getNodeByIdAsync(nodeId);
       if (node && 'setSharedPluginData' in node) tagNode(node, msg.campaignId, false);
-      removed += 1;
-      continue;
-    }
-    if (local && (local.items || []).some((it) => it.id === id)) {
-      local.items = local.items.filter((it) => it.id !== id);
       removed += 1;
       continue;
     }
@@ -299,7 +280,6 @@ async function setChannel(msg) {
   const key = currentFileKey();
   const manifest = readManifest();
   const ids = Array.isArray(msg.itemIds) ? msg.itemIds : [msg.itemId];
-  const local = data.campaigns.find((c) => c.id === msg.campaignId);
   let changed = 0;
   let elsewhere = 0;
   let manifestChanged = false;
@@ -313,8 +293,6 @@ async function setChannel(msg) {
       camp.items[nodeId].updatedAt = Date.now();
       manifestChanged = true; changed += 1; continue;
     }
-    const legacy = local && (local.items || []).find((it) => it.id === id);
-    if (legacy) { legacy.channel = msg.channel; changed += 1; continue; }
     elsewhere += 1;
   }
   if (manifestChanged) writeManifest(manifest);
@@ -344,10 +322,9 @@ async function openItem(msg) {
 
 async function handle(msg) {
   switch (msg.type) {
-    case 'init': {
-      const moved = await migrateCurrentFile();
-      return sendState(moved ? { message: moved + ' frame' + (moved === 1 ? '' : 's') + ' in this file now shared with your team.' } : null);
-    }
+    case 'init':
+      await carryOverOldStorage();
+      return sendState();
     case 'save-token':
       await figma.clientStorage.setAsync(TOKEN_KEY, String(msg.token || '').trim());
       return sendState({ message: msg.token ? 'Token saved on this computer.' : 'Token removed.' });

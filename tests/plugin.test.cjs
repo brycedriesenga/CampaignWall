@@ -42,6 +42,8 @@ function makeEnv({ fileKey, fileName = 'Holiday Emails', user = 'Bryce', store }
     clientStorage: {
       async getAsync(k) { await tick(1); return store.has(k) ? structuredClone(store.get(k)) : undefined },
       async setAsync(k, v) { await tick(1); store.set(k, structuredClone(v)) },
+      async deleteAsync(k) { await tick(1); store.delete(k) },
+      async keysAsync() { await tick(1); return [...store.keys()] },
     },
     ui: { onmessage: null, postMessage: null, resize(w, h) { env.size = [w, h] } },
     showUI() {}, notify() {}, on(ev, fn) { handlers[ev] = fn },
@@ -54,7 +56,7 @@ function makeEnv({ fileKey, fileName = 'Holiday Emails', user = 'Bryce', store }
   // What the REST API would return for this file's document (root + first page plugin data).
   env.document = () => ({
     id: '0:0', type: 'DOCUMENT', name: 'Document',
-    sharedPluginData: root._d['campaignwall/manifest'] ? { campaignwall: { manifest: root._d['campaignwall/manifest'] } } : undefined,
+    sharedPluginData: root._d['showroom/manifest'] ? { showroom: { manifest: root._d['showroom/manifest'] } } : undefined,
     children: [{ id: '0:1', type: 'CANVAS', name: 'Emails' }],
   })
   return env
@@ -168,13 +170,13 @@ function pointer(w, type, target, extra) {
   bryce.setSel([a, b, c, t]); await tick(150)
   check('selection offers to add 3 frames', /Add 3 frames to Holiday 2026/.test(text(wb)), text(wb).slice(0, 200))
   click(wb, '#add'); await tick(80)
-  const manifest = JSON.parse(bryce.root._d['campaignwall/manifest'])
+  const manifest = JSON.parse(bryce.root._d['showroom/manifest'])
   const cid = Object.keys(manifest.campaigns)[0]
   const mItems = manifest.campaigns[cid].items
   check('frames saved into the FILE (team-visible), with guessed channels', Object.keys(mItems).length === 3 && mItems['1:2'].channel === 'Email' && mItems['1:3'].channel === 'Site' && mItems['1:4'].channel === 'Social')
   check('who added it is recorded', mItems['1:2'].addedBy === 'Bryce')
-  check('backup copy on first page', bryce.page._d['campaignwall/manifest'] === bryce.root._d['campaignwall/manifest'])
-  check('nothing kept only on this computer', bryce.store.get('cw.data.v1').campaigns[0].items.length === 0)
+  check('backup copy on first page', bryce.page._d['showroom/manifest'] === bryce.root._d['showroom/manifest'])
+  check('nothing kept only on this computer', bryce.store.get('showroom.data').campaigns[0].items.length === 0)
   bryce.setSel([a]); await tick(150)
   check('re-select shows In campaign', /In campaign/.test(text(wb)) && /Update frame in Holiday 2026/.test(text(wb)))
 
@@ -270,13 +272,13 @@ function pointer(w, type, target, extra) {
   sam.setSel([mpu]); await tick(150)
   check('Sam can add to the same campaign', /Add frame to Holiday 2026/.test(text(ws)))
   click(ws, '#add'); await tick(80)
-  const samManifest = JSON.parse(sam.root._d['campaignwall/manifest'])
+  const samManifest = JSON.parse(sam.root._d['showroom/manifest'])
   check('Sam’s frame saved in Sam’s file under the same campaign ID', !!samManifest.campaigns[cid] && samManifest.campaigns[cid].items['7:1'].channel === 'Display ads')
   // creating a twin by name joins the existing one
   click(ws, '#new-campaign'); await tick(10)
   $(ws, '#campaign-name').value = 'holiday 2026'
   click(ws, '#create'); await tick(80)
-  check('same-name campaign joins instead of duplicating', !sam.store.get('cw.data.v1').campaigns.some((x) => x.name === 'holiday 2026'))
+  check('same-name campaign joins instead of duplicating', !sam.store.get('showroom.data').campaigns.some((x) => x.name === 'holiday 2026'))
 
   // Bryce searches and sees Sam's frame
   api.files.ADFILE00002.touched = new Date(Date.now() + 1000).toISOString()
@@ -292,28 +294,25 @@ function pointer(w, type, target, extra) {
   // Bryce removes Sam's frame → hidden only for Bryce; removes his own → removed for everyone
   const samItem = [...wb.document.querySelectorAll('[data-remove]')].find((el) => /ADFILE00002/.test(el.dataset.remove))
   samItem.click(); await tick(80)
-  check('removing a frame from another file hides it for you only', bryce.store.get('cw.data.v1').hiddenItems[cid].length === 1 && /hidden on your wall/.test(text(wb)))
+  check('removing a frame from another file hides it for you only', bryce.store.get('showroom.data').hiddenItems[cid].length === 1 && /hidden on your wall/.test(text(wb)))
   click(wb, '#unhide-items'); await tick(80)
   check('hidden frames can be shown again', /5\s*frames/.test(text(wb)))
   const ownItem = [...wb.document.querySelectorAll('[data-remove]')].find((el) => /EMAILFILE0001\|1:4/.test(el.dataset.remove))
   ownItem.click(); await tick(80)
-  check('removing a frame in this file removes it for everyone', !JSON.parse(bryce.root._d['campaignwall/manifest']).campaigns[cid].items['1:4'] && !c._d['campaignwall/campaigns'].includes(cid))
+  check('removing a frame in this file removes it for everyone', !JSON.parse(bryce.root._d['showroom/manifest']).campaigns[cid].items['1:4'] && !c._d['showroom/campaigns'].includes(cid))
 
-  // ===== migration from the first test build =====
-  const legacyStore = new Map()
-  legacyStore.set('cw.data.v1', { version: 1, activeCampaignId: 'c_old', channels: ['Site', 'Email', 'Social', 'Display ads', 'Amazon', 'Retail', 'Other'],
-    campaigns: [{ id: 'c_old', name: 'Spring', createdAt: 1, items: [
-      { id: 'LEGACYFILE01|3:1', fileKey: 'LEGACYFILE01', fileName: 'Spring Site', nodeId: '3:1', name: 'Hero', width: 1440, height: 700, channel: 'Site', seenHash: 'abc' },
-      { id: 'OTHERFILE001|9:9', fileKey: 'OTHERFILE001', fileName: 'Spring Email', nodeId: '9:9', name: 'Email', width: 600, height: 1500, channel: 'Email' }] }] })
-  legacyStore.set('cw.token', 'figd_test')
-  const old = makeEnv({ fileKey: 'LEGACYFILE01', fileName: 'Spring Site', store: legacyStore })
-  old.mk('3:1', 'Hero', 'FRAME', 1440, 700)
-  const wo = await boot(old, makeApi())
+  // ===== carry-over from the Campaign Wall test builds =====
+  const oldStore = new Map()
+  oldStore.set('cw.token', 'figd_old')
+  oldStore.set('cw.prefs.v1', { wallSize: { width: 1400, height: 900 }, folders: [{ id: '111', name: 'Email' }] })
+  oldStore.set('cw.data.v1', { version: 1, campaigns: [{ id: 'c_old', name: 'Old campaign', items: [{ id: 'X|1:1', fileKey: 'X', nodeId: '1:1', name: 'Old', channel: 'Site' }] }] })
+  oldStore.set('cw.cache.v1', { files: {} })
+  const fresh = makeEnv({ fileKey: 'NEWFILE00001', fileName: 'New file', store: oldStore })
+  const wf = await boot(fresh, makeApi())
   await tick(100)
-  const om = JSON.parse(old.root._d['campaignwall/manifest'] || '{}')
-  check('old frames in this file move into the file', om.campaigns && om.campaigns.c_old && om.campaigns.c_old.items['3:1'].channel === 'Site')
-  check('seen state carried over', legacyStore.get('cw.data.v1').seen['LEGACYFILE01|3:1'] === 'abc')
-  check('frames in other files stay listed, flagged as only on this computer', /1 frame is only on your computer/.test(text(wo)) && /2\s*frames from 2 files/.test(text(wo)), text(wo).slice(0, 300))
+  check('old token and preferences carry over', oldStore.get('showroom.token') === 'figd_old' && oldStore.get('showroom.prefs').folders.length === 1)
+  check('old campaigns and caches are cleared', !oldStore.has('cw.data.v1') && !oldStore.has('cw.cache.v1') && !oldStore.has('cw.token'))
+  check('starts fresh', /Start a campaign/.test(text(wf)))
 
   // ===== two windows on one computer =====
   const winA = makeEnv({ fileKey: 'EMAILFILE0001', store: new Map() })

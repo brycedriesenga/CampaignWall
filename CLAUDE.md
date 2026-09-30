@@ -2,10 +2,11 @@
 
 Classic (non-generative) Figma plugin. Bryce's team keeps design files in per-channel Figma folders (Site, Email, Social, Ads…). This plugin lets you add specific frames from any of those files to a campaign, then view every campaign frame together at real size on a pan/zoom wall inside the plugin window. It replaces an earlier generative plugin ("Campaign Hub") that copied snapshots between files. Copies went stale and the wall file couldn't see source changes.
 
-**Name:** the plugin was renamed from "Campaign Wall" to **Showroom** on 2026-09-30. Internal identifiers deliberately keep the old name so existing data keeps working. Don't rename these:
-- the shared plugin data namespace `campaignwall` (tags and manifests already saved in design files);
-- the clientStorage keys `cw.*`;
-- the manifest `id`, because clientStorage is scoped to the plugin ID.
+**Name:** the plugin was renamed from "Campaign Wall" to **Showroom** on 2026-09-30, and the team started fresh.
+- Internal names now use `showroom`: the plugin data namespace `showroom`, and clientStorage keys `showroom.*`.
+- On first run, `carryOverOldStorage()` copies `cw.token` and `cw.prefs.v1`, then deletes the old `cw.*` keys.
+- Old `campaignwall/*` tags left in files are ignored.
+- The manifest `id` is unchanged. clientStorage is scoped to it, and a new ID would need registering with Figma.
 
 The owner is a designer who vibe-codes. Keep the code plain JavaScript with no build step, explain changes in plain language, and keep files readable.
 
@@ -26,20 +27,19 @@ The owner is a designer who vibe-codes. Keep the code plain JavaScript with no b
 ## Team sharing (v0.2)
 
 Campaign membership lives **inside each design file**, so it's shared with no server.
-- **Where it's stored:** shared plugin data `campaignwall/manifest` on the document root, with an identical backup copy on the first page.
+- **Where it's stored:** shared plugin data `showroom/manifest` on the document root, with an identical backup copy on the first page.
   - The backup exists because it's unverified whether `GET /v1/files/:key?plugin_data=shared` returns plugin data on the DOCUMENT node.
   - Readers take whichever copy has the newest `updatedAt`.
 - **Manifest shape:** `{ v:1, fileKey, fileName, updatedAt, campaigns: { [campaignId]: { name, updatedAt, items: { [nodeId]: { name, w, h, pageName, channel, addedBy, addedAt, updatedAt } } } } }`. Size limit about 95 kB; empty campaigns are dropped.
 - **Discovery** (`discover()` in ui.html):
   - List files in the team folders: `GET /v2/folders/:id/files`, falling back to `/v1/projects/:id/files` (tier 2).
   - Read the manifest of each file that's new and edited in the last `TEAM.searchDays`, or edited since it was last seen: `GET /v1/files/:key?depth=1&plugin_data=shared` (tier 1).
-  - Results are cached in `cw.scan.v1`. It runs on open if the last search is more than 5 minutes old, on wall open, and from the refresh button in the footer.
+  - Results are cached in `showroom.scan`. It runs on open if the last search is more than 5 minutes old, on wall open, and from the refresh button in the footer.
 - **Campaign list:** `allCampaigns()` merges the current file's live manifest (from code.js), the scanned manifests, and local data.
-  - Local data holds drafts, and v1 "legacy" items that aren't migrated yet.
+  - Local data only holds drafts (campaigns with no frames yet).
   - A campaign's name comes from the manifest entry with the newest `updatedAt`.
 - **Edits:** only the file a frame lives in can change it (add, remove, channel).
   - From other files, "remove" hides the frame for this user (`data.hiddenItems`), and channel changes are refused with a message.
-- **Migration:** on `init`, v1 local items that belong to the current file are moved into its manifest. Items in other files stay local until the plugin runs there, and the panel shows a notice about them.
 - **Name clashes:** creating a campaign with an existing name (case-insensitive) joins the existing one.
 - **Team folder config:** `TEAM.folders` at the top of ui.html is built in. Users can add more in Settings (`prefs.folders`).
 
@@ -51,13 +51,13 @@ Campaign membership lives **inside each design file**, so it's shared with no se
 
 ## Storage (clientStorage, per user and machine)
 
-- `cw.data.v1` (now version 2): `{ activeCampaignId, channels[], campaigns: [{ id, name, createdAt, renamedAt, items[] (legacy only) }], seen: { itemId: hash }, hidden: [campaignId], hiddenItems: { campaignId: [itemId] }, rev, savedAt }`
-- `cw.token`: the personal access token.
-- `cw.cache.v1`: `{ savedAt, files: { [fileKey]: { name, version, stamp, lastTouchedAt, lastTouchedBy, checkedAt, error, nodes: { [nodeId]: { name, width, height, viewW, viewH, offX, offY, hash, url, urlAt, changedAt, missing, renderFailed } } } } }`
-- `cw.scan.v1`: `{ savedAt, checkedAt, folders: { id: { name, checkedAt, count, error } }, files: { key: { name, lastModified, scannedAt, manifest|null, error } } }`
-- `cw.prefs.v1`: `{ me, wallSize, folders: [{ id, name }] }`
-- On frames: `campaignwall/campaigns` holds a JSON array of campaign IDs. It's used for relaunch buttons.
-- On the file root: `campaignwall/fileKey` holds a pasted file key when `figma.fileKey` is unavailable.
+- `showroom.data`: `{ activeCampaignId, channels[], campaigns: [{ id, name, createdAt, renamedAt }] (drafts and names), seen: { itemId: hash }, hidden: [campaignId], hiddenItems: { campaignId: [itemId] }, rev, savedAt }`
+- `showroom.token`: the personal access token.
+- `showroom.cache`: `{ savedAt, files: { [fileKey]: { name, version, stamp, lastTouchedAt, lastTouchedBy, checkedAt, error, nodes: { [nodeId]: { name, width, height, viewW, viewH, offX, offY, hash, url, urlAt, changedAt, missing, renderFailed } } } } }`
+- `showroom.scan`: `{ savedAt, checkedAt, folders: { id: { name, checkedAt, count, error } }, files: { key: { name, lastModified, scannedAt, manifest|null, error } } }`
+- `showroom.prefs`: `{ me, wallSize, folders: [{ id, name }] }`
+- On frames: `showroom/campaigns` holds a JSON array of campaign IDs. It's used for relaunch buttons.
+- On the file root: `showroom/fileKey` holds a pasted file key when `figma.fileKey` is unavailable.
 
 **Rate limiting:** `tier1Gate()` spaces tier-1 calls (file reads, renders) to 12 per minute. Tests raise the cap with `window.CW_TIER1_PER_MIN`.
 
