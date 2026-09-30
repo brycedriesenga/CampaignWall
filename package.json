@@ -1,0 +1,12 @@
+{
+  "name": "campaign-wall",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Figma plugin: add frames from any file to a campaign and review them together on one live wall.",
+  "scripts": {
+    "test": "node tests/plugin.test.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "^26.0.0"
+  }
+}

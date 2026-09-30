@@ -18,15 +18,43 @@ The owner is a designer who vibe-codes. Keep the code plain JavaScript with no b
   - The wall is DOM, not canvas. `#world` is absolutely positioned and moved with a `translate() scale()` transform.
   - Labels and channel headings are counter-scaled with the CSS vars `--inv` and `--z`, so they stay screen-sized.
 
+## Team sharing (v0.2)
+
+Campaign membership lives **inside each design file**, so it's shared with no server.
+- **Where it's stored:** shared plugin data `campaignwall/manifest` on the document root, with an identical backup copy on the first page.
+  - The backup exists because it's unverified whether `GET /v1/files/:key?plugin_data=shared` returns plugin data on the DOCUMENT node.
+  - Readers take whichever copy has the newest `updatedAt`.
+- **Manifest shape:** `{ v:1, fileKey, fileName, updatedAt, campaigns: { [campaignId]: { name, updatedAt, items: { [nodeId]: { name, w, h, pageName, channel, addedBy, addedAt, updatedAt } } } } }`. Size limit about 95 kB; empty campaigns are dropped.
+- **Discovery** (`discover()` in ui.html):
+  - List files in the team folders: `GET /v2/folders/:id/files`, falling back to `/v1/projects/:id/files` (tier 2).
+  - Read the manifest of each file that's new and edited in the last `TEAM.searchDays`, or edited since it was last seen: `GET /v1/files/:key?depth=1&plugin_data=shared` (tier 1).
+  - Results are cached in `cw.scan.v1`. It runs on open if the last search is more than 5 minutes old, on wall open, and from the refresh button in the footer.
+- **Campaign list:** `allCampaigns()` merges the current file's live manifest (from code.js), the scanned manifests, and local data.
+  - Local data holds drafts, and v1 "legacy" items that aren't migrated yet.
+  - A campaign's name comes from the manifest entry with the newest `updatedAt`.
+- **Edits:** only the file a frame lives in can change it (add, remove, channel).
+  - From other files, "remove" hides the frame for this user (`data.hiddenItems`), and channel changes are refused with a message.
+- **Migration:** on `init`, v1 local items that belong to the current file are moved into its manifest. Items in other files stay local until the plugin runs there, and the panel shows a notice about them.
+- **Name clashes:** creating a campaign with an existing name (case-insensitive) joins the existing one.
+- **Team folder config:** `TEAM.folders` at the top of ui.html is built in. Users can add more in Settings (`prefs.folders`).
+
+## History (v0.2)
+
+- `GET /v1/files/:key/versions?page_size=30` (tier 2) returns the versions. Paging uses `pagination.next_page`.
+- Picking a version runs `GET /v1/images/:key?ids=<node>&version=<id>` (tier 1). Renders are cached in `S.historyRenders` for the session.
+- **Then/Now** flips between that render and the current wall image. **Open** uses `openExternal` with a `version-id` link.
+
 ## Storage (clientStorage, per user and machine)
 
-- `cw.data.v1`: `{ version, activeCampaignId, channels[], campaigns: [{ id, name, createdAt, items[] }] }`
-  - Each item: `{ id: fileKey|nodeId, fileKey, fileName, nodeId, name, width, height, pageName, channel, addedAt, seenHash }`
+- `cw.data.v1` (now version 2): `{ activeCampaignId, channels[], campaigns: [{ id, name, createdAt, renamedAt, items[] (legacy only) }], seen: { itemId: hash }, hidden: [campaignId], hiddenItems: { campaignId: [itemId] }, rev, savedAt }`
 - `cw.token`: the personal access token.
-- `cw.cache.v1`: `{ files: { [fileKey]: { name, version, lastTouchedAt, lastTouchedBy, checkedAt, error, nodes: { [nodeId]: { name, width, height, hash, url, urlAt, changedAt, missing, renderFailed } } } } }`
-- `cw.prefs.v1`: `{ me: { handle, email }, wallSize }`
-- On frames: shared plugin data `campaignwall/campaigns` holds a JSON array of campaign IDs. It isn't read yet; it's there for future discovery.
-- On the file root: shared plugin data `campaignwall/fileKey` holds the key pasted by the user when `figma.fileKey` is unavailable.
+- `cw.cache.v1`: `{ savedAt, files: { [fileKey]: { name, version, stamp, lastTouchedAt, lastTouchedBy, checkedAt, error, nodes: { [nodeId]: { name, width, height, viewW, viewH, offX, offY, hash, url, urlAt, changedAt, missing, renderFailed } } } } }`
+- `cw.scan.v1`: `{ savedAt, checkedAt, folders: { id: { name, checkedAt, count, error } }, files: { key: { name, lastModified, scannedAt, manifest|null, error } } }`
+- `cw.prefs.v1`: `{ me, wallSize, folders: [{ id, name }] }`
+- On frames: `campaignwall/campaigns` holds a JSON array of campaign IDs. It's used for relaunch buttons.
+- On the file root: `campaignwall/fileKey` holds a pasted file key when `figma.fileKey` is unavailable.
+
+**Rate limiting:** `tier1Gate()` spaces tier-1 calls (file reads, renders) to 12 per minute. Tests raise the cap with `window.CW_TIER1_PER_MIN`.
 
 ## Freshness algorithm (`refreshWall(mode)` in ui.html)
 
@@ -64,24 +92,21 @@ Rate limits: tier 1 is about 15 requests/min on an Organization plan with a Full
 
 ## Messages (UI → code)
 
-`init`, `save-token`, `create-campaign`, `rename-campaign`, `delete-campaign`, `set-active`, `add-selection {campaignId, channel|'auto'}`, `remove-item`, `set-channel`, `mark-seen {seen: {itemId: hash}}`, `set-file-key {url}`, `save-cache`, `save-prefs`, `resize`, `open-item {fileKey, nodeId}`, `import-campaign {json}`, `notify`.
+`init`, `save-token`, `create-campaign`, `rename-campaign`, `hide-campaign {shared}`, `unhide-campaign`, `unhide-items`, `set-active {campaignId, campaignName}`, `add-selection {campaignId, campaignName, channel|'auto'}`, `remove-item {itemIds}`, `set-channel {itemIds, channel}`, `mark-seen {seen}`, `set-file-key {url}`, `save-cache`, `save-scan`, `save-prefs`, `resize`, `open-item {fileKey, nodeId, versionId?}`, `notify`.
 
 Code → UI: `state` (full), `selection`, `error`.
 
 ## Status and open questions
 
-- Tested in real Figma on 2026-09-29. The API and images load fine from the plugin iframe, and `figma.fileKey` works in development. Two bugs from that test are fixed: edits not appearing on refresh, and double-click not opening the frame.
+- v0.1 was tested in real Figma on 2026-09-29. The API and images load fine from the plugin iframe, and `figma.fileKey` works in development.
+- v0.2 adds team sharing and history. It's tested with `npm test` (46 checks) and screenshots, but not yet in real Figma. Things to confirm there:
+  - that `plugin_data=shared` returns the root or page manifest;
+  - that the v2 folders endpoint's response fields match what the code parses;
+  - that the image render for a version works for old versions.
 
 ## Next steps (not built)
 
-0. **Image history.** Idea discussed, not built:
-   - Render past states on demand with `GET /v1/images/:key?version=<id>`, with versions from `GET /v1/files/:key/versions`. That needs the `file_versions:read` scope.
-   - Optionally keep small local thumbnails of each detected change. clientStorage has about 5 MB, and it's unverified whether S3 image bytes can be read, given CORS and canvas tainting.
-
-1. **Team-shared campaigns.** Candidate designs:
-   - A "campaign file" whose root plugin data holds the list.
-   - Discovery by scanning the channel projects for the `campaignwall/campaigns` tags.
-2. Editable channel list and statuses.
-3. Review notes posted as real Figma comments (`POST /v1/files/:key/comments` with `client_meta` for the node).
-4. Version history per frame.
-5. Export the wall (PNG or PDF) for stakeholders without Full seats.
+1. Editable channel list and statuses.
+2. Review notes posted as real Figma comments (`POST /v1/files/:key/comments` with `client_meta` for the node).
+3. Export the wall (PNG or PDF) for stakeholders without Full seats.
+4. Show "this frame changed in this version" in History. That needs node reads per version, which is expensive, so it's opt-in at most.

@@ -1,27 +1,41 @@
-// Campaign Wall — test build.
-// This file runs in Figma's plugin sandbox. It owns local storage, the current
-// selection, this file's identity, and navigation. All calls to Figma's REST API
-// happen in ui.html, because only the UI window can make network requests.
+// Campaign Wall — code.js
+// Runs in Figma's plugin sandbox. It owns this computer's storage, the current selection,
+// this file's identity, the campaign list stored inside this file, and navigation.
+// All calls to Figma's REST API happen in ui.html, because only the UI window can use the network.
+//
+// Where campaign membership lives (so the whole team sees the same campaigns):
+//   Every design file that has campaign frames carries a small "manifest" in its own shared
+//   plugin data: which campaigns, which frames, which channel. Teammates' plugins find those
+//   manifests by searching the team's channel folders through the API (see discover() in ui.html).
+//   This computer's storage only keeps personal things: token, cache, what you've seen, hidden items.
 
-const NS = 'campaignwall';                 // shared plugin data namespace (tags on frames)
-const DATA_KEY = 'cw.data.v1';             // campaigns and their frames (this computer)
-const TOKEN_KEY = 'cw.token';              // personal access token (this computer)
+const NS = 'campaignwall';                 // shared plugin data namespace
+const MANIFEST_KEY = 'manifest';           // file root (+ first page, as a backup copy)
+const DATA_KEY = 'cw.data.v1';             // personal: active campaign, drafts, seen, hidden
+const TOKEN_KEY = 'cw.token';              // personal access token (this computer only)
 const CACHE_KEY = 'cw.cache.v1';           // what the wall last saw from the API
-const PREFS_KEY = 'cw.prefs.v1';           // window size etc.
-const PANEL_SIZE = { width: 360, height: 620 };
+const SCAN_KEY = 'cw.scan.v1';             // what the folder search found
+const PREFS_KEY = 'cw.prefs.v1';           // window size, extra folders, etc.
+const PANEL_SIZE = { width: 360, height: 640 };
+const MANIFEST_LIMIT = 95000;              // Figma allows 100 kB per plugin data entry
 const ELIGIBLE = ['FRAME', 'COMPONENT', 'COMPONENT_SET', 'INSTANCE', 'GROUP', 'SECTION'];
 const DEFAULT_CHANNELS = ['Site', 'Email', 'Social', 'Display ads', 'Amazon', 'Retail', 'Other'];
 const AD_SIZES = ['300x250', '728x90', '160x600', '300x600', '320x50', '320x100', '970x250', '970x90',
   '336x280', '468x60', '250x250', '200x200', '300x50', '120x600'];
 
-// ---------- storage ----------
+// ---------- personal storage ----------
 function emptyData() {
-  return { version: 1, campaigns: [], activeCampaignId: '', channels: DEFAULT_CHANNELS.slice() };
+  return { version: 2, campaigns: [], activeCampaignId: '', channels: DEFAULT_CHANNELS.slice(), seen: {}, hidden: [], hiddenItems: {} };
 }
 async function loadData() {
   const d = await figma.clientStorage.getAsync(DATA_KEY);
   if (!d || !Array.isArray(d.campaigns)) return emptyData();
   if (!Array.isArray(d.channels) || !d.channels.length) d.channels = DEFAULT_CHANNELS.slice();
+  if (!d.seen) d.seen = {};
+  if (!Array.isArray(d.hidden)) d.hidden = [];
+  if (!d.hiddenItems) d.hiddenItems = {};
+  // v1 kept seen-fingerprints on each item; move them to the shared "seen" map.
+  for (const c of d.campaigns) for (const it of (c.items || [])) if (it.seenHash && !d.seen[it.id]) d.seen[it.id] = it.seenHash;
   return d;
 }
 async function saveData(d) {
@@ -73,6 +87,44 @@ function findPage(node) {
   return current;
 }
 
+function whoAmI() {
+  try { return figma.currentUser ? figma.currentUser.name : ''; } catch (e) { return ''; }
+}
+
+// ---------- the manifest stored inside this file ----------
+function parseManifest(raw) {
+  try {
+    const m = raw ? JSON.parse(raw) : null;
+    return m && m.campaigns && typeof m.campaigns === 'object' ? m : null;
+  } catch (e) { return null; }
+}
+
+function readManifest() {
+  // Root copy is the main one; the first page holds a backup copy. Use whichever is newer.
+  const fromRoot = parseManifest(figma.root.getSharedPluginData(NS, MANIFEST_KEY));
+  const page = figma.root.children[0];
+  const fromPage = page ? parseManifest(page.getSharedPluginData(NS, MANIFEST_KEY)) : null;
+  let best = fromRoot;
+  if (fromPage && (!best || (fromPage.updatedAt || 0) > (best.updatedAt || 0))) best = fromPage;
+  return best || { v: 1, campaigns: {} };
+}
+
+function writeManifest(manifest) {
+  manifest.v = 1;
+  manifest.fileKey = currentFileKey();
+  manifest.fileName = figma.root.name;
+  manifest.updatedAt = Date.now();
+  for (const id of Object.keys(manifest.campaigns)) {
+    const c = manifest.campaigns[id];
+    if (!c.items || !Object.keys(c.items).length) delete manifest.campaigns[id];
+  }
+  const json = JSON.stringify(manifest);
+  if (json.length > MANIFEST_LIMIT) throw new Error('This file has too many campaign frames for one file’s storage. Remove some older campaigns from it first.');
+  figma.root.setSharedPluginData(NS, MANIFEST_KEY, json);
+  const page = figma.root.children[0];
+  if (page) page.setSharedPluginData(NS, MANIFEST_KEY, json);
+}
+
 function readTags(node) {
   try {
     const raw = node.getSharedPluginData(NS, 'campaigns');
@@ -81,8 +133,7 @@ function readTags(node) {
   } catch (e) { return []; }
 }
 
-// Tags live on the frame too, so a future version can discover campaign frames
-// straight from files. The local campaign list is what the wall uses today.
+// A tag on the frame too, so Figma shows a relaunch button for it in the right sidebar.
 function tagNode(node, campaignId, add) {
   const tags = readTags(node).filter((id) => id !== campaignId);
   if (add) tags.push(campaignId);
@@ -91,15 +142,12 @@ function tagNode(node, campaignId, add) {
   else node.setRelaunchData({});
 }
 
-function selectionInfo(data) {
-  const key = currentFileKey();
+function selectionInfo(manifest) {
   const items = [];
   let skipped = 0;
   for (const node of figma.currentPage.selection) {
     if (!isEligible(node)) { skipped += 1; continue; }
-    const inCampaigns = data.campaigns
-      .filter((c) => c.items.some((i) => i.nodeId === node.id && i.fileKey === key))
-      .map((c) => c.id);
+    const inCampaigns = Object.keys(manifest.campaigns).filter((cid) => manifest.campaigns[cid].items[node.id]);
     items.push({
       id: node.id, name: node.name, type: node.type,
       width: Math.round(node.width), height: Math.round(node.height),
@@ -113,79 +161,172 @@ async function sendState(extra) {
   const data = await loadData();
   const token = (await figma.clientStorage.getAsync(TOKEN_KEY)) || '';
   const cache = (await figma.clientStorage.getAsync(CACHE_KEY)) || { files: {} };
+  const scan = (await figma.clientStorage.getAsync(SCAN_KEY)) || { files: {} };
   const prefs = await loadPrefs();
-  seen.rev = data.rev || 0;
-  seen.cacheAt = cache.savedAt || 0;
+  const manifest = readManifest();
+  watched.rev = data.rev || 0;
+  watched.cacheAt = cache.savedAt || 0;
+  watched.scanAt = scan.savedAt || 0;
+  watched.manifestAt = manifest.updatedAt || 0;
   figma.ui.postMessage(Object.assign({
-    type: 'state', data: data, token: token, cache: cache, prefs: prefs,
-    selection: selectionInfo(data),
-    file: { key: currentFileKey(), name: figma.root.name, keyFromApi: !!figma.fileKey },
+    type: 'state', data: data, token: token, cache: cache, scan: scan, prefs: prefs,
+    selection: selectionInfo(manifest),
+    file: { key: currentFileKey(), name: figma.root.name, keyFromApi: !!figma.fileKey, manifest: manifest },
   }, extra || {}));
 }
 
 async function sendSelection() {
-  const data = await loadData();
-  figma.ui.postMessage({ type: 'selection', selection: selectionInfo(data) });
+  figma.ui.postMessage({ type: 'selection', selection: selectionInfo(readManifest()) });
 }
 
-function findCampaign(data, id) {
-  const campaign = data.campaigns.find((c) => c.id === id);
-  if (!campaign) throw new Error('That campaign no longer exists.');
-  return campaign;
+function localCampaign(data, id, name) {
+  let c = data.campaigns.find((x) => x.id === id);
+  if (!c && name) { c = { id: id, name: name, createdAt: Date.now(), items: [] }; data.campaigns.push(c); }
+  return c;
+}
+
+// v1 kept every frame on this computer only. When the plugin runs in a file, move that file's
+// frames into the file's manifest so the rest of the team can see them.
+async function migrateCurrentFile() {
+  const key = currentFileKey();
+  if (!key) return 0;
+  const data = await loadData();
+  const manifest = readManifest();
+  let moved = 0;
+  for (const c of data.campaigns) {
+    const keep = [];
+    for (const it of (c.items || [])) {
+      if (it.fileKey !== key) { keep.push(it); continue; }
+      const node = await figma.getNodeByIdAsync(it.nodeId);
+      if (node && 'setSharedPluginData' in node) {
+        const camp = manifest.campaigns[c.id] || (manifest.campaigns[c.id] = { name: c.name, updatedAt: Date.now(), items: {} });
+        if (!camp.items[it.nodeId]) {
+          camp.items[it.nodeId] = { name: it.name, w: it.width, h: it.height, pageName: it.pageName || '', channel: it.channel,
+            addedBy: whoAmI(), addedAt: it.addedAt || Date.now(), updatedAt: Date.now() };
+        }
+        tagNode(node, c.id, true);
+        moved += 1;
+      }
+    }
+    c.items = keep;
+  }
+  if (moved) { writeManifest(manifest); await saveData(data); }
+  return moved;
 }
 
 // ---------- actions ----------
 async function addSelection(msg) {
   const data = await loadData();
-  const campaign = findCampaign(data, msg.campaignId);
   const fileKey = currentFileKey();
   if (!fileKey) return { needFileKey: true };
+  const name = String(msg.campaignName || '').trim();
+  const local = localCampaign(data, msg.campaignId, name);
+  const campaignName = name || (local && local.name) || 'Campaign';
+  const manifest = readManifest();
+  const camp = manifest.campaigns[msg.campaignId] || (manifest.campaigns[msg.campaignId] = { name: campaignName, updatedAt: Date.now(), items: {} });
   const page = figma.currentPage;
   let added = 0;
   let updated = 0;
   for (const node of page.selection) {
     if (!isEligible(node)) continue;
-    const id = fileKey + '|' + node.id;
-    const existing = campaign.items.find((i) => i.id === id);
+    const existing = camp.items[node.id];
     const channel = msg.channel && msg.channel !== 'auto'
       ? msg.channel
       : (existing ? existing.channel : guessChannel(node.width, node.height));
-    const base = {
-      id: id, fileKey: fileKey, fileName: figma.root.name, nodeId: node.id, name: node.name,
-      width: Math.round(node.width), height: Math.round(node.height), pageName: page.name, channel: channel,
+    camp.items[node.id] = {
+      name: node.name, w: Math.round(node.width), h: Math.round(node.height), pageName: page.name, channel: channel,
+      addedBy: existing ? existing.addedBy : whoAmI(), addedAt: existing ? existing.addedAt : Date.now(), updatedAt: Date.now(),
     };
-    if (existing) { Object.assign(existing, base); updated += 1; }
-    else { base.addedAt = Date.now(); campaign.items.push(base); added += 1; }
-    tagNode(node, campaign.id, true);
+    if (existing) updated += 1; else added += 1;
+    tagNode(node, msg.campaignId, true);
+    // If this frame was also in the old on-this-computer list, the file's copy replaces it.
+    if (local) local.items = (local.items || []).filter((it) => !(it.fileKey === fileKey && it.nodeId === node.id));
+    const hiddenList = data.hiddenItems[msg.campaignId];
+    if (hiddenList) data.hiddenItems[msg.campaignId] = hiddenList.filter((id) => id !== fileKey + '|' + node.id);
   }
-  data.activeCampaignId = campaign.id;
+  writeManifest(manifest);
+  data.activeCampaignId = msg.campaignId;
+  data.hidden = data.hidden.filter((id) => id !== msg.campaignId);
   await saveData(data);
   const parts = [];
   if (added) parts.push(added + ' added');
   if (updated) parts.push(updated + ' updated');
-  return { message: (parts.join(', ') || 'Nothing to add') + ' in ' + campaign.name + '.' };
+  return { message: (parts.join(', ') || 'Nothing to add') + ' in ' + campaignName + '. Your team will see ' + (added + updated === 1 ? 'it' : 'them') + ' too.' };
 }
 
-async function removeItem(msg) {
+async function removeItems(msg) {
   const data = await loadData();
-  const campaign = findCampaign(data, msg.campaignId);
-  const ids = Array.isArray(msg.itemIds) ? msg.itemIds : [msg.itemId];
-  const removed = campaign.items.filter((i) => ids.indexOf(i.id) >= 0);
-  campaign.items = campaign.items.filter((i) => ids.indexOf(i.id) < 0);
-  await saveData(data);
   const key = currentFileKey();
-  for (const item of removed) {
-    if (item.fileKey !== key) continue;
-    const node = await figma.getNodeByIdAsync(item.nodeId);
-    if (node && 'setSharedPluginData' in node) tagNode(node, campaign.id, false);
+  const manifest = readManifest();
+  const ids = Array.isArray(msg.itemIds) ? msg.itemIds : [msg.itemId];
+  const local = data.campaigns.find((c) => c.id === msg.campaignId);
+  let removed = 0;
+  let hidden = 0;
+  let manifestChanged = false;
+  for (const id of ids) {
+    const bar = id.indexOf('|');
+    const fileKey = id.slice(0, bar);
+    const nodeId = id.slice(bar + 1);
+    const camp = manifest.campaigns[msg.campaignId];
+    if (fileKey === key && camp && camp.items[nodeId]) {
+      delete camp.items[nodeId];
+      manifestChanged = true;
+      const node = await figma.getNodeByIdAsync(nodeId);
+      if (node && 'setSharedPluginData' in node) tagNode(node, msg.campaignId, false);
+      removed += 1;
+      continue;
+    }
+    if (local && (local.items || []).some((it) => it.id === id)) {
+      local.items = local.items.filter((it) => it.id !== id);
+      removed += 1;
+      continue;
+    }
+    // It belongs to another file: only that file can change the team's list. Hide it for you.
+    const list = data.hiddenItems[msg.campaignId] || (data.hiddenItems[msg.campaignId] = []);
+    if (list.indexOf(id) < 0) list.push(id);
+    hidden += 1;
   }
-  return { message: (removed.length === 1 ? 'Removed' : removed.length + ' frames removed') + ' from ' + campaign.name + '.' };
+  if (manifestChanged) writeManifest(manifest);
+  await saveData(data);
+  const parts = [];
+  if (removed) parts.push((removed === 1 ? 'Removed' : removed + ' removed') + ' for everyone');
+  if (hidden) parts.push((hidden === 1 ? '1 frame lives' : hidden + ' frames live') + ' in other files, so ' + (hidden === 1 ? 'it’s' : 'they’re') + ' hidden on your wall only. Remove ' + (hidden === 1 ? 'it' : 'them') + ' from ' + (hidden === 1 ? 'its' : 'their') + ' file to remove for everyone');
+  return { message: parts.join('. ') + '.' };
+}
+
+async function setChannel(msg) {
+  const data = await loadData();
+  const key = currentFileKey();
+  const manifest = readManifest();
+  const ids = Array.isArray(msg.itemIds) ? msg.itemIds : [msg.itemId];
+  const local = data.campaigns.find((c) => c.id === msg.campaignId);
+  let changed = 0;
+  let elsewhere = 0;
+  let manifestChanged = false;
+  for (const id of ids) {
+    const bar = id.indexOf('|');
+    const fileKey = id.slice(0, bar);
+    const nodeId = id.slice(bar + 1);
+    const camp = manifest.campaigns[msg.campaignId];
+    if (fileKey === key && camp && camp.items[nodeId]) {
+      camp.items[nodeId].channel = msg.channel;
+      camp.items[nodeId].updatedAt = Date.now();
+      manifestChanged = true; changed += 1; continue;
+    }
+    const legacy = local && (local.items || []).find((it) => it.id === id);
+    if (legacy) { legacy.channel = msg.channel; changed += 1; continue; }
+    elsewhere += 1;
+  }
+  if (manifestChanged) writeManifest(manifest);
+  await saveData(data);
+  if (elsewhere) return { error: (elsewhere === 1 ? 'That frame lives' : elsewhere + ' frames live') + ' in another file. Open ' + (elsewhere === 1 ? 'it' : 'them') + ' there to change the channel for everyone.' + (changed ? ' ' + changed + ' changed.' : '') };
+  return { message: 'Channel updated.' };
 }
 
 async function openItem(msg) {
   const fileKey = msg.fileKey;
   const nodeId = msg.nodeId;
-  if (fileKey && fileKey === currentFileKey()) {
+  if (fileKey && fileKey === currentFileKey() && !msg.versionId) {
     const node = await figma.getNodeByIdAsync(nodeId);
     if (node && node.type !== 'PAGE' && node.type !== 'DOCUMENT') {
       const page = findPage(node);
@@ -195,15 +336,18 @@ async function openItem(msg) {
       return { message: 'Selected “' + node.name + '” in this file.' };
     }
   }
-  const url = 'https://www.figma.com/design/' + fileKey + '/?node-id=' + encodeURIComponent(nodeId.replace(/:/g, '-'));
+  let url = 'https://www.figma.com/design/' + fileKey + '/?node-id=' + encodeURIComponent(nodeId.replace(/:/g, '-'));
+  if (msg.versionId) url += '&version-id=' + encodeURIComponent(msg.versionId);
   figma.openExternal(url);
-  return { message: 'Opening the design in its file…' };
+  return { message: msg.versionId ? 'Opening that version in Figma…' : 'Opening the design in its file…' };
 }
 
 async function handle(msg) {
   switch (msg.type) {
-    case 'init':
-      return sendState();
+    case 'init': {
+      const moved = await migrateCurrentFile();
+      return sendState(moved ? { message: moved + ' frame' + (moved === 1 ? '' : 's') + ' in this file now shared with your team.' } : null);
+    }
     case 'save-token':
       await figma.clientStorage.setAsync(TOKEN_KEY, String(msg.token || '').trim());
       return sendState({ message: msg.token ? 'Token saved on this computer.' : 'Token removed.' });
@@ -215,49 +359,65 @@ async function handle(msg) {
       data.campaigns.push(campaign);
       data.activeCampaignId = campaign.id;
       await saveData(data);
-      return sendState({ message: 'Created “' + name + '”.' });
+      return sendState({ message: 'Created “' + name + '”. It appears for your team once you add frames to it.' });
     }
     case 'rename-campaign': {
-      const data = await loadData();
-      const campaign = findCampaign(data, msg.campaignId);
       const name = String(msg.name || '').trim();
       if (!name) throw new Error('Give the campaign a name.');
-      campaign.name = name;
-      await saveData(data);
-      return sendState({ message: 'Renamed.' });
-    }
-    case 'delete-campaign': {
       const data = await loadData();
-      data.campaigns = data.campaigns.filter((c) => c.id !== msg.campaignId);
-      if (data.activeCampaignId === msg.campaignId) data.activeCampaignId = data.campaigns.length ? data.campaigns[0].id : '';
+      const local = localCampaign(data, msg.campaignId, name);
+      local.name = name;
+      local.renamedAt = Date.now();
+      const manifest = readManifest();
+      if (manifest.campaigns[msg.campaignId]) {
+        manifest.campaigns[msg.campaignId].name = name;
+        manifest.campaigns[msg.campaignId].updatedAt = Date.now();
+        writeManifest(manifest);
+      }
       await saveData(data);
-      return sendState({ message: 'Campaign deleted. Frames in files were not changed.' });
+      return sendState({ message: 'Renamed. Other files pick up the new name as they’re edited.' });
+    }
+    case 'hide-campaign': {
+      const data = await loadData();
+      if (data.hidden.indexOf(msg.campaignId) < 0) data.hidden.push(msg.campaignId);
+      const local = data.campaigns.find((c) => c.id === msg.campaignId);
+      if (local && !(local.items || []).length && !msg.shared) data.campaigns = data.campaigns.filter((c) => c.id !== msg.campaignId);
+      if (data.activeCampaignId === msg.campaignId) data.activeCampaignId = '';
+      await saveData(data);
+      return sendState({ message: msg.shared ? 'Hidden from your list. Frames in files and your team’s view aren’t changed.' : 'Campaign deleted.' });
+    }
+    case 'unhide-campaign': {
+      const data = await loadData();
+      data.hidden = data.hidden.filter((id) => id !== msg.campaignId);
+      data.activeCampaignId = msg.campaignId;
+      await saveData(data);
+      return sendState({ message: 'Campaign shown again.' });
+    }
+    case 'unhide-items': {
+      const data = await loadData();
+      delete data.hiddenItems[msg.campaignId];
+      await saveData(data);
+      return sendState({ message: 'Hidden frames shown again.' });
     }
     case 'set-active': {
       const data = await loadData();
       data.activeCampaignId = msg.campaignId;
+      localCampaign(data, msg.campaignId, msg.campaignName);
       await saveData(data);
       return sendState();
     }
-    case 'add-selection': {
-      const result = await addSelection(msg);
-      return sendState(result);
-    }
+    case 'add-selection':
+      return sendState(await addSelection(msg));
     case 'remove-item':
-      return sendState(await removeItem(msg));
+      return sendState(await removeItems(msg));
     case 'set-channel': {
-      const data = await loadData();
-      const campaign = findCampaign(data, msg.campaignId);
-      const ids = Array.isArray(msg.itemIds) ? msg.itemIds : [msg.itemId];
-      for (const item of campaign.items) if (ids.indexOf(item.id) >= 0) item.channel = msg.channel;
-      await saveData(data);
-      return sendState();
+      const result = await setChannel(msg);
+      if (result.error) { await sendState(); figma.ui.postMessage({ type: 'error', message: result.error }); return; }
+      return sendState(result);
     }
     case 'mark-seen': {
       const data = await loadData();
-      const campaign = findCampaign(data, msg.campaignId);
-      const seen = msg.seen || {};
-      for (const item of campaign.items) if (seen[item.id]) item.seenHash = seen[item.id];
+      Object.assign(data.seen, msg.seen || {});
       await saveData(data);
       return sendState();
     }
@@ -269,6 +429,11 @@ async function handle(msg) {
     }
     case 'save-cache':
       await figma.clientStorage.setAsync(CACHE_KEY, msg.cache || { files: {} });
+      watched.cacheAt = (msg.cache && msg.cache.savedAt) || watched.cacheAt;
+      return;
+    case 'save-scan':
+      await figma.clientStorage.setAsync(SCAN_KEY, msg.scan || { files: {} });
+      watched.scanAt = (msg.scan && msg.scan.savedAt) || watched.scanAt;
       return;
     case 'save-prefs': {
       const prefs = Object.assign(await loadPrefs(), msg.prefs || {});
@@ -283,22 +448,6 @@ async function handle(msg) {
     }
     case 'open-item':
       return sendState(await openItem(msg));
-    case 'import-campaign': {
-      let parsed;
-      try { parsed = JSON.parse(msg.json); } catch (e) { throw new Error('That isn’t valid campaign data.'); }
-      const incoming = parsed && parsed.type === 'campaign-wall' ? parsed.campaign : null;
-      if (!incoming || !incoming.id || !incoming.name || !Array.isArray(incoming.items)) throw new Error('That isn’t valid campaign data.');
-      const data = await loadData();
-      const existing = data.campaigns.find((c) => c.id === incoming.id);
-      if (existing) {
-        for (const item of incoming.items) if (!existing.items.some((i) => i.id === item.id)) existing.items.push(item);
-      } else {
-        data.campaigns.push({ id: incoming.id, name: incoming.name, createdAt: incoming.createdAt || Date.now(), items: incoming.items });
-      }
-      data.activeCampaignId = incoming.id;
-      await saveData(data);
-      return sendState({ message: 'Imported “' + incoming.name + '”.' });
-    }
     case 'notify':
       figma.notify(String(msg.text || '').slice(0, 140), { error: !!msg.error });
       return;
@@ -325,12 +474,18 @@ figma.on('currentpagechange', queueSelection);
 
 // The plugin can be open in several files at once, each with its own window. They share this
 // computer's storage but get no notice when another window saves, so check every few seconds.
-const seen = { rev: -1, cacheAt: 0 };
+// The same check notices a teammate editing this file's campaign list at the same time.
+const watched = { rev: -1, cacheAt: 0, scanAt: 0, manifestAt: 0 };
 setInterval(() => {
   queue = queue.then(async () => {
     const data = await loadData();
     const cache = (await figma.clientStorage.getAsync(CACHE_KEY)) || {};
-    if ((data.rev || 0) !== seen.rev || (cache.savedAt || 0) > seen.cacheAt) await sendState({ external: true });
+    const scan = (await figma.clientStorage.getAsync(SCAN_KEY)) || {};
+    const manifest = readManifest();
+    if ((data.rev || 0) !== watched.rev || (cache.savedAt || 0) > watched.cacheAt ||
+        (scan.savedAt || 0) > watched.scanAt || (manifest.updatedAt || 0) !== watched.manifestAt) {
+      await sendState({ external: true });
+    }
   }).catch(() => {});
 }, 3000);
 

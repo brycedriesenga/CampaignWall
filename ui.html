@@ -109,6 +109,19 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 .fr .edge { position: absolute; pointer-events: none; outline: calc(1px * var(--inv)) dashed color-mix(in srgb, var(--brand) 70%, transparent); }
 .ch { pointer-events: auto; cursor: pointer; }
 .ch:hover { color: var(--brand); }
+.hist-preview { margin-top: 10px; border-radius: 8px; background: var(--bg2); min-height: 140px; height: 42vh; padding: 8px; display: flex; align-items: center; justify-content: center; }
+.hist-preview img { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent); }
+.hist-empty { padding: 24px 16px; text-align: center; align-self: center; }
+.hist-seg { display: inline-grid; grid-template-columns: auto auto; gap: 2px; padding: 2px; border-radius: 7px; background: var(--bg2); }
+.hist-seg button { height: 24px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; font-size: 11px; color: var(--muted); }
+.hist-seg button.on { background: var(--bg); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.hist-list { max-height: 30vh; overflow: auto; margin: 0 -4px; }
+.hist-row { width: 100%; display: flex; text-align: left; gap: 8px; padding: 7px 8px; border: 0; border-radius: 7px; background: transparent; }
+.hist-row:hover { background: var(--bg2); }
+.hist-row.on { background: color-mix(in srgb, var(--brand) 14%, transparent); }
+.hist-row .nm { display: block; font-weight: 500; }
+.hist-row .mt { display: block; font-size: 10.5px; color: var(--muted); }
+#history { position: absolute; right: 12px; top: 60px; bottom: 12px; width: 340px; z-index: 5; padding: 12px; overflow: auto; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
 .marquee { position: absolute; z-index: 2; border: 1px solid var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); pointer-events: none; }
 #inspector { position: absolute; left: 12px; bottom: 12px; width: 290px; z-index: 4; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
 #grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 5;
@@ -127,12 +140,26 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 // ---------------------------------------------------------------------------
 // Campaign Wall UI. Talks to code.js via postMessage and to Figma's REST API via fetch.
 // ---------------------------------------------------------------------------
-const API = 'https://api.figma.com/v1'
-const PANEL = { width: 360, height: 620 }
+// ---------------------------------------------------------------------------
+// TEAM SETUP: the Figma folders (projects) where your team keeps channel files.
+// The plugin searches these for campaign frames, so everyone sees the same campaigns.
+// Get an ID from a folder's link: figma.com/files/…/project/123456789/Email → '123456789'.
+// Anyone can also add folders for themselves in Settings.
+// ---------------------------------------------------------------------------
+const TEAM = {
+  folders: [
+    // { id: '123456789', name: 'Email' },
+  ],
+  searchDays: 120,   // only files edited in the last N days are searched the first time
+}
+
+const API_HOST = 'https://api.figma.com'
+const PANEL = { width: 360, height: 640 }
 const IMAGE_MAX_AGE = 20 * 24 * 3600 * 1000   // render URLs from the API expire; re-render after 20 days
 const S = {
-  view: 'loading', data: null, token: '', cache: { files: {} }, prefs: {}, selection: { items: [], skipped: 0, total: 0 },
-  file: { key: '', name: '', keyFromApi: false }, channelChoice: 'auto', creating: false,
+  view: 'loading', data: null, token: '', cache: { files: {} }, scan: { files: {} }, prefs: {}, selection: { items: [], skipped: 0, total: 0 },
+  file: { key: '', name: '', keyFromApi: false, manifest: { campaigns: {} } }, channelChoice: 'auto', creating: false,
+  search: { busy: false, status: '', error: '' }, history: null,
   wall: { zoom: 1, tx: 40, ty: 80, selected: [], busy: false, status: '', banner: null, fitted: false },
 }
 
@@ -169,12 +196,65 @@ function icon(name, size) {
     refresh: '<path d="M13 8a5 5 0 1 1-1.46-3.54M13.2 2.8v2.9h-2.9"/>', ext: '<path d="M9.5 2.5h4v4M13.5 2.5L7.5 8.5M11.5 9.5v4h-9v-9h4"/>',
     pointer: '<path d="M3.5 2.5l9 4-4 1.5-1.5 4z"/>', fit: '<path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/>',
     minus: '<path d="M3.5 8h9"/>', check: '<path d="M3.5 8.5l3 3 6-6.5"/>',
+    clock: '<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.3"/>',
   }
   return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths[name] + '</svg>'
 }
+// ---------- campaigns: what the team has (file manifests) + your drafts ----------
+// A campaign's frames come from the manifests stored inside each design file: this file's
+// (read live) plus every file the folder search found. Frames added before team sharing,
+// in files you haven't opened since, are still listed from this computer's storage.
+function manifests() {
+  const out = []
+  for (const key of Object.keys(S.scan.files || {})) {
+    const f = S.scan.files[key]
+    if (key !== S.file.key && f && f.manifest) out.push({ key: key, fileName: f.manifest.fileName || f.name, m: f.manifest })
+  }
+  if (S.file.key && S.file.manifest) out.push({ key: S.file.key, fileName: S.file.name, m: S.file.manifest })
+  return out
+}
+
+function allCampaigns() {
+  const map = {}
+  const hiddenItems = (S.data && S.data.hiddenItems) || {}
+  const seen = (S.data && S.data.seen) || {}
+  const get = (id) => map[id] || (map[id] = { id: id, name: '', nameAt: -1, items: [], shared: false })
+  for (const src of manifests()) {
+    for (const cid of Object.keys(src.m.campaigns || {})) {
+      const mc = src.m.campaigns[cid]
+      const c = get(cid)
+      c.shared = true
+      if ((mc.updatedAt || 0) > c.nameAt) { c.name = mc.name || c.name; c.nameAt = mc.updatedAt || 0 }
+      for (const nodeId of Object.keys(mc.items || {})) {
+        const it = mc.items[nodeId]
+        c.items.push({ id: src.key + '|' + nodeId, fileKey: src.key, fileName: src.fileName, nodeId: nodeId, name: it.name,
+          width: it.w, height: it.h, pageName: it.pageName, channel: it.channel || 'Other', addedBy: it.addedBy, shared: true })
+      }
+    }
+  }
+  for (const lc of (S.data ? S.data.campaigns : [])) {
+    const c = get(lc.id)
+    const localAt = lc.renamedAt || (c.nameAt < 0 ? lc.createdAt || 0 : -1)
+    if (!c.name || localAt > c.nameAt) { c.name = lc.name; c.nameAt = Math.max(c.nameAt, localAt) }
+    for (const it of (lc.items || [])) {
+      if (c.items.some((x) => x.id === it.id)) continue
+      c.items.push(Object.assign({}, it, { shared: false }))
+    }
+  }
+  const hidden = (S.data && S.data.hidden) || []
+  return Object.keys(map).map((id) => map[id]).filter((c) => hidden.indexOf(c.id) < 0).map((c) => {
+    const skip = hiddenItems[c.id] || []
+    c.hiddenCount = c.items.filter((it) => skip.indexOf(it.id) >= 0).length
+    c.items = c.items.filter((it) => skip.indexOf(it.id) < 0)
+    c.items.forEach((it) => { it.seenHash = seen[it.id] || it.seenHash })
+    return c
+  }).sort((a, b) => a.name.localeCompare(b.name))
+}
+
 function campaign() {
   if (!S.data) return null
-  return S.data.campaigns.find((c) => c.id === S.data.activeCampaignId) || S.data.campaigns[0] || null
+  const list = allCampaigns()
+  return list.find((c) => c.id === S.data.activeCampaignId) || list[0] || null
 }
 function nodeInfo(item) {
   const f = S.cache.files[item.fileKey]
@@ -187,10 +267,27 @@ function isUpdated(item) {
 
 // ---------- Figma REST API ----------
 class ApiError extends Error {}
+
+// Figma's heaviest requests (reading a file, rendering images) are limited per minute.
+// Space them out so we never hit the limit; if Figma still says "slow down", wait a minute.
+const tier1Log = []
+async function tier1Gate() {
+  for (;;) {
+    const now = Date.now()
+    while (tier1Log.length && now - tier1Log[0] > 60000) tier1Log.shift()
+    if (tier1Log.length < (window.CW_TIER1_PER_MIN || 12)) { tier1Log.push(now); return }
+    await new Promise((r) => setTimeout(r, 60000 - (now - tier1Log[0]) + 50))
+  }
+}
+function isTier1(path) { return /^\/v1\/images\//.test(path) || /^\/v1\/files\/[^/]+(\/nodes)?(\?|$)/.test(path) }
+
 async function api(path) {
+  if (path.indexOf('https://') === 0) path = path.replace(API_HOST, '')
+  if (!/^\/v\d\//.test(path)) path = '/v1' + path
+  if (isTier1(path)) await tier1Gate()
   let res
   try {
-    res = await fetch(API + path, { headers: { 'X-Figma-Token': S.token } })
+    res = await fetch(API_HOST + path, { headers: { 'X-Figma-Token': S.token } })
   } catch (e) {
     const err = new ApiError('Couldn’t reach Figma’s API from the plugin (' + (e && e.message ? e.message : 'network error') + ').')
     err.kind = 'network'; throw err
@@ -217,6 +314,173 @@ async function testToken(token) {
     const me = await api('/me')
     return me
   } finally { S.token = saved }
+}
+
+// ---------- finding the team's campaigns ----------
+function teamFolders() {
+  const seen = {}
+  return TEAM.folders.map((f) => Object.assign({ builtIn: true }, f)).concat((S.prefs.folders || []).map((f) => Object.assign({ builtIn: false }, f)))
+    .filter((f) => f.id && !seen[f.id] && (seen[f.id] = true))
+}
+
+function parseFolderLink(text) {
+  const t = String(text || '').trim()
+  const m = t.match(/\/(?:project|folder)s?\/(\d+)(?:\/([^/?#]+))?/) || t.match(/^(\d{5,})$/)
+  if (!m) return null
+  let name = ''
+  try { name = m[2] ? decodeURIComponent(m[2]).replace(/[-_]+/g, ' ').trim() : '' } catch (e) {}
+  return { id: m[1], name: name || 'Folder ' + m[1] }
+}
+
+// Lists a folder's files. Figma is moving folders to a v2 endpoint; fall back to the v1 one.
+async function listFolder(folder) {
+  const files = []
+  let path = '/v2/folders/' + folder.id + '/files'
+  let usedV1 = false
+  for (let guard = 0; path && guard < 20; guard++) {
+    let res
+    try { res = await api(path) } catch (e) {
+      if (!usedV1 && (e.status === 400 || e.status === 403 || e.status === 404)) { usedV1 = true; path = '/v1/projects/' + folder.id + '/files'; continue }
+      throw e
+    }
+    const list = res.files || res.data || []
+    for (const f of list) {
+      if (!f || !f.key) continue
+      files.push({ key: f.key, name: f.name || '', lastModified: f.last_modified || f.lastModified || f.updated_at || '' })
+    }
+    const next = (res.pagination && res.pagination.next_page) || res.next_page || ''
+    path = next || ''
+  }
+  return files
+}
+
+function readManifestFromDocument(doc) {
+  const parse = (node) => {
+    try {
+      const raw = node && node.sharedPluginData && node.sharedPluginData.campaignwall && node.sharedPluginData.campaignwall.manifest
+      const m = raw ? JSON.parse(raw) : null
+      return m && m.campaigns ? m : null
+    } catch (e) { return null }
+  }
+  let best = parse(doc)
+  for (const page of (doc && doc.children) || []) {
+    const m = parse(page)
+    if (m && (!best || (m.updatedAt || 0) > (best.updatedAt || 0))) best = m
+  }
+  return best
+}
+
+// Looks through the team's folders for files that hold campaign frames.
+// A file is only opened (one request) the first time it's seen or after it has been edited,
+// and the first time only if it was edited in the last TEAM.searchDays days.
+async function discover(opts) {
+  opts = opts || {}
+  const folders = teamFolders()
+  if (!S.token || !folders.length || S.search.busy) return
+  S.search.busy = true; S.search.error = ''
+  const scan = S.scan
+  scan.files = scan.files || {}
+  scan.folders = scan.folders || {}
+  const since = Date.now() - TEAM.searchDays * 86400000
+  const queue = []
+  try {
+    for (let i = 0; i < folders.length; i++) {
+      S.search.status = 'Checking folder ' + (i + 1) + ' of ' + folders.length + '…'; renderSearchStatus()
+      const folder = folders[i]
+      try {
+        const files = await listFolder(folder)
+        scan.folders[folder.id] = { name: folder.name, checkedAt: Date.now(), count: files.length, error: '' }
+        for (const f of files) {
+          const known = scan.files[f.key]
+          const edited = Date.parse(f.lastModified) || 0
+          if (f.key === S.file.key) continue
+          if (!known) { if (edited >= since || opts.everything) queue.push(f); continue }
+          if (known.lastModified !== f.lastModified) queue.push(f)
+        }
+      } catch (e) {
+        scan.folders[folder.id] = { name: folder.name, checkedAt: Date.now(), error: e.kind === 'forbidden' ? 'Your token can’t list this folder. It needs Projects (read) access.' : e.message }
+        if (e.kind === 'network' || e.kind === 'rate') throw e
+      }
+    }
+    for (let i = 0; i < queue.length; i++) {
+      const f = queue[i]
+      S.search.status = 'Searching files ' + (i + 1) + ' of ' + queue.length + '…'; renderSearchStatus()
+      try {
+        const res = await api('/v1/files/' + f.key + '?depth=1&plugin_data=shared')
+        scan.files[f.key] = { name: res.name || f.name, lastModified: f.lastModified, scannedAt: Date.now(), manifest: readManifestFromDocument(res.document) }
+      } catch (e) {
+        if (e.kind === 'network' || e.kind === 'rate') throw e
+        scan.files[f.key] = { name: f.name, lastModified: f.lastModified, scannedAt: Date.now(), manifest: null, error: e.message }
+      }
+      if (i % 5 === 4) { scan.savedAt = Date.now(); send('save-scan', { scan: scan }); rerenderData() }
+    }
+    scan.checkedAt = Date.now()
+    S.search.status = ''
+  } catch (e) {
+    S.search.error = e.message
+    S.search.status = ''
+  } finally {
+    S.search.busy = false
+    scan.savedAt = Date.now()
+    send('save-scan', { scan: scan })
+    rerenderData()
+  }
+}
+
+function searchSummary() {
+  const folders = teamFolders()
+  if (!folders.length) return 'No team folders set up yet'
+  if (S.search.busy) return S.search.status || 'Searching…'
+  if (S.search.error) return 'Search stopped: ' + S.search.error
+  const found = Object.keys(S.scan.files || {}).filter((k) => S.scan.files[k].manifest).length
+  return 'Searched ' + folders.length + ' folder' + (folders.length === 1 ? '' : 's') + (S.scan.checkedAt ? ' ' + ago(S.scan.checkedAt) : '') + ' · ' + found + ' file' + (found === 1 ? '' : 's') + ' with campaign frames'
+}
+function renderSearchStatus() {
+  const el = $('search-status'); if (el) el.textContent = searchSummary()
+}
+function rerenderData() {
+  if (S.view === 'wall') renderWall()
+  else if (S.view === 'panel') render()
+  else renderSearchStatus()
+}
+function searchIsStale() { return !S.scan.checkedAt || Date.now() - S.scan.checkedAt > 5 * 60000 }
+
+// ---------- version history ----------
+async function loadVersions(fileKey, more) {
+  const h = S.history
+  const url = more && h.next ? h.next : '/v1/files/' + fileKey + '/versions?page_size=30'
+  h.loading = true; renderHistory()
+  try {
+    const res = await api(url)
+    h.versions = (more ? h.versions : []).concat((res.versions || []).map((v) => ({
+      id: v.id, at: v.created_at, label: v.label || '', description: v.description || '', user: v.user ? v.user.handle : '' })))
+    h.next = res.pagination && res.pagination.next_page ? res.pagination.next_page : ''
+    h.error = ''
+  } catch (e) {
+    h.error = e.kind === 'forbidden' ? 'Your token needs File versions (read) access to show history. Make a new token with it in Settings.' : e.message
+  }
+  h.loading = false; renderHistory()
+}
+
+async function showVersion(versionId) {
+  const h = S.history
+  h.pick = versionId; h.view = 'then'
+  const key = h.item.nodeId + '@' + versionId
+  const cached = h.renders[key]
+  if (!cached || Date.now() - cached.at > IMAGE_MAX_AGE) {
+    h.rendering = true; renderHistory()
+    try {
+      const w = Math.max(1, (nodeInfo(h.item) || {}).viewW || h.item.width || 1000)
+      const scale = w > 1600 ? 0.5 : 1
+      const res = await api('/v1/images/' + h.item.fileKey + '?ids=' + encodeURIComponent(h.item.nodeId) + '&format=png&scale=' + scale + '&version=' + encodeURIComponent(versionId))
+      const url = res.images ? res.images[h.item.nodeId] : null
+      h.renders[key] = { url: url || '', at: Date.now(), missing: !url }
+    } catch (e) {
+      h.renders[key] = { url: '', at: Date.now(), error: e.message }
+    }
+    h.rendering = false
+  }
+  renderHistory()
 }
 
 // Three kinds of check, all built on syncItems():
@@ -357,8 +621,8 @@ function render() {
 
 // ---------- panel ----------
 function renderPanel() {
+  const campaigns = allCampaigns()
   const c = campaign()
-  const campaigns = S.data.campaigns
   let html = '<div class="view">'
   html += '<div class="top">'
   if (campaigns.length) {
@@ -370,10 +634,12 @@ function renderPanel() {
 
   if (!campaigns.length || S.creating) {
     html += '<div class="stack"><div style="font-size:15px;font-weight:600">' + (campaigns.length ? 'New campaign' : 'Start a campaign') + '</div>'
-    html += '<div class="muted small">Add frames from any file, in any channel folder, then see them together on one wall.</div>'
+    html += '<div class="muted small">Add frames from any file, in any channel folder, then see them together on one wall. Your team sees the same campaign.</div>'
     html += '<input class="field" id="campaign-name" placeholder="e.g. Holiday 2026" maxlength="80" aria-label="Campaign name">'
-    html += '<div class="row"><button class="btn primary grow" id="create">Create campaign</button>' + (campaigns.length ? '<button class="btn" id="cancel-create">Cancel</button>' : '') + '</div></div>'
-    html += '</div>' + footer() + '</div>'
+    html += '<div class="row"><button class="btn primary grow" id="create">Create campaign</button>' + (campaigns.length ? '<button class="btn" id="cancel-create">Cancel</button>' : '') + '</div>'
+    if (!campaigns.length && S.token && teamFolders().length) html += '<div class="muted small" id="search-status">' + esc(searchSummary()) + '</div>'
+    if (!campaigns.length && S.token && !teamFolders().length) html += '<div class="notice small">Joining your team’s campaigns? Add your team’s folders in Settings so the plugin can find them.</div>'
+    html += '</div></div>' + footer() + '</div>'
     $('app').innerHTML = html
     bindPanel(); setTimeout(() => { const el = $('campaign-name'); if (el) el.focus() }, 0)
     return
@@ -412,22 +678,31 @@ function renderPanel() {
   c.items.forEach((it) => { byChannel[it.channel] = (byChannel[it.channel] || 0) + 1 })
   const files = new Set(c.items.map((it) => it.fileKey)).size
   const updated = c.items.filter(isUpdated).length
+  const channelOrder = S.data.channels.concat(Object.keys(byChannel).filter((ch) => S.data.channels.indexOf(ch) < 0))
   html += '<div class="card stack" style="padding:14px;gap:10px">'
   html += '<div class="row" style="align-items:baseline"><span style="font-size:22px;font-weight:600;letter-spacing:-0.02em">' + c.items.length + '</span><span class="muted">frame' + (c.items.length === 1 ? '' : 's') + ' from ' + files + ' file' + (files === 1 ? '' : 's') + '</span>' + (updated ? '<span class="pill warn" style="margin-left:auto">' + updated + ' updated</span>' : '') + '</div>'
-  if (c.items.length) html += '<div class="chips">' + S.data.channels.filter((ch) => byChannel[ch]).map((ch) => '<span class="pill">' + esc(ch) + ' ' + byChannel[ch] + '</span>').join('') + '</div>'
+  if (c.items.length) html += '<div class="chips">' + channelOrder.filter((ch) => byChannel[ch]).map((ch) => '<span class="pill">' + esc(ch) + ' ' + byChannel[ch] + '</span>').join('') + '</div>'
   html += '<button class="btn primary block" id="open-wall"' + (c.items.length ? '' : ' disabled') + '>' + icon('wall') + (S.token ? 'Open wall' : 'Connect Figma to open the wall') + '</button>'
   html += '</div>'
+
+  const localOnly = c.items.filter((it) => !it.shared)
+  if (localOnly.length) {
+    const fileNames = Array.from(new Set(localOnly.map((it) => (S.cache.files[it.fileKey] || {}).name || it.fileName)))
+    html += '<div class="notice small"><b>' + localOnly.length + ' frame' + (localOnly.length === 1 ? ' is' : 's are') + ' only on your computer.</b> They were added before team sharing. Open the plugin once in ' + esc(fileNames.slice(0, 3).join(', ')) + (fileNames.length > 3 ? ' and ' + (fileNames.length - 3) + ' more' : '') + ' to share ' + (localOnly.length === 1 ? 'it' : 'them') + ' with your team.</div>'
+  }
+  if (c.hiddenCount) html += '<div class="notice small row" style="gap:8px"><span class="grow">' + c.hiddenCount + ' frame' + (c.hiddenCount === 1 ? ' is' : 's are') + ' hidden on your wall.</span><button class="btn ghost" id="unhide-items" style="height:26px">Show</button></div>'
 
   // Items
   if (c.items.length) {
     html += '<div><div class="label">Frames in this campaign</div><div>'
-    const sorted = c.items.slice().sort((a, b) => S.data.channels.indexOf(a.channel) - S.data.channels.indexOf(b.channel) || a.name.localeCompare(b.name))
+    const sorted = c.items.slice().sort((a, b) => channelOrder.indexOf(a.channel) - channelOrder.indexOf(b.channel) || String(a.name).localeCompare(String(b.name)))
     sorted.forEach((it) => {
       const n = nodeInfo(it)
       const name = n && n.name ? n.name : it.name
       const here = it.fileKey === S.file.key
-      html += '<div class="item"><button class="open" data-open="' + esc(it.id) + '" title="' + (here ? 'Select in this file' : 'Open in its file') + '"><div class="nm">' + esc(name) + (isUpdated(it) ? ' <span class="upd">Updated</span>' : '') + '</div><div class="mt">' + esc(it.channel) + ' · ' + (here ? 'this file' : esc((S.cache.files[it.fileKey] || {}).name || it.fileName)) + '</div></button>'
-      html += '<button class="icon" data-remove="' + esc(it.id) + '" aria-label="Remove ' + esc(name) + ' from campaign" title="Remove from campaign">' + icon('x', 14) + '</button></div>'
+      const where = here ? 'this file' : esc((S.cache.files[it.fileKey] || {}).name || it.fileName)
+      html += '<div class="item"><button class="open" data-open="' + esc(it.id) + '" title="' + (here ? 'Select in this file' : 'Open in its file') + '"><div class="nm">' + esc(name) + (isUpdated(it) ? ' <span class="upd">Updated</span>' : '') + '</div><div class="mt">' + esc(it.channel) + ' · ' + where + (it.addedBy ? ' · added by ' + esc(it.addedBy) : '') + '</div></button>'
+      html += '<button class="icon" data-remove="' + esc(it.id) + '" aria-label="Remove ' + esc(name) + ' from campaign" title="' + (here || !it.shared ? 'Remove from campaign' : 'Hide on my wall (it lives in another file)') + '">' + icon('x', 14) + '</button></div>'
     })
     html += '</div></div>'
   }
@@ -439,60 +714,90 @@ function renderPanel() {
 function footer() {
   const me = S.prefs.me
   if (!S.token) return '<div class="foot"><span class="dot" style="background:var(--danger)"></span><span class="grow">Not connected to Figma’s API</span><button class="btn ghost" id="connect" style="height:28px">Connect</button></div>'
-  return '<div class="foot"><span class="dot" style="background:var(--ok)"></span><span class="grow">Connected' + (me && me.handle ? ' as ' + esc(me.handle) : '') + '</span></div>'
+  const folders = teamFolders().length
+  return '<div class="foot"><span class="dot" style="background:' + (S.search.error ? 'var(--warn)' : 'var(--ok)') + '"></span><span class="grow" id="search-status" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + esc(searchSummary()) + '">' +
+    (folders ? esc(searchSummary()) : 'Connected' + (me && me.handle ? ' as ' + esc(me.handle) : '') + ' · no team folders yet') + '</span>' +
+    (folders ? '<button class="icon" id="search-now" title="Search team folders now" aria-label="Search team folders now"' + (S.search.busy ? ' disabled' : '') + '>' + icon('refresh', 14) + '</button>' : '<button class="btn ghost" id="connect" style="height:28px">Set up</button>') + '</div>'
 }
 
 function bindPanel() {
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn) }
-  on('campaign', 'change', (e) => send('set-active', { campaignId: e.target.value }))
+  on('campaign', 'change', (e) => { const c = allCampaigns().find((x) => x.id === e.target.value); send('set-active', { campaignId: e.target.value, campaignName: c ? c.name : '' }) })
   on('new-campaign', 'click', () => { S.creating = true; render() })
   on('cancel-create', 'click', () => { S.creating = false; render() })
-  on('create', 'click', () => { const name = $('campaign-name').value.trim(); if (!name) return $('campaign-name').focus(); S.creating = false; send('create-campaign', { name: name }) })
+  on('create', 'click', () => {
+    const name = $('campaign-name').value.trim(); if (!name) return $('campaign-name').focus()
+    S.creating = false
+    // Someone on the team may already have this campaign: join it instead of making a twin.
+    const existing = allCampaigns().find((x) => x.name.trim().toLowerCase() === name.toLowerCase())
+    if (existing) { send('set-active', { campaignId: existing.id, campaignName: existing.name }); toast('“' + existing.name + '” already exists, so you’ve joined it.'); return }
+    send('create-campaign', { name: name })
+  })
   on('campaign-name', 'keydown', (e) => { if (e.key === 'Enter') $('create').click() })
   on('settings', 'click', () => { S.view = 'setup'; render() })
   on('connect', 'click', () => { S.view = 'setup'; render() })
+  on('search-now', 'click', () => discover())
+  on('unhide-items', 'click', () => send('unhide-items', { campaignId: campaign().id }))
   on('channel', 'change', (e) => { S.channelChoice = e.target.value; render() })
-  on('add', 'click', () => { const c = campaign(); send('add-selection', { campaignId: c.id, channel: S.channelChoice }) })
+  on('add', 'click', () => { const c = campaign(); send('add-selection', { campaignId: c.id, campaignName: c.name, channel: S.channelChoice }) })
   on('save-file-link', 'click', () => send('set-file-key', { url: $('file-link').value }))
   on('open-wall', 'click', () => { if (!S.token) { S.view = 'setup'; render(); return } openWall() })
   document.querySelectorAll('[data-open]').forEach((el) => el.addEventListener('click', () => openItem(el.dataset.open)))
-  document.querySelectorAll('[data-remove]').forEach((el) => el.addEventListener('click', () => send('remove-item', { campaignId: campaign().id, itemId: el.dataset.remove })))
+  document.querySelectorAll('[data-remove]').forEach((el) => el.addEventListener('click', () => send('remove-item', { campaignId: campaign().id, itemIds: [el.dataset.remove] })))
 }
 
-function openItem(itemId) {
+function openItem(itemId, versionId) {
   const c = campaign(); const it = c && c.items.find((x) => x.id === itemId)
-  if (it) send('open-item', { fileKey: it.fileKey, nodeId: it.nodeId })
+  if (it) send('open-item', { fileKey: it.fileKey, nodeId: it.nodeId, versionId: versionId || '' })
 }
 
 // ---------- settings ----------
 function renderSetup() {
   const c = campaign()
+  const h2 = (t) => '<div style="font-size:14px;font-weight:600">' + t + '</div>'
   let html = '<div class="view"><div class="top"><button class="icon" id="back" aria-label="Back">' + icon('left') + '</button><div class="grow" style="font-size:14px;font-weight:600">Settings</div></div><div class="scroll">'
-  html += '<div class="stack"><div style="font-size:14px;font-weight:600">Connect to Figma</div>'
-  html += '<div class="muted small">The wall reads frames from other files with Figma’s API, using a personal access token. It’s stored only on this computer.</div>'
-  html += '<ol class="steps small muted"><li>In Figma, open <b>Settings › Security › Personal access tokens</b>.</li><li>Generate a token with <b>File content</b>, <b>File metadata</b> and <b>Current user</b> set to read-only.</li><li>Paste it below.</li></ol>'
+  html += '<div class="stack">' + h2('Connect to Figma')
+  html += '<div class="muted small">The wall reads frames from other files with Figma’s API, using your personal access token. It’s stored only on this computer.</div>'
+  html += '<ol class="steps small muted"><li>In Figma, open <b>Settings › Security › Personal access tokens</b>.</li><li>Generate a token with these set to read-only: <b>File content</b>, <b>File metadata</b>, <b>File versions</b>, <b>Projects</b> and <b>Current user</b>.</li><li>Paste it below.</li></ol>'
   html += '<input class="field" id="token" type="password" placeholder="figd_…" autocomplete="off" aria-label="Personal access token" value="' + esc(S.token) + '">'
   html += '<div class="row"><button class="btn primary grow" id="test-token">Test and save</button>' + (S.token ? '<button class="btn danger" id="clear-token">Remove</button>' : '') + '</div>'
   html += '<div id="token-result">' + (S.tokenResult || '') + '</div></div>'
-  html += '<div class="sep"></div>'
-  html += '<div class="stack"><div style="font-size:14px;font-weight:600">This file</div>'
+
+  html += '<div class="sep"></div><div class="stack">' + h2('Team folders')
+  html += '<div class="muted small">Campaign frames are saved inside each design file. The plugin finds them by searching these folders, so everyone on the team sees the same campaigns.</div>'
+  const folders = teamFolders()
+  if (folders.length) {
+    html += '<div class="card">' + folders.map((f, i) => {
+      const st = (S.scan.folders || {})[f.id] || {}
+      return (i ? '<div class="sep"></div>' : '') + '<div class="sel-row"><div class="grow"><div class="nm">' + esc(f.name) + '</div><div class="muted small">' + (st.error ? '<span style="color:var(--danger)">' + esc(st.error) + '</span>' : st.checkedAt ? st.count + ' files · checked ' + esc(ago(st.checkedAt)) : 'Not searched yet') + (f.builtIn ? ' · team default' : '') + '</div></div>' +
+        (f.builtIn ? '' : '<button class="icon" data-remove-folder="' + esc(f.id) + '" aria-label="Remove ' + esc(f.name) + '">' + icon('x', 14) + '</button>') + '</div>'
+    }).join('') + '</div>'
+  }
+  html += '<div class="row"><input class="field" id="folder-link" placeholder="Paste a folder link" aria-label="Folder link"><button class="btn" id="add-folder">Add</button></div>'
+  html += '<div class="row"><span class="muted small grow" id="search-status">' + esc(searchSummary()) + '</span><button class="btn" id="search-all"' + (S.search.busy || !folders.length ? ' disabled' : '') + '>Search now</button></div>'
+  html += '</div>'
+
+  html += '<div class="sep"></div><div class="stack">' + h2('This file')
   if (S.file.keyFromApi) html += '<div class="muted small">Figma provides this file’s ID automatically.</div>'
   else {
     html += '<div class="muted small">' + (S.file.key ? 'Linked to file ID ' + esc(S.file.key) + '. Paste a new link to change it.' : 'Paste this file’s link (Share › Copy link) so frames added from here can be found.') + '</div>'
     html += '<div class="row"><input class="field" id="file-link" placeholder="https://www.figma.com/design/…"><button class="btn" id="save-file-link">Save</button></div>'
   }
   html += '</div>'
+
   if (c) {
-    html += '<div class="sep"></div><div class="stack"><div style="font-size:14px;font-weight:600">Share “' + esc(c.name) + '”</div>'
-    html += '<div class="muted small">Test builds keep campaigns on this computer. To give a teammate the same campaign, copy this and have them paste it under Import.</div>'
-    html += '<textarea class="field" id="export" readonly aria-label="Campaign data">' + esc(JSON.stringify({ type: 'campaign-wall', campaign: { id: c.id, name: c.name, createdAt: c.createdAt, items: c.items.map((it) => ({ id: it.id, fileKey: it.fileKey, fileName: it.fileName, nodeId: it.nodeId, name: it.name, width: it.width, height: it.height, pageName: it.pageName, channel: it.channel, addedAt: it.addedAt })) } })) + '</textarea>'
-    html += '<button class="btn" id="copy-export">Copy</button></div>'
-  }
-  html += '<div class="stack"><div class="label" style="margin:0">Import a campaign</div><textarea class="field" id="import" placeholder="Paste campaign data" aria-label="Campaign data to import"></textarea><button class="btn" id="do-import">Import</button></div>'
-  if (c) {
-    html += '<div class="sep"></div><div class="stack"><div style="font-size:14px;font-weight:600">Campaign</div>'
+    html += '<div class="sep"></div><div class="stack">' + h2('Campaign')
     html += '<div class="row"><input class="field" id="rename" value="' + esc(c.name) + '" aria-label="Campaign name"><button class="btn" id="do-rename">Rename</button></div>'
-    html += '<button class="btn danger" id="delete">Delete “' + esc(c.name) + '”</button></div>'
+    html += '<button class="btn danger" id="hide">' + (c.shared ? 'Hide “' + esc(c.name) + '” from my list' : 'Delete “' + esc(c.name) + '”') + '</button></div>'
+  }
+  const hidden = (S.data.hidden || [])
+  if (hidden.length) {
+    html += '<div class="stack"><div class="label" style="margin:0">Hidden campaigns</div>' + hidden.map((id) => {
+      const lc = S.data.campaigns.find((x) => x.id === id)
+      let name = lc ? lc.name : ''
+      if (!name) for (const src of manifests()) if (src.m.campaigns[id]) { name = src.m.campaigns[id].name; break }
+      return '<div class="row"><span class="grow">' + esc(name || id) + '</span><button class="btn ghost" data-unhide="' + esc(id) + '" style="height:26px">Show</button></div>'
+    }).join('') + '</div>'
   }
   html += '</div></div>'
   $('app').innerHTML = html
@@ -509,19 +814,34 @@ function renderSetup() {
       send('save-prefs', { prefs: { me: S.prefs.me } })
       send('save-token', { token: token })
       out.innerHTML = '<div class="notice" style="color:var(--ok)">Connected as ' + esc(me.handle) + (me.email ? ' (' + esc(me.email) + ')' : '') + '.</div>'
+      S.token = token
+      if (teamFolders().length) discover()
     } catch (e) {
-      out.innerHTML = '<div class="notice error">' + esc(e.message) + (e.kind === 'network' ? '<br><br>This is the main thing this test checks. Send Claude a screenshot of this message.' : '') + '</div>'
+      out.innerHTML = '<div class="notice error">' + esc(e.message) + '</div>'
     }
   })
   on('clear-token', 'click', () => { S.tokenResult = ''; S.prefs.me = null; send('save-prefs', { prefs: { me: null } }); send('save-token', { token: '' }) })
+  on('add-folder', 'click', () => {
+    const f = parseFolderLink($('folder-link').value)
+    if (!f) { toast('Paste a folder link, like figma.com/files/…/project/123456/Email', true); return }
+    const list = (S.prefs.folders || []).filter((x) => x.id !== f.id).concat(f)
+    S.prefs.folders = list
+    send('save-prefs', { prefs: { folders: list } })
+    renderSetup()
+    discover()
+  })
+  document.querySelectorAll('[data-remove-folder]').forEach((el) => el.addEventListener('click', () => {
+    const list = (S.prefs.folders || []).filter((x) => x.id !== el.dataset.removeFolder)
+    S.prefs.folders = list; send('save-prefs', { prefs: { folders: list } }); renderSetup()
+  }))
+  document.querySelectorAll('[data-unhide]').forEach((el) => el.addEventListener('click', () => { send('unhide-campaign', { campaignId: el.dataset.unhide }); S.view = 'panel' }))
+  on('search-all', 'click', () => discover())
   on('save-file-link', 'click', () => send('set-file-key', { url: $('file-link').value }))
-  on('copy-export', 'click', () => { const t = $('export'); t.select(); try { document.execCommand('copy'); toast('Copied.') } catch (e) { toast('Select the text and copy it.', true) } })
-  on('do-import', 'click', () => send('import-campaign', { json: $('import').value }))
   on('do-rename', 'click', () => send('rename-campaign', { campaignId: c.id, name: $('rename').value }))
-  on('delete', 'click', (e) => {
+  on('hide', 'click', (e) => {
     const b = e.currentTarget
-    if (b.dataset.armed) { send('delete-campaign', { campaignId: c.id }); S.view = 'panel'; return }
-    b.dataset.armed = '1'; b.textContent = 'Click again to delete. Frames in files are not changed.'
+    if (b.dataset.armed) { send('hide-campaign', { campaignId: c.id, shared: c.shared }); S.view = 'panel'; return }
+    b.dataset.armed = '1'; b.textContent = c.shared ? 'Click again to hide. Your team’s view isn’t changed.' : 'Click again to delete.'
   })
 }
 
@@ -531,10 +851,19 @@ function openWall() {
   const size = S.prefs.wallSize || { width: 1200, height: 800 }
   send('resize', size)
   render()
-  setTimeout(() => refreshWall('auto'), 60)
+  // Show what's known right away, then look for new team frames and check again.
+  setTimeout(async () => {
+    await refreshWall('auto')
+    if (S.token && teamFolders().length && searchIsStale()) {
+      const before = (campaign() || { items: [] }).items.length
+      await discover()
+      if ((campaign() || { items: [] }).items.length !== before) await refreshWall('auto')
+    }
+  }, 60)
 }
 function closeWall() {
   S.view = 'panel'
+  S.history = null
   send('resize', PANEL)
   render()
 }
@@ -576,7 +905,7 @@ function renderWallShell() {
   html += '<button class="icon" id="zoom-out" aria-label="Zoom out">' + icon('minus') + '</button><button class="zoomval" id="zoom-val" title="Zoom to 100%">100%</button><button class="icon" id="zoom-in" aria-label="Zoom in">' + icon('plus') + '</button>'
   html += '<button class="icon" id="zoom-fit" title="Fit everything" aria-label="Fit everything">' + icon('fit') + '</button></div>'
   html += '<div id="viewport"><div id="world"></div><div id="banner"></div></div>'
-  html += '<div id="inspector" class="card hidden"></div><div id="grip" title="Drag to resize"></div></div>'
+  html += '<div id="inspector" class="card hidden"></div><div id="history" class="card hidden" role="dialog" aria-label="Version history"></div><div id="grip" title="Drag to resize"></div></div>'
   $('app').innerHTML = html
   bindWall()
   renderWall()
@@ -692,9 +1021,12 @@ function renderInspector() {
     if (fc.lastTouchedAt) html += '<div class="muted small" style="margin-top:2px">File edited ' + esc(ago(fc.lastTouchedAt)) + (fc.lastTouchedBy ? ' by ' + esc(fc.lastTouchedBy) : '') + (n.changedAt ? ' · this frame changed ' + esc(ago(n.changedAt)) : '') + '</div>'
     if (n.viewW && (Math.abs(n.viewW - n.width) > 1 || Math.abs(n.viewH - n.height) > 1)) html += '<div class="muted small" style="margin-top:2px">Content extends outside the frame; the dashed line is the frame’s edge.</div>'
     if (isUpdated(it)) html += '<div style="margin-top:6px"><span class="upd">Updated since you last marked it seen</span></div>'
-    html += '<div style="margin-top:10px"><label class="label" for="insp-channel">Channel</label>' + channelSelect(it.channel) + '</div>'
+    const editable = it.fileKey === S.file.key || !it.shared
+    if (it.addedBy) html += '<div class="muted small" style="margin-top:2px">Added by ' + esc(it.addedBy) + '</div>'
+    if (editable) html += '<div style="margin-top:10px"><label class="label" for="insp-channel">Channel</label>' + channelSelect(it.channel) + '</div>'
+    else html += '<div class="muted small" style="margin-top:8px">Channel: <b>' + esc(it.channel) + '</b>. Change it from its own file.</div>'
     html += '<div class="row" style="margin-top:10px"><button class="btn primary grow" id="insp-open">' + icon('ext', 14) + 'Open in Figma</button><button class="btn" id="insp-refresh" title="Reload this frame from its file now"' + busy + '>' + icon('refresh', 14) + 'Refresh</button></div>'
-    html += '<button class="btn ghost danger" id="insp-remove" style="margin-top:4px;padding:0 4px">Remove from campaign</button>'
+    html += '<div class="row" style="margin-top:4px"><button class="btn ghost" id="insp-history" style="padding:0 4px">' + icon('clock', 14) + 'History</button><span class="grow"></span><button class="btn ghost danger" id="insp-remove" style="padding:0 4px">' + (editable ? 'Remove from campaign' : 'Hide on my wall') + '</button></div>'
   } else {
     html += '<div class="row" style="align-items:flex-start"><div class="grow"><div style="font-weight:600;font-size:13px">' + items.length + ' frames selected</div>'
     const names = items.slice(0, 3).map((it) => esc((nodeInfo(it) || {}).name || it.name)).join(', ')
@@ -711,13 +1043,65 @@ function renderInspector() {
   $('insp-close').addEventListener('click', () => setSelection([]))
   const open = $('insp-open'); if (open) open.addEventListener('click', () => openItem(ids[0]))
   $('insp-refresh').addEventListener('click', () => refreshSelected())
-  $('insp-channel').addEventListener('change', (e) => { if (e.target.value) send('set-channel', { campaignId: c.id, itemIds: ids, channel: e.target.value }) })
+  const chSel = $('insp-channel'); if (chSel) chSel.addEventListener('change', (e) => { if (e.target.value) send('set-channel', { campaignId: c.id, itemIds: ids, channel: e.target.value }) })
+  const hist = $('insp-history'); if (hist) hist.addEventListener('click', () => openHistory(items[0]))
   $('insp-remove').addEventListener('click', (e) => {
     const b = e.currentTarget
-    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again to remove. Frames in files aren’t changed.'; return }
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again to confirm'; return }
     setSelection([])
     send('remove-item', { campaignId: c.id, itemIds: ids })
   })
+}
+
+// ---------- history panel ----------
+function openHistory(item) {
+  S.historyRenders = S.historyRenders || {}
+  S.history = { item: item, versions: [], next: '', loading: false, error: '', pick: '', view: 'then', renders: S.historyRenders }
+  renderHistory()
+  loadVersions(item.fileKey, false)
+}
+
+function renderHistory() {
+  const box = $('history'); if (!box) return
+  const h = S.history
+  if (!h || S.view !== 'wall') { box.classList.add('hidden'); box.innerHTML = ''; return }
+  const n = nodeInfo(h.item) || {}
+  const name = n.name || h.item.name
+  const fmt = (t) => { const d = new Date(t); return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ', ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) }
+  let html = '<div class="row" style="align-items:flex-start"><div class="grow"><div style="font-weight:600;font-size:13px">History</div><div class="muted small" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(name) + '</div></div><button class="icon" id="hist-close" aria-label="Close history">' + icon('x', 14) + '</button></div>'
+  // preview
+  const r = h.pick ? h.renders[h.item.nodeId + '@' + h.pick] : null
+  const nowUrl = n.url
+  html += '<div class="hist-preview">'
+  if (!h.pick) html += '<div class="muted small hist-empty">Pick a version to see this frame as it was then.</div>'
+  else if (h.rendering) html += '<div class="muted small hist-empty">Rendering…</div>'
+  else if (h.view === 'now') html += nowUrl ? '<img src="' + esc(nowUrl) + '" alt="' + esc(name) + ' now">' : '<div class="muted small hist-empty">No current image yet.</div>'
+  else if (r && r.url) html += '<img src="' + esc(r.url) + '" alt="' + esc(name) + ' in the chosen version">'
+  else if (r && r.missing) html += '<div class="muted small hist-empty">This frame didn’t exist yet in that version, or Figma couldn’t render it.</div>'
+  else if (r && r.error) html += '<div class="small hist-empty" style="color:var(--danger)">' + esc(r.error) + '</div>'
+  html += '</div>'
+  if (h.pick) {
+    const v = h.versions.find((x) => x.id === h.pick)
+    html += '<div class="row" style="margin-top:8px;gap:6px"><div class="hist-seg" role="tablist"><button class="' + (h.view === 'then' ? 'on' : '') + '" id="hist-then" role="tab" aria-selected="' + (h.view === 'then') + '">' + (v ? esc(fmt(v.at)) : 'Then') + '</button><button class="' + (h.view === 'now' ? 'on' : '') + '" id="hist-now" role="tab" aria-selected="' + (h.view === 'now') + '">Now</button></div><span class="grow"></span><button class="btn ghost" id="hist-open" style="height:28px;padding:0 6px" title="Open this version in Figma">' + icon('ext', 13) + 'Open</button></div>'
+  }
+  // versions list
+  html += '<div class="label" style="margin:12px 0 4px">Saved versions of “' + esc((S.cache.files[h.item.fileKey] || {}).name || h.item.fileName) + '”</div><div class="hist-list">'
+  if (h.error) html += '<div class="notice error small">' + esc(h.error) + '</div>'
+  for (const v of h.versions) {
+    html += '<button class="hist-row' + (h.pick === v.id ? ' on' : '') + '" data-version="' + esc(v.id) + '"><span class="grow"><span class="nm">' + esc(v.label || 'Autosave') + '</span><span class="mt">' + esc(fmt(v.at)) + (v.user ? ' · ' + esc(v.user) : '') + '</span>' + (v.description ? '<span class="mt">' + esc(v.description) + '</span>' : '') + '</span></button>'
+  }
+  if (h.loading) html += '<div class="muted small" style="padding:8px 4px">Loading versions…</div>'
+  else if (h.next) html += '<button class="btn ghost" id="hist-more" style="width:100%">Load older versions</button>'
+  else if (!h.versions.length && !h.error) html += '<div class="muted small" style="padding:8px 4px">No saved versions found.</div>'
+  html += '</div><div class="muted small" style="margin-top:8px">Figma saves versions as people work, not after every edit. Each preview is rendered by Figma on request.</div>'
+  box.innerHTML = html
+  box.classList.remove('hidden')
+  $('hist-close').addEventListener('click', () => { S.history = null; renderHistory() })
+  box.querySelectorAll('[data-version]').forEach((el) => el.addEventListener('click', () => showVersion(el.dataset.version)))
+  const more = $('hist-more'); if (more) more.addEventListener('click', () => loadVersions(h.item.fileKey, true))
+  const then = $('hist-then'); if (then) then.addEventListener('click', () => { h.view = 'then'; renderHistory() })
+  const now = $('hist-now'); if (now) now.addEventListener('click', () => { h.view = 'now'; renderHistory() })
+  const open = $('hist-open'); if (open) open.addEventListener('click', () => openItem(h.item.id, h.pick))
 }
 
 function bindWall() {
@@ -845,9 +1229,15 @@ window.onmessage = (event) => {
     S.data = msg.data; S.token = msg.token || ''; S.prefs = msg.prefs || {}; S.selection = msg.selection; S.file = msg.file
     if (firstLoad) S.cache = msg.cache && msg.cache.files ? msg.cache : { files: {} }
     else if (msg.cache && msg.cache.files && !S.wall.busy) mergeCache(msg.cache)
-    if (msg.external && S.view === 'setup') return
-    if (firstLoad) S.view = 'panel'
+    // Folder search results: take another window's newer results unless this window is searching.
+    const incomingScan = msg.scan && msg.scan.files ? msg.scan : null
+    if (incomingScan && (firstLoad || (!S.search.busy && (incomingScan.savedAt || 0) > (S.scan.savedAt || 0)))) S.scan = incomingScan
     if (msg.message) toast(msg.message)
+    if (firstLoad) {
+      S.view = 'panel'
+      if (S.token && teamFolders().length && searchIsStale()) setTimeout(() => discover(), 300)
+    }
+    if (msg.external && S.view === 'setup') { renderSearchStatus(); return }
     if (S.view === 'wall') { renderWall(); return }
     if (S.view === 'setup' && document.activeElement && document.activeElement.tagName === 'INPUT') return
     render()
