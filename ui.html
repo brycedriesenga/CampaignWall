@@ -144,13 +144,15 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 // TEAM SETUP: the Figma folders (projects) where your team keeps channel files.
 // The plugin searches these for campaign frames, so everyone sees the same campaigns.
 // Get an ID from a folder's link: figma.com/files/…/project/123456789/Email → '123456789'.
-// Anyone can also add folders for themselves in Settings.
+// Or set teamId (the number after /team/ in the team's link) and the plugin finds the
+// team's folders by itself. Anyone can also add a team or folders for themselves in Settings.
 // ---------------------------------------------------------------------------
 const TEAM = {
+  teamId: '',        // optional, e.g. '1234567890123456789'
   folders: [
     // { id: '123456789', name: 'Email' },
   ],
-  searchDays: 120,   // only files edited in the last N days are searched the first time
+  lookBackDays: 30,  // default for Settings › Look back: new files are only searched if edited this recently
 }
 
 const API_HOST = 'https://api.figma.com'
@@ -313,10 +315,80 @@ async function testToken(token) {
 }
 
 // ---------- finding the team's campaigns ----------
+// Three ways a file with campaign frames gets found, cheapest first:
+//  1. Links: every campaign file's manifest lists the other campaign files its editors knew
+//     about. Linked files get a cheap "has it changed?" check and are only read if it has.
+//  2. Folders: the team's folders (set up by hand, or found from the team's ID) are listed,
+//     and files are read the first time they're seen (if edited within Look back) or after
+//     they've been edited. Files without campaign frames are re-read at most once a day.
+//  3. This file: the manifest of the file the plugin is open in is always read live.
+const DAY = 86400000
+const FOLDER_RELIST = 6 * 3600000   // list a folder at least this often, even if Figma says it hasn't changed
+const SEARCH_STALE = 5 * 60000      // search again on open if the last search is older than this
+
+function lookBackDays() { return Number(S.prefs.lookBackDays) || TEAM.lookBackDays || 30 }
+function teamInfo() {
+  if (S.prefs.team && S.prefs.team.id) return { id: S.prefs.team.id, name: S.prefs.team.name || '', builtIn: false }
+  return TEAM.teamId ? { id: String(TEAM.teamId), name: '', builtIn: true } : null
+}
+function hasCampaigns(m) { return !!(m && m.campaigns && Object.keys(m.campaigns).length) }
+
+// Folders to search: the built-in ones, your own, and any found from the team's ID.
 function teamFolders() {
   const seen = {}
-  return TEAM.folders.map((f) => Object.assign({ builtIn: true }, f)).concat((S.prefs.folders || []).map((f) => Object.assign({ builtIn: false }, f)))
+  const team = teamInfo()
+  const found = team && S.scan.team && S.scan.team.id === team.id ? S.scan.team.folders || [] : []
+  return TEAM.folders.map((f) => Object.assign({ builtIn: true }, f))
+    .concat((S.prefs.folders || []).map((f) => Object.assign({ builtIn: false }, f)))
+    .concat(found.map((f) => Object.assign({ fromTeam: true }, f)))
     .filter((f) => f.id && !seen[f.id] && (seen[f.id] = true))
+}
+
+// Files known to hold campaign frames, plus files that other files' manifests link to,
+// unless this computer has read that file since the link was written and found nothing.
+function campaignFiles() {
+  const files = S.scan.files || {}
+  const out = {}
+  for (const key of Object.keys(files)) {
+    const f = files[key]
+    if (hasCampaigns(f.manifest)) out[key] = f.manifest.fileName || f.name || ''
+  }
+  for (const src of manifests()) {
+    const links = src.m.links || {}
+    for (const key of Object.keys(links)) {
+      if (key in out) continue
+      const f = files[key]
+      const disproved = f && f.scannedAt && !f.manifest && (!f.error || f.gone) && f.scannedAt > (src.m.updatedAt || 0)
+      if (!disproved) out[key] = links[key] || (f && f.name) || ''
+    }
+  }
+  delete out[S.file.key]
+  return out
+}
+function canSearch() { return !!(teamFolders().length || teamInfo() || Object.keys(campaignFiles()).length) }
+
+// Keep this file's manifest pointing at every campaign file we know of, so anyone who opens
+// the plugin here (or reads this file during a search) can go straight to the others.
+// code.js only writes when the list of files actually changes.
+function syncLinks() {
+  const m = S.file.manifest
+  if (!S.file.key || !hasCampaigns(m) || S.search.busy) return
+  const want = campaignFiles()
+  const wantKeys = Object.keys(want).sort().join(',')
+  if (wantKeys === Object.keys(m.links || {}).sort().join(',') || S.linksSent === wantKeys) return
+  S.linksSent = wantKeys
+  send('save-links', { links: want })
+}
+
+// Record this file's own manifest in the search results, so other files learn about it.
+function rememberThisFile() {
+  if (!S.file.key || !S.scan.files) return
+  const m = S.file.manifest
+  const prev = S.scan.files[S.file.key]
+  if (!hasCampaigns(m) && !(prev && prev.manifest)) return
+  if (prev && prev.manifest && m && (prev.manifest.updatedAt || 0) === (m.updatedAt || 0)) return
+  S.scan.files[S.file.key] = Object.assign({}, prev || {}, { name: S.file.name, manifest: hasCampaigns(m) ? m : null, scannedAt: Date.now(), error: '' })
+  if (!S.search.busy) { S.scan.savedAt = Date.now(); send('save-scan', { scan: S.scan }) }
 }
 
 function parseFolderLink(text) {
@@ -327,27 +399,57 @@ function parseFolderLink(text) {
   try { name = m[2] ? decodeURIComponent(m[2]).replace(/[-_]+/g, ' ').trim() : '' } catch (e) {}
   return { id: m[1], name: name || 'Folder ' + m[1] }
 }
+function parseTeamLink(text) {
+  const t = String(text || '').trim()
+  const m = t.match(/\/team\/(\d+)(?:\/([^/?#]+))?/) || t.match(/^(\d{5,})$/)
+  if (!m) return null
+  let name = ''
+  try { name = m[2] ? decodeURIComponent(m[2]).replace(/[-_]+/g, ' ').trim() : '' } catch (e) {}
+  return { id: m[1], name: name || 'Team ' + m[1] }
+}
+
+// Reads every page of a list endpoint.
+async function listAll(path, pick) {
+  const out = []
+  for (let guard = 0; path && guard < 20; guard++) {
+    const res = await api(path)
+    out.push.apply(out, pick(res))
+    path = (res.pagination && res.pagination.next_page) || res.next_page || ''
+  }
+  return out
+}
+const retryable = (e) => e.kind === 'network' || e.kind === 'rate'
+const notAvailable = (e) => e.status === 400 || e.status === 403 || e.status === 404
 
 // Lists a folder's files. Figma is moving folders to a v2 endpoint; fall back to the v1 one.
 async function listFolder(folder) {
-  const files = []
-  let path = '/v2/folders/' + folder.id + '/files'
-  let usedV1 = false
-  for (let guard = 0; path && guard < 20; guard++) {
-    let res
-    try { res = await api(path) } catch (e) {
-      if (!usedV1 && (e.status === 400 || e.status === 403 || e.status === 404)) { usedV1 = true; path = '/v1/projects/' + folder.id + '/files'; continue }
-      throw e
-    }
-    const list = res.files || res.data || []
-    for (const f of list) {
-      if (!f || !f.key) continue
-      files.push({ key: f.key, name: f.name || '', lastModified: f.last_modified || f.lastModified || f.updated_at || '' })
-    }
-    const next = (res.pagination && res.pagination.next_page) || res.next_page || ''
-    path = next || ''
+  const pick = (res) => (res.files || res.data || []).filter((f) => f && f.key)
+    .map((f) => ({ key: f.key, name: f.name || '', lastModified: f.last_modified || f.lastModified || f.updated_at || '' }))
+  try { return await listAll('/v2/folders/' + folder.id + '/files', pick) } catch (e) {
+    if (!notAvailable(e)) throw e
+    return listAll('/v1/projects/' + folder.id + '/files', pick)
   }
-  return files
+}
+
+// Lists a team's folders, including subfolders up to three levels down. Falls back to v1 "projects".
+async function listTeamFolders(teamId) {
+  const pick = (res) => (res.folders || res.data || res.projects || []).filter((f) => f && f.id)
+    .map((f) => ({ id: String(f.id), name: f.name || 'Folder ' + f.id }))
+  let level
+  try { level = await listAll('/v2/teams/' + teamId + '/folders', pick) } catch (e) {
+    if (!notAvailable(e)) throw e
+    return listAll('/v1/teams/' + teamId + '/projects', pick)
+  }
+  const out = []
+  for (let depth = 0; level.length && depth < 3 && out.length < 300; depth++) {
+    out.push.apply(out, level)
+    const next = []
+    for (const f of level) {
+      try { next.push.apply(next, await listAll('/v2/folders/' + f.id + '/folders', pick)) } catch (e) { if (retryable(e)) throw e }
+    }
+    level = next
+  }
+  return out
 }
 
 function readManifestFromDocument(doc) {
@@ -366,49 +468,118 @@ function readManifestFromDocument(doc) {
   return best
 }
 
-// Looks through the team's folders for files that hold campaign frames.
-// A file is only opened (one request) the first time it's seen or after it has been edited,
-// and the first time only if it was edited in the last TEAM.searchDays days.
+// When a file was last touched, from Figma's cheap metadata call (or the wall's recent check).
+async function lastTouched(key, manual) {
+  const fc = S.cache.files[key]
+  if (!manual && fc && fc.lastTouchedAt && Date.now() - (fc.checkedAt || 0) < SEARCH_STALE) return fc.lastTouchedAt
+  const meta = (await api('/files/' + key + '/meta')).file || {}
+  return meta.last_touched_at || ''
+}
+
+// opts.manual: the refresh button. Lists every folder and re-reads every edited file.
+// opts.relist: list every folder again (used when Look back gets longer), without the extra reads.
 async function discover(opts) {
   opts = opts || {}
-  const folders = teamFolders()
-  if (!S.token || !folders.length || S.search.busy) return
+  if (!S.token || S.search.busy || !canSearch()) return
   S.search.busy = true; S.search.error = ''
   const scan = S.scan
   scan.files = scan.files || {}
   scan.folders = scan.folders || {}
-  const since = Date.now() - TEAM.searchDays * 86400000
-  const queue = []
+  const now = Date.now()
+  const since = now - lookBackDays() * DAY
+  const status = (text) => { S.search.status = text; renderSearchStatus() }
+  const queue = {}     // files to read, by key
+  const listed = {}    // files seen in a folder listing this time
+  const checked = {}   // linked files already checked this time
+  const add = (f, linked) => { if (f.key !== S.file.key && !queue[f.key]) queue[f.key] = Object.assign({ linked: !!linked }, f) }
   try {
-    for (let i = 0; i < folders.length; i++) {
-      S.search.status = 'Checking folder ' + (i + 1) + ' of ' + folders.length + '…'; renderSearchStatus()
-      const folder = folders[i]
+    // 1. The team's folders, if a team is set up. Re-listed once a day.
+    const team = teamInfo()
+    if (team && (opts.manual || !scan.team || scan.team.id !== team.id || now - (scan.team.checkedAt || 0) > DAY)) {
+      status('Finding the team’s folders…')
+      const keep = scan.team && scan.team.id === team.id ? scan.team.folders || [] : []
       try {
-        const files = await listFolder(folder)
-        scan.folders[folder.id] = { name: folder.name, checkedAt: Date.now(), count: files.length, error: '' }
-        for (const f of files) {
-          const known = scan.files[f.key]
-          const edited = Date.parse(f.lastModified) || 0
-          if (f.key === S.file.key) continue
-          if (!known) { if (edited >= since || opts.everything) queue.push(f); continue }
-          if (known.lastModified !== f.lastModified) queue.push(f)
-        }
+        scan.team = { id: team.id, checkedAt: now, folders: await listTeamFolders(team.id), error: '' }
       } catch (e) {
-        scan.folders[folder.id] = { name: folder.name, checkedAt: Date.now(), error: e.kind === 'forbidden' ? 'Your token can’t list this folder. It needs Projects (read) access.' : e.message }
-        if (e.kind === 'network' || e.kind === 'rate') throw e
+        if (retryable(e)) throw e
+        scan.team = { id: team.id, checkedAt: now, folders: keep, error: e.kind === 'forbidden' ? 'Your token can’t list this team’s folders. It needs Projects (read) access.' : e.message }
       }
     }
-    for (let i = 0; i < queue.length; i++) {
-      const f = queue[i]
-      S.search.status = 'Searching files ' + (i + 1) + ' of ' + queue.length + '…'; renderSearchStatus()
-      try {
-        const res = await api('/v1/files/' + f.key + '?depth=1&plugin_data=shared')
-        scan.files[f.key] = { name: res.name || f.name, lastModified: f.lastModified, scannedAt: Date.now(), manifest: readManifestFromDocument(res.document) }
-      } catch (e) {
-        if (e.kind === 'network' || e.kind === 'rate') throw e
-        scan.files[f.key] = { name: f.name, lastModified: f.lastModified, scannedAt: Date.now(), manifest: null, error: e.message }
+
+    // 2. Folders. Skip listing a folder Figma says hasn't changed (re-listed every few hours anyway).
+    const folders = teamFolders()
+    for (let i = 0; i < folders.length; i++) {
+      status('Checking folder ' + (i + 1) + ' of ' + folders.length + '…')
+      const folder = folders[i]
+      const prev = scan.folders[folder.id] || {}
+      let updatedAt = ''
+      if (!S.search.noFolderMeta) {
+        try { const meta = await api('/v2/folders/' + folder.id + '/meta'); updatedAt = meta.updated_at || (meta.folder && meta.folder.updated_at) || '' } catch (e) {
+          if (retryable(e)) throw e
+          S.search.noFolderMeta = true   // token without folder metadata access: just list
+        }
       }
-      if (i % 5 === 4) { scan.savedAt = Date.now(); send('save-scan', { scan: scan }); rerenderData() }
+      if (!opts.manual && !opts.relist && !prev.error && prev.listedAt && now - prev.listedAt < FOLDER_RELIST && updatedAt && updatedAt === prev.updatedAt) {
+        scan.folders[folder.id] = Object.assign({}, prev, { name: folder.name, checkedAt: now })
+        continue
+      }
+      try {
+        const files = await listFolder(folder)
+        scan.folders[folder.id] = { name: folder.name, checkedAt: now, listedAt: now, updatedAt: updatedAt, count: files.length, error: '' }
+        for (const f of files) {
+          if (f.key === S.file.key) continue
+          listed[f.key] = true
+          const known = scan.files[f.key]
+          if (!known) { if ((Date.parse(f.lastModified) || 0) >= since || opts.everything) add(f); continue }
+          if (known.lastModified === f.lastModified) continue
+          // Edited since we last read it. Campaign files are read now; others at most once a day.
+          if (hasCampaigns(known.manifest) || opts.manual || now - (known.scannedAt || 0) > DAY) add(f, hasCampaigns(known.manifest))
+        }
+      } catch (e) {
+        scan.folders[folder.id] = { name: folder.name, checkedAt: now, error: e.kind === 'forbidden' ? 'Your token can’t list this folder. It needs Projects (read) access.' : e.message }
+        if (retryable(e)) throw e
+      }
+    }
+
+    // 3. Linked files, then read everything queued. Newly read files may link to more files.
+    let done = 0
+    for (let round = 0; round < 4; round++) {
+      const links = campaignFiles()
+      const toCheck = Object.keys(links).filter((key) => !listed[key] && !queue[key] && !checked[key])
+      for (let i = 0; i < toCheck.length; i++) {
+        const key = toCheck[i]
+        checked[key] = true
+        const known = scan.files[key]
+        if (!known || !known.scannedAt) { add({ key: key, name: links[key] }, true); continue }
+        status('Checking linked files ' + (i + 1) + ' of ' + toCheck.length + '…')
+        try {
+          const touched = await lastTouched(key, opts.manual)
+          if (touched && touched !== known.touched) add({ key: key, name: known.name, lastModified: known.lastModified, touched: touched }, true)
+        } catch (e) {
+          if (retryable(e)) throw e
+          if (e.kind === 'notfound') Object.assign(known, { manifest: null, gone: true, error: 'File not found', scannedAt: now })
+        }
+      }
+      const todo = Object.keys(queue).map((k) => queue[k]).filter((f) => !f.read)
+      if (!todo.length) break
+      // Campaign files first, then the most recently edited.
+      todo.sort((a, b) => (b.linked - a.linked) || ((Date.parse(b.lastModified) || 0) - (Date.parse(a.lastModified) || 0)))
+      for (const f of todo) {
+        f.read = true
+        done += 1
+        status('Searching files ' + done + ' of ' + Object.keys(queue).length + '…')
+        const prev = scan.files[f.key] || {}
+        let touched = f.touched || ''
+        try {
+          if (!touched) touched = await lastTouched(f.key, true).catch((e) => { if (retryable(e)) throw e; return '' })
+          const res = await api('/v1/files/' + f.key + '?depth=1&plugin_data=shared')
+          scan.files[f.key] = { name: res.name || f.name || prev.name || '', lastModified: f.lastModified || prev.lastModified || '', touched: touched, scannedAt: Date.now(), manifest: readManifestFromDocument(res.document) }
+        } catch (e) {
+          if (retryable(e)) throw e
+          scan.files[f.key] = { name: f.name || prev.name || '', lastModified: f.lastModified || prev.lastModified || '', scannedAt: Date.now(), touched: touched, manifest: null, error: e.message, gone: e.kind === 'notfound' }
+        }
+        if (done % 5 === 0) { scan.savedAt = Date.now(); send('save-scan', { scan: scan }); rerenderData() }
+      }
     }
     scan.checkedAt = Date.now()
     S.search.status = ''
@@ -419,17 +590,24 @@ async function discover(opts) {
     S.search.busy = false
     scan.savedAt = Date.now()
     send('save-scan', { scan: scan })
-    rerenderData()
+    // Settings shows per-folder results, so redraw it too (unless someone is typing there).
+    if (S.view === 'setup' && !(document.activeElement && document.activeElement.tagName === 'INPUT')) renderSetup()
+    else rerenderData()
   }
+  if (!S.search.error) syncLinks()
 }
 
+function campaignFileCount() {
+  const n = Object.keys(campaignFiles()).filter((k) => S.scan.files && S.scan.files[k] && hasCampaigns(S.scan.files[k].manifest)).length
+  return n + (hasCampaigns(S.file.manifest) ? 1 : 0)
+}
 function searchSummary() {
-  const folders = teamFolders()
-  if (!folders.length) return 'No team folders set up yet'
+  if (!canSearch()) return 'No team folders set up yet'
   if (S.search.busy) return S.search.status || 'Searching…'
   if (S.search.error) return 'Search stopped: ' + S.search.error
-  const found = Object.keys(S.scan.files || {}).filter((k) => S.scan.files[k].manifest).length
-  return 'Searched ' + folders.length + ' folder' + (folders.length === 1 ? '' : 's') + (S.scan.checkedAt ? ' ' + ago(S.scan.checkedAt) : '') + ' · ' + found + ' file' + (found === 1 ? '' : 's') + ' with campaign frames'
+  const folders = teamFolders().length
+  const found = campaignFileCount()
+  return 'Searched ' + (folders ? folders + ' folder' + (folders === 1 ? '' : 's') : 'linked files') + (S.scan.checkedAt ? ' ' + ago(S.scan.checkedAt) : '') + ' · ' + found + ' file' + (found === 1 ? '' : 's') + ' with campaign frames'
 }
 function renderSearchStatus() {
   const el = $('search-status'); if (el) el.textContent = searchSummary()
@@ -439,7 +617,7 @@ function rerenderData() {
   else if (S.view === 'panel') render()
   else renderSearchStatus()
 }
-function searchIsStale() { return !S.scan.checkedAt || Date.now() - S.scan.checkedAt > 5 * 60000 }
+function searchIsStale() { return !S.scan.checkedAt || Date.now() - S.scan.checkedAt > SEARCH_STALE }
 
 // ---------- version history ----------
 async function loadVersions(fileKey, more) {
@@ -633,8 +811,8 @@ function renderPanel() {
     html += '<div class="muted small">Add frames from any file, in any channel folder, then see them together on one wall. Your team sees the same campaign.</div>'
     html += '<input class="field" id="campaign-name" placeholder="e.g. Holiday 2026" maxlength="80" aria-label="Campaign name">'
     html += '<div class="row"><button class="btn primary grow" id="create">Create campaign</button>' + (campaigns.length ? '<button class="btn" id="cancel-create">Cancel</button>' : '') + '</div>'
-    if (!campaigns.length && S.token && teamFolders().length) html += '<div class="muted small" id="search-status">' + esc(searchSummary()) + '</div>'
-    if (!campaigns.length && S.token && !teamFolders().length) html += '<div class="notice small">Joining your team’s campaigns? Add your team’s folders in Settings so the plugin can find them.</div>'
+    if (!campaigns.length && S.token && canSearch()) html += '<div class="muted small" id="search-status">' + esc(searchSummary()) + '</div>'
+    if (!campaigns.length && S.token && !canSearch()) html += '<div class="notice small">Joining your team’s campaigns? Add your team or its folders in Settings so the plugin can find them. Opening the plugin in any file with campaign frames works too.</div>'
     html += '</div></div>' + footer() + '</div>'
     $('app').innerHTML = html
     bindPanel(); setTimeout(() => { const el = $('campaign-name'); if (el) el.focus() }, 0)
@@ -705,10 +883,10 @@ function renderPanel() {
 function footer() {
   const me = S.prefs.me
   if (!S.token) return '<div class="foot"><span class="dot" style="background:var(--danger)"></span><span class="grow">Not connected to Figma’s API</span><button class="btn ghost" id="connect" style="height:28px">Connect</button></div>'
-  const folders = teamFolders().length
+  const folders = canSearch()
   return '<div class="foot"><span class="dot" style="background:' + (S.search.error ? 'var(--warn)' : 'var(--ok)') + '"></span><span class="grow" id="search-status" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + esc(searchSummary()) + '">' +
     (folders ? esc(searchSummary()) : 'Connected' + (me && me.handle ? ' as ' + esc(me.handle) : '') + ' · no team folders yet') + '</span>' +
-    (folders ? '<button class="icon" id="search-now" title="Search team folders now" aria-label="Search team folders now"' + (S.search.busy ? ' disabled' : '') + '>' + icon('refresh', 14) + '</button>' : '<button class="btn ghost" id="connect" style="height:28px">Set up</button>') + '</div>'
+    (folders ? '<button class="icon" id="search-now" title="Search for team campaigns now" aria-label="Search for team campaigns now"' + (S.search.busy ? ' disabled' : '') + '>' + icon('refresh', 14) + '</button>' : '<button class="btn ghost" id="connect" style="height:28px">Set up</button>') + '</div>'
 }
 
 function bindPanel() {
@@ -727,7 +905,7 @@ function bindPanel() {
   on('campaign-name', 'keydown', (e) => { if (e.key === 'Enter') $('create').click() })
   on('settings', 'click', () => { S.view = 'setup'; render() })
   on('connect', 'click', () => { S.view = 'setup'; render() })
-  on('search-now', 'click', () => discover())
+  on('search-now', 'click', () => discover({ manual: true }))
   on('unhide-items', 'click', () => send('unhide-items', { campaignId: campaign().id }))
   on('channel', 'change', (e) => { S.channelChoice = e.target.value; render() })
   on('add', 'click', () => { const c = campaign(); send('add-selection', { campaignId: c.id, campaignName: c.name, channel: S.channelChoice }) })
@@ -749,23 +927,45 @@ function renderSetup() {
   let html = '<div class="view"><div class="top"><button class="icon" id="back" aria-label="Back">' + icon('left') + '</button><div class="grow" style="font-size:14px;font-weight:600">Settings</div></div><div class="scroll">'
   html += '<div class="stack">' + h2('Connect to Figma')
   html += '<div class="muted small">The wall reads frames from other files with Figma’s API, using your personal access token. It’s stored only on this computer.</div>'
-  html += '<ol class="steps small muted"><li>In Figma, open <b>Settings › Security › Personal access tokens</b>.</li><li>Generate a token with these set to read-only: <b>File content</b>, <b>File metadata</b>, <b>File versions</b>, <b>Projects</b> and <b>Current user</b>.</li><li>Paste it below.</li></ol>'
+  html += '<ol class="steps small muted"><li>In Figma, open <b>Settings › Security › Personal access tokens</b>.</li><li>Generate a token with these set to read-only: <b>File content</b>, <b>File metadata</b>, <b>File versions</b>, <b>Projects</b> (called <b>Folders</b> in some accounts; add <b>Folder metadata</b> too if it’s listed) and <b>Current user</b>.</li><li>Paste it below.</li></ol>'
   html += '<input class="field" id="token" type="password" placeholder="figd_…" autocomplete="off" aria-label="Personal access token" value="' + esc(S.token) + '">'
   html += '<div class="row"><button class="btn primary grow" id="test-token">Test and save</button>' + (S.token ? '<button class="btn danger" id="clear-token">Remove</button>' : '') + '</div>'
   html += '<div id="token-result">' + (S.tokenResult || '') + '</div></div>'
 
-  html += '<div class="sep"></div><div class="stack">' + h2('Team folders')
-  html += '<div class="muted small">Campaign frames are saved inside each design file. The plugin finds them by searching these folders, so everyone on the team sees the same campaigns.</div>'
-  const folders = teamFolders()
+  html += '<div class="sep"></div><div class="stack">' + h2('Finding team campaigns')
+  html += '<div class="muted small">Campaign frames are saved inside each design file. Campaign files link to each other, and the plugin also searches your team’s folders, so everyone sees the same campaigns.</div>'
+  const statusLine = (st) => st.error ? '<span style="color:var(--danger)">' + esc(st.error) + '</span>' : st.checkedAt ? esc(st.count || 0) + ' files · checked ' + esc(ago(st.checkedAt)) : 'Not searched yet'
+  // Team: finds every folder by itself.
+  const team = teamInfo()
+  const ts = team && S.scan.team && S.scan.team.id === team.id ? S.scan.team : null
+  html += '<div class="label" style="margin:0">Team</div>'
+  if (team) {
+    html += '<div class="card"><div class="sel-row"><div class="grow"><div class="nm">' + esc(team.name || 'Team ' + team.id) + '</div><div class="muted small">' +
+      (ts ? (ts.error ? '<span style="color:var(--danger)">' + esc(ts.error) + '</span>' : esc(ts.folders.length) + ' folder' + (ts.folders.length === 1 ? '' : 's') + ' found · checked ' + esc(ago(ts.checkedAt))) : 'Not searched yet') +
+      (team.builtIn ? ' · team default' : '') + '</div></div>' +
+      (team.builtIn ? '' : '<button class="icon" id="remove-team" aria-label="Remove team">' + icon('x', 14) + '</button>') + '</div></div>'
+  } else {
+    html += '<div class="muted small">Optional. Paste your team’s link (open the team in Figma’s file browser and copy the address) and every folder in it is searched.</div>'
+    html += '<div class="row"><input class="field" id="team-link" placeholder="figma.com/files/team/…" aria-label="Team link"><button class="btn" id="add-team">Add</button></div>'
+  }
+  // Folders added by hand.
+  const folders = teamFolders().filter((f) => !f.fromTeam)
+  html += '<div class="label" style="margin:0">Folders</div>'
   if (folders.length) {
     html += '<div class="card">' + folders.map((f, i) => {
       const st = (S.scan.folders || {})[f.id] || {}
-      return (i ? '<div class="sep"></div>' : '') + '<div class="sel-row"><div class="grow"><div class="nm">' + esc(f.name) + '</div><div class="muted small">' + (st.error ? '<span style="color:var(--danger)">' + esc(st.error) + '</span>' : st.checkedAt ? st.count + ' files · checked ' + esc(ago(st.checkedAt)) : 'Not searched yet') + (f.builtIn ? ' · team default' : '') + '</div></div>' +
+      return (i ? '<div class="sep"></div>' : '') + '<div class="sel-row"><div class="grow"><div class="nm">' + esc(f.name) + '</div><div class="muted small">' + statusLine(st) + (f.builtIn ? ' · team default' : '') + '</div></div>' +
         (f.builtIn ? '' : '<button class="icon" data-remove-folder="' + esc(f.id) + '" aria-label="Remove ' + esc(f.name) + '">' + icon('x', 14) + '</button>') + '</div>'
     }).join('') + '</div>'
   }
   html += '<div class="row"><input class="field" id="folder-link" placeholder="Paste a folder link" aria-label="Folder link"><button class="btn" id="add-folder">Add</button></div>'
-  html += '<div class="row"><span class="muted small grow" id="search-status">' + esc(searchSummary()) + '</span><button class="btn" id="search-all"' + (S.search.busy || !folders.length ? ' disabled' : '') + '>Search now</button></div>'
+  // Look back.
+  const days = lookBackDays()
+  const dayOptions = [7, 14, 30, 60, 90, 180, 365]
+  if (dayOptions.indexOf(days) < 0) dayOptions.push(days)
+  html += '<div class="row"><label class="muted small grow" for="look-back">Look back: search new files edited in the last</label><select class="field" id="look-back" style="width:auto">' +
+    dayOptions.sort((x, y) => x - y).map((d) => '<option value="' + d + '"' + (d === days ? ' selected' : '') + '>' + (d === 365 ? '1 year' : d + ' days') + '</option>').join('') + '</select></div>'
+  html += '<div class="row"><span class="muted small grow" id="search-status">' + esc(searchSummary()) + '</span><button class="btn" id="search-all"' + (S.search.busy || !canSearch() ? ' disabled' : '') + '>Search now</button></div>'
   html += '</div>'
 
   html += '<div class="sep"></div><div class="stack">' + h2('This file')
@@ -806,7 +1006,7 @@ function renderSetup() {
       send('save-token', { token: token })
       out.innerHTML = '<div class="notice" style="color:var(--ok)">Connected as ' + esc(me.handle) + (me.email ? ' (' + esc(me.email) + ')' : '') + '.</div>'
       S.token = token
-      if (teamFolders().length) discover()
+      if (canSearch()) discover()
     } catch (e) {
       out.innerHTML = '<div class="notice error">' + esc(e.message) + '</div>'
     }
@@ -821,12 +1021,27 @@ function renderSetup() {
     renderSetup()
     discover()
   })
+  on('add-team', 'click', () => {
+    const t = parseTeamLink($('team-link').value)
+    if (!t) { toast('Paste a team link, like figma.com/files/team/123456/Marketing', true); return }
+    S.prefs.team = t
+    send('save-prefs', { prefs: { team: t } })
+    renderSetup()
+    discover()
+  })
+  on('remove-team', 'click', () => { S.prefs.team = null; send('save-prefs', { prefs: { team: null } }); renderSetup() })
+  on('look-back', 'change', (e) => {
+    S.prefs.lookBackDays = Number(e.target.value) || 30
+    send('save-prefs', { prefs: { lookBackDays: S.prefs.lookBackDays } })
+    // Going further back finds older files that were skipped before.
+    discover({ relist: true })
+  })
   document.querySelectorAll('[data-remove-folder]').forEach((el) => el.addEventListener('click', () => {
     const list = (S.prefs.folders || []).filter((x) => x.id !== el.dataset.removeFolder)
     S.prefs.folders = list; send('save-prefs', { prefs: { folders: list } }); renderSetup()
   }))
   document.querySelectorAll('[data-unhide]').forEach((el) => el.addEventListener('click', () => { send('unhide-campaign', { campaignId: el.dataset.unhide }); S.view = 'panel' }))
-  on('search-all', 'click', () => discover())
+  on('search-all', 'click', () => discover({ manual: true }))
   on('save-file-link', 'click', () => send('set-file-key', { url: $('file-link').value }))
   on('do-rename', 'click', () => send('rename-campaign', { campaignId: c.id, name: $('rename').value }))
   on('hide', 'click', (e) => {
@@ -845,7 +1060,7 @@ function openWall() {
   // Show what's known right away, then look for new team frames and check again.
   setTimeout(async () => {
     await refreshWall('auto')
-    if (S.token && teamFolders().length && searchIsStale()) {
+    if (S.token && canSearch() && searchIsStale()) {
       const before = (campaign() || { items: [] }).items.length
       await discover()
       if ((campaign() || { items: [] }).items.length !== before) await refreshWall('auto')
@@ -1223,10 +1438,12 @@ window.onmessage = (event) => {
     // Folder search results: take another window's newer results unless this window is searching.
     const incomingScan = msg.scan && msg.scan.files ? msg.scan : null
     if (incomingScan && (firstLoad || (!S.search.busy && (incomingScan.savedAt || 0) > (S.scan.savedAt || 0)))) S.scan = incomingScan
+    rememberThisFile()
+    syncLinks()
     if (msg.message) toast(msg.message)
     if (firstLoad) {
       S.view = 'panel'
-      if (S.token && teamFolders().length && searchIsStale()) setTimeout(() => discover(), 300)
+      if (S.token && canSearch() && searchIsStale()) setTimeout(() => discover(), 300)
     }
     if (msg.external && S.view === 'setup') { renderSearchStatus(); return }
     if (S.view === 'wall') { renderWall(); return }
@@ -1242,6 +1459,7 @@ window.onmessage = (event) => {
   if (msg.type === 'error') toast(msg.message, true)
 }
 
+window.showroomTest = { discover: discover }   // lets the automated tests run a search directly
 send('init')
 </script>
 </body>

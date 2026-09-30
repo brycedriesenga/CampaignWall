@@ -9,9 +9,11 @@ The wall reads frames straight from their files through Figma's API, so it's alw
 ## How it works
 
 - **Adding frames:** select frames in a design file and click **Add to …**. The campaign list is saved **inside that file** as hidden plugin data, so it travels with the file and anyone can read it.
-- **Finding the team's frames:** the plugin searches your team's **channel folders** for files that contain campaign frames.
-  - A file is only opened the first time it's seen, or after it has been edited.
-  - The first search only looks at files edited in the last 120 days. Change this with `TEAM.searchDays` in `ui.html`.
+- **Finding the team's frames:**
+  - **Links:** every file with campaign frames also stores links to the other campaign files it knows of. Opening the plugin in any campaign file is enough to find the rest. A linked file is only read again after it has been edited, which is checked with a quick, cheap request.
+  - **Folders:** the plugin also searches your team's folders, so brand-new campaign files get found. Add the team's link in Settings and it finds every folder itself, or add folders one at a time.
+  - A file is only opened the first time it's seen, or after it has been edited. Files without campaign frames are re-checked at most once a day. The refresh button checks everything now.
+  - **Look back** (in Settings, 30 days by default): files nobody has edited for longer than this aren't searched.
 - **Showing the frames:** Figma renders the images. Only frames whose contents changed are re-rendered.
 - **What's stored on your computer:** your token, a cache, which changes you've already seen, and anything you've hidden. None of it is team data.
 
@@ -23,10 +25,10 @@ The wall reads frames straight from their files through Figma's API, so it's alw
    - File content
    - File metadata
    - File versions (for History)
-   - Projects (for searching team folders)
+   - Projects (for searching team folders; called Folders in some accounts. Add Folder metadata too if it's listed.)
    - Current user
 4. **Connect:** run the plugin, open **Settings**, paste the token and click **Test and save**.
-5. **Team folders:** if the folders aren't built in (see below), paste each channel folder's link under **Team folders**.
+5. **Team:** if the team isn't built in (see below), paste your team's link under **Finding team campaigns** in Settings, or paste each channel folder's link.
 
 ## Using it
 
@@ -51,19 +53,20 @@ The wall reads frames straight from their files through Figma's API, so it's alw
 
 ## Rolling it out to the team
 
-**Build the team's folders in.** In `ui.html`, fill in `TEAM.folders` with your channel folders:
+**Build the team in.** In `ui.html`, set the team's ID so everyone's plugin searches its folders, or list the channel folders by hand:
 
 ```js
 const TEAM = {
+  teamId: '1234567890123456789',   // the number after /team/ in the team's link
   folders: [
     { id: '123456789', name: 'Site' },
     { id: '234567890', name: 'Email' },
   ],
-  searchDays: 120,
+  lookBackDays: 30,
 }
 ```
 
-A folder's ID is the number in its link: `figma.com/files/…/project/123456789/Site`.
+A folder's ID is the number in its link: `figma.com/files/…/project/123456789/Site`. Either is optional, since links between campaign files work on their own. Folders are what catch the very first frames in a brand-new file.
 
 Then share the plugin in one of two ways.
 

@@ -64,7 +64,7 @@ function makeEnv({ fileKey, fileName = 'Holiday Emails', user = 'Bryce', store }
 
 // ---------- a fake Figma REST API ----------
 function makeApi() {
-  const api = { calls: [], files: {}, folders: {}, fail: null }
+  const api = { calls: [], files: {}, folders: {}, folderMeta: {}, teams: {}, subfolders: {}, fail: null }
   // files[key] = { name, version, touched, nodes: { id: doc }, env?, versions: [...], old: { versionId: { id: doc } } }
   api.fetch = async (url, opts) => {
     await new Promise((r) => setTimeout(r, 2))
@@ -79,6 +79,12 @@ function makeApi() {
       const f = api.folders[m[1]]; if (!f) return resp(404, { err: 'Not found' })
       return resp(200, { files: f.map((k) => ({ key: k, name: api.files[k].name, last_modified: api.files[k].touched })) })
     }
+    m = p.match(/^\/v2\/folders\/([^/]+)\/meta$/)
+    if (m) { const at = api.folderMeta[m[1]]; return at ? resp(200, { id: m[1], name: 'Folder', updated_at: at }) : resp(404, { err: 'Not found' }) }
+    m = p.match(/^\/v2\/folders\/([^/]+)\/folders$/)
+    if (m) return resp(200, { folders: api.subfolders[m[1]] || [] })
+    m = p.match(/^\/v2\/teams\/([^/]+)\/folders$/)
+    if (m) { const t = api.teams[m[1]]; return t ? resp(200, { folders: t }) : resp(404, { err: 'Not found' }) }
     m = p.match(/^\/v1\/files\/([^/]+)\/meta$/)
     if (m) { const f = api.files[m[1]]; if (!f) return resp(404, { err: 'Not found' }); return resp(200, { file: { name: f.name, version: String(f.version), last_touched_at: f.touched, last_touched_by: { handle: 'Sam' } } }) }
     m = p.match(/^\/v1\/files\/([^/]+)\/versions$/)
@@ -300,6 +306,67 @@ function pointer(w, type, target, extra) {
   const ownItem = [...wb.document.querySelectorAll('[data-remove]')].find((el) => /EMAILFILE0001\|1:4/.test(el.dataset.remove))
   ownItem.click(); await tick(80)
   check('removing a frame in this file removes it for everyone', !JSON.parse(bryce.root._d['showroom/manifest']).campaigns[cid].items['1:4'] && !c._d['showroom/campaigns'].includes(cid))
+
+  // ===== links between campaign files =====
+  const bryceLinks = JSON.parse(bryce.root._d['showroom/manifest']).links || {}
+  check('Bryce’s file now links to Sam’s file', !!bryceLinks.ADFILE00002 && !bryceLinks.EMAILFILE0001, JSON.stringify(bryceLinks))
+  // Lee has no folders set up and opens the plugin in Bryce's file, on another computer.
+  const lee = makeEnv({ fileKey: 'EMAILFILE0001', fileName: 'Holiday Emails', user: 'Lee' })
+  Object.assign(lee.root._d, bryce.root._d); Object.assign(lee.page._d, bryce.page._d)
+  const wl = await boot(lee, api)
+  let mark = api.calls.length
+  const since = () => api.calls.slice(mark)
+  const reads = (key) => since().filter((x) => x.indexOf('/v1/files/' + key + '?depth') === 0).length
+  await connect(wl); await tick(200)
+  check('links alone find the team’s frames (no folders set up)', /4\s*frames from 2 files/.test(text(wl)) && !since().some((x) => /^\/v2\/folders/.test(x)), text(wl).slice(0, 300) + ' | ' + since().join(' | '))
+  mark = api.calls.length
+  await wl.showroomTest.discover({ manual: true }); await tick(20)
+  check('unchanged linked file: cheap check only, not read', since().includes('/v1/files/ADFILE00002/meta') && reads('ADFILE00002') === 0, since().join(' | '))
+  api.files.ADFILE00002.touched = new Date(Date.now() + 5000).toISOString()
+  mark = api.calls.length
+  await wl.showroomTest.discover(); await tick(20)
+  check('edited linked file is read again', reads('ADFILE00002') === 1, since().join(' | '))
+
+  // ===== folder search: Look back, daily re-check, unchanged folders =====
+  api.files.PLAINFILE0004 = { name: 'Misc notes', version: 1, touched: new Date().toISOString(), nodes: {} }
+  api.files.OLDFILE00005 = { name: 'Old promo', version: 1, touched: new Date(Date.now() - 60 * 86400e3).toISOString(), nodes: {} }
+  api.folders['333'] = ['PLAINFILE0004', 'OLDFILE00005']
+  api.folderMeta['333'] = '2026-09-01T00:00:00Z'
+  click(wl, '#settings'); await tick(10)
+  check('Look back defaults to 30 days', $(wl, '#look-back') && $(wl, '#look-back').value === '30')
+  mark = api.calls.length
+  $(wl, '#folder-link').value = 'https://www.figma.com/files/team/1/project/333/Misc'
+  click(wl, '#add-folder'); await tick(200)
+  check('new folder: recent file read, file older than Look back skipped', reads('PLAINFILE0004') === 1 && reads('OLDFILE00005') === 0, since().join(' | '))
+  mark = api.calls.length
+  await wl.showroomTest.discover(); await tick(20)
+  check('folder Figma says is unchanged isn’t listed again', since().includes('/v2/folders/333/meta') && !since().includes('/v2/folders/333/files'), since().join(' | '))
+  api.files.PLAINFILE0004.touched = new Date(Date.now() + 9000).toISOString()
+  api.folderMeta['333'] = '2026-09-02T00:00:00Z'
+  mark = api.calls.length
+  await wl.showroomTest.discover(); await tick(20)
+  check('edited file without campaign frames: not re-read within a day', since().includes('/v2/folders/333/files') && reads('PLAINFILE0004') === 0, since().join(' | '))
+  mark = api.calls.length
+  await wl.showroomTest.discover({ manual: true }); await tick(20)
+  check('…but the refresh button re-reads it', reads('PLAINFILE0004') === 1, since().join(' | '))
+  mark = api.calls.length
+  const lookBack = $(wl, '#look-back'); lookBack.value = '90'; lookBack.dispatchEvent(new wl.Event('change')); await tick(200)
+  check('longer Look back finds older files', reads('OLDFILE00005') === 1, since().join(' | '))
+  check('Look back saved', (lee.store.get('showroom.prefs') || {}).lookBackDays === 90)
+
+  // ===== team link: folders found automatically =====
+  api.teams['9001'] = [{ id: '444', name: 'Social' }]
+  api.subfolders['444'] = [{ id: '445', name: 'Paid social' }]
+  api.files.SOCIALFILE06 = { name: 'Holiday Social', version: 1, touched: new Date().toISOString(), nodes: {} }
+  api.folders['444'] = []; api.folders['445'] = ['SOCIALFILE06']
+  mark = api.calls.length
+  $(wl, '#team-link').value = 'https://www.figma.com/files/team/9001/Marketing'
+  click(wl, '#add-team'); await tick(250)
+  check('team link finds its folders and subfolders', since().includes('/v2/teams/9001/folders') && reads('SOCIALFILE06') === 1 && /2 folders found/.test(text(wl)), text(wl).slice(0, 200) + ' | ' + since().join(' | '))
+  mark = api.calls.length
+  await wl.showroomTest.discover(); await tick(20)
+  check('team’s folder list is reused, not fetched every search', !since().includes('/v2/teams/9001/folders'), since().join(' | '))
+  click(wl, '#back'); await tick(10)
 
   // ===== carry-over from the Campaign Wall test builds =====
   const oldStore = new Map()

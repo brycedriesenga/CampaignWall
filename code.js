@@ -5,8 +5,9 @@
 //
 // Where campaign membership lives (so the whole team sees the same campaigns):
 //   Every design file that has campaign frames carries a small "manifest" in its own shared
-//   plugin data: which campaigns, which frames, which channel. Teammates' plugins find those
-//   manifests by searching the team's channel folders through the API (see discover() in ui.html).
+//   plugin data: which campaigns, which frames, which channel, plus links to the other campaign
+//   files it knows of. Teammates' plugins find those manifests by following the links and by
+//   searching the team's folders through the API (see discover() in ui.html).
 //   This computer's storage only keeps personal things: token, cache, what you've seen, hidden items.
 
 const NS = 'showroom';                     // shared plugin data namespace
@@ -21,6 +22,7 @@ const PREFS_KEY = 'showroom.prefs';        // window size, extra folders, etc.
 const OLD_KEYS = ['cw.data.v1', 'cw.token', 'cw.cache.v1', 'cw.scan.v1', 'cw.prefs.v1'];
 const PANEL_SIZE = { width: 360, height: 640 };
 const MANIFEST_LIMIT = 95000;              // Figma allows 100 kB per plugin data entry
+const LINK_LIMIT = 300;                    // most other campaign files one manifest links to
 const ELIGIBLE = ['FRAME', 'COMPONENT', 'COMPONENT_SET', 'INSTANCE', 'GROUP', 'SECTION'];
 const DEFAULT_CHANNELS = ['Site', 'Email', 'Social', 'Display ads', 'Amazon', 'Retail', 'Other'];
 const AD_SIZES = ['300x250', '728x90', '160x600', '300x600', '320x50', '320x100', '970x250', '970x90',
@@ -119,7 +121,9 @@ function writeManifest(manifest) {
     const c = manifest.campaigns[id];
     if (!c.items || !Object.keys(c.items).length) delete manifest.campaigns[id];
   }
-  const json = JSON.stringify(manifest);
+  let json = JSON.stringify(manifest);
+  // Links to other files are only a shortcut for finding them, so drop them before refusing.
+  if (json.length > MANIFEST_LIMIT && manifest.links) { delete manifest.links; json = JSON.stringify(manifest); }
   if (json.length > MANIFEST_LIMIT) throw new Error('This file has too many campaign frames for one file’s storage. Remove some older campaigns from it first.');
   figma.root.setSharedPluginData(NS, MANIFEST_KEY, json);
   const page = figma.root.children[0];
@@ -403,6 +407,26 @@ async function handle(msg) {
       if (!key) throw new Error('That doesn’t look like a Figma file link. Use Share › Copy link.');
       figma.root.setSharedPluginData(NS, 'fileKey', key);
       return sendState({ message: 'Link saved for this file.' });
+    }
+    case 'save-links': {
+      // The UI sends every campaign file it knows of. Save that list in this file's manifest
+      // (only if this file has campaign frames, and only if the list of files changed), so
+      // anyone reading this file can go straight to the others.
+      const manifest = readManifest();
+      if (!Object.keys(manifest.campaigns).length) return;
+      const here = currentFileKey();
+      const links = {};
+      let count = 0;
+      for (const key of Object.keys(msg.links || {})) {
+        if (key === here || !/^[A-Za-z0-9]{10,}$/.test(key)) continue;
+        if (count++ >= LINK_LIMIT) break;
+        links[key] = String(msg.links[key] || '').slice(0, 60);
+      }
+      const before = Object.keys(manifest.links || {}).sort().join(',');
+      if (Object.keys(links).sort().join(',') === before) return;
+      manifest.links = links;
+      try { writeManifest(manifest); } catch (e) { return; }   // e.g. a file you can only view
+      return sendState({ external: true });
     }
     case 'save-cache':
       await figma.clientStorage.setAsync(CACHE_KEY, msg.cache || { files: {} });
