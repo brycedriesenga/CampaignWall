@@ -9,6 +9,7 @@ The wall reads frames straight from their files through Figma's API, so it's alw
 ## How it works
 
 - **Adding frames:** select frames in a design file and click **Add to …**. The campaign list is saved **inside that file** as hidden plugin data, so it travels with the file and anyone can read it.
+- **Team sync (optional, Enterprise):** one shared "Showroom Index" file keeps a copy of every file's campaign list in hidden variables. Everyone's plugin checks it every 45 seconds, so a frame added anywhere shows up for the team within about a minute. The copy repairs itself from the files, which stay the source of truth.
 - **Finding the team's frames:**
   - **Links:** every file with campaign frames also stores links to the other campaign files it knows of. Opening the plugin in any campaign file is enough to find the rest. A linked file is only read again after it has been edited, which is checked with a quick, cheap request.
   - **Folders:** the plugin also searches your team's folders, so brand-new campaign files get found. Add the team's link in Settings and it finds every folder itself, or add folders one at a time.
@@ -27,6 +28,7 @@ The wall reads frames straight from their files through Figma's API, so it's alw
    - File versions (for History)
    - Projects (for searching team folders; called Folders in some accounts. Add Folder metadata too if it's listed.)
    - Current user
+   - For Team sync: File variables, set to **read and write**
 4. **Connect:** run the plugin, open **Settings**, paste the token and click **Test and save**.
 5. **Team:** if the team isn't built in (see below), paste your team's link under **Finding team campaigns** in Settings, or paste each channel folder's link.
 
@@ -53,6 +55,8 @@ The wall reads frames straight from their files through Figma's API, so it's alw
 
 ## Rolling it out to the team
 
+**Set up Team sync** (Enterprise, Full seats): make an empty design file called "Showroom Index" in a team folder that everyone can edit. Paste its link in **Settings › Team sync**, or build it in with `indexFile: '<file key>'` in `TEAM`. The first person to connect fills it in; nothing else is needed. People whose token can't write variables still see everyone's changes.
+
 **Build the team in.** In `ui.html`, set the team's ID so everyone's plugin searches its folders, or list the channel folders by hand:
 
 ```js
@@ -63,6 +67,7 @@ const TEAM = {
     { id: '234567890', name: 'Email' },
   ],
   lookBackDays: 30,
+  indexFile: '',                    // Team sync file key, optional
 }
 ```
 

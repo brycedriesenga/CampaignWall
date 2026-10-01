@@ -45,6 +45,14 @@ Campaign membership lives **inside each design file**, so it's shared with no se
   - `opts.manual` (refresh buttons): re-list every folder, refresh the team list, bypass the daily rule and the meta cache. `opts.relist` (Look back got longer): re-list every folder only.
   - Runs on open if the last search is over 5 minutes old, on wall open, and from the refresh buttons. `canSearch()` is true with folders, a team, or any known campaign file.
   - Unverified in real Figma: the v2 folder/team response fields, and whether a folder's `updated_at` moves when a file inside is edited (the 6 h re-list and daily re-check cover it if not).
+- **Team sync (v0.4, Enterprise):** a shared index in one file's variables. Config: `TEAM.indexFile` or `prefs.index {key,name}`.
+  - Hidden collection named `Showroom index` (constant `INDEX_COLLECTION`), one mode, one STRING variable per design file named `f/<fileKey>`. Its value is that file's manifest JSON without `links`.
+  - `pollIndex()` runs on open, after connecting, and every 45 s (`INDEX_POLL`): `GET /v1/files/:index/variables/local` (tier 2), then `mergeIndex()` copies entries newer (by manifest `updatedAt`) into `scan.files` (marked `indexAt`), so everything else works unchanged.
+  - Writes: `POST /v1/files/:index/variables` (tier 3) via `writeIndex(list)`, batching up to 100 files. It creates the collection if missing, and maps temp IDs with `tempIdToRealId`. `indexChanges()` lists this file's manifest when newer than the index entry, any scanned manifest newer than its entry (self-repair), and gone files (written as empty). Runs after each poll, after `discover()` (`healIndex()`), and 1.2 s after this file's manifest changes (`queueIndexPublish()`).
+  - 403 on write → `S.index.canWrite = false` (Settings shows "Read-only"); 403/404 on read → `S.index.error`; 429 pauses polling for 2 min. Reads and writes run one at a time (`indexTask`).
+  - While the index is healthy (read OK in the last 5 min): the full search is due every 30 min instead of 5, link-following skips files the index covers, and a folder file known only from the index gets its `lastModified` recorded instead of being read.
+  - The design files stay the source of truth. People who can't write the index still see everyone's changes, but theirs only spread through other people's searches.
+  - Needs Enterprise, a Full seat, File variables read (and write to publish), and edit access to the index file. Tested on 2026-09-30 with `tools/test-variables-index.mjs`: all checks passed, about 1–2 s per call, and values of 100k+ characters were accepted.
 - **Campaign list:** `allCampaigns()` merges the current file's live manifest (from code.js), the scanned manifests, and local data.
   - Local data only holds drafts (campaigns with no frames yet).
   - A campaign's name comes from the manifest entry with the newest `updatedAt`.
@@ -64,8 +72,8 @@ Campaign membership lives **inside each design file**, so it's shared with no se
 - `showroom.data`: `{ activeCampaignId, channels[], campaigns: [{ id, name, createdAt, renamedAt }] (drafts and names), seen: { itemId: hash }, hidden: [campaignId], hiddenItems: { campaignId: [itemId] }, rev, savedAt }`
 - `showroom.token`: the personal access token.
 - `showroom.cache`: `{ savedAt, files: { [fileKey]: { name, version, stamp, lastTouchedAt, lastTouchedBy, checkedAt, error, nodes: { [nodeId]: { name, width, height, viewW, viewH, offX, offY, hash, url, urlAt, changedAt, missing, renderFailed } } } } }`
-- `showroom.scan`: `{ savedAt, checkedAt, team: { id, checkedAt, folders: [{ id, name }], error }, folders: { id: { name, checkedAt, listedAt, updatedAt, count, error } }, files: { key: { name, lastModified, touched, scannedAt, manifest|null, error, gone } } }`
-- `showroom.prefs`: `{ me, wallSize, folders: [{ id, name }], team: { id, name }, lookBackDays }`
+- `showroom.scan`: `{ savedAt, checkedAt, team: { id, checkedAt, folders: [{ id, name }], error }, folders: { id: { name, checkedAt, listedAt, updatedAt, count, error } }, files: { key: { name, lastModified, touched, scannedAt, indexAt, manifest|null, error, gone } } }`
+- `showroom.prefs`: `{ me, wallSize, folders: [{ id, name }], team: { id, name }, index: { key, name }, lookBackDays }`
 - On frames: `showroom/campaigns` holds a JSON array of campaign IDs. It's used for relaunch buttons.
 - On the file root: `showroom/fileKey` holds a pasted file key when `figma.fileKey` is unavailable.
 
@@ -119,7 +127,7 @@ Code → UI: `state` (full), `selection`, `error`.
   - that the v2 folders endpoint's response fields match what the code parses;
   - that the image render for a version works for old versions.
 - v0.3 adds links between campaign files, the daily re-check, Look back and team folder discovery. `npm test` has 59 checks. Also to confirm in real Figma: the team folders response and folder `meta` `updated_at` behaviour.
-- A shared "Showroom Index" file using variables (Enterprise) is being considered for near-real-time sync. `tools/test-variables-index.mjs` checks whether the variables REST API works for the team; waiting on its results.
+- v0.4 adds Team sync (the variables index). `npm test` has 66 checks. The variables API itself was confirmed with the test script, but the plugin's Team sync hasn't been run in real Figma yet.
 
 ## Next steps (not built)
 

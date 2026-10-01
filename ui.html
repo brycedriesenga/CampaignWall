@@ -153,6 +153,7 @@ const TEAM = {
     // { id: '123456789', name: 'Email' },
   ],
   lookBackDays: 30,  // default for Settings › Look back: new files are only searched if edited this recently
+  indexFile: '',     // optional Team sync file key (Enterprise): figma.com/design/<this part>/Showroom-Index
 }
 
 const API_HOST = 'https://api.figma.com'
@@ -162,6 +163,7 @@ const S = {
   view: 'loading', data: null, token: '', cache: { files: {} }, scan: { files: {} }, prefs: {}, selection: { items: [], skipped: 0, total: 0 },
   file: { key: '', name: '', keyFromApi: false, manifest: { campaigns: {} } }, channelChoice: 'auto', creating: false,
   search: { busy: false, status: '', error: '' }, history: null,
+  index: { files: {}, vars: {}, colId: '', modeId: '', readAt: 0, error: '', writeError: '', canWrite: null, pauseUntil: 0 },
   wall: { zoom: 1, tx: 40, ty: 80, selected: [], busy: false, status: '', banner: null, fitted: false },
 }
 
@@ -279,13 +281,17 @@ async function tier1Gate() {
 }
 function isTier1(path) { return /^\/v1\/images\//.test(path) || /^\/v1\/files\/[^/]+(\/nodes)?(\?|$)/.test(path) }
 
-async function api(path) {
+// opts.method + opts.body send a JSON request (only used to write Team sync variables).
+async function api(path, opts) {
   if (path.indexOf('https://') === 0) path = path.replace(API_HOST, '')
   if (!/^\/v\d\//.test(path)) path = '/v1' + path
-  if (isTier1(path)) await tier1Gate()
+  const write = !!(opts && opts.method)
+  if (!write && isTier1(path)) await tier1Gate()
   let res
   try {
-    res = await fetch(API_HOST + path, { headers: { 'X-Figma-Token': S.token } })
+    res = await fetch(API_HOST + path, write
+      ? { method: opts.method, headers: { 'X-Figma-Token': S.token, 'Content-Type': 'application/json' }, body: JSON.stringify(opts.body) }
+      : { headers: { 'X-Figma-Token': S.token } })
   } catch (e) {
     const err = new ApiError('Couldn’t reach Figma’s API from the plugin (' + (e && e.message ? e.message : 'network error') + ').')
     err.kind = 'network'; throw err
@@ -365,7 +371,7 @@ function campaignFiles() {
   delete out[S.file.key]
   return out
 }
-function canSearch() { return !!(teamFolders().length || teamInfo() || Object.keys(campaignFiles()).length) }
+function canSearch() { return !!(teamFolders().length || teamInfo() || indexInfo() || Object.keys(campaignFiles()).length) }
 
 // Keep this file's manifest pointing at every campaign file we know of, so anyone who opens
 // the plugin here (or reads this file during a search) can go straight to the others.
@@ -531,6 +537,8 @@ async function discover(opts) {
           listed[f.key] = true
           const known = scan.files[f.key]
           if (!known) { if ((Date.parse(f.lastModified) || 0) >= since || opts.everything) add(f); continue }
+          // Known only from Team sync: trust it, and just note when the file was last edited.
+          if (!known.lastModified && known.indexAt && !opts.manual) { known.lastModified = f.lastModified; continue }
           if (known.lastModified === f.lastModified) continue
           // Edited since we last read it. Campaign files are read now; others at most once a day.
           if (hasCampaigns(known.manifest) || opts.manual || now - (known.scannedAt || 0) > DAY) add(f, hasCampaigns(known.manifest))
@@ -545,7 +553,8 @@ async function discover(opts) {
     let done = 0
     for (let round = 0; round < 4; round++) {
       const links = campaignFiles()
-      const toCheck = Object.keys(links).filter((key) => !listed[key] && !queue[key] && !checked[key])
+      // With Team sync working, files it already covers don't need checking one by one.
+      const toCheck = Object.keys(links).filter((key) => !listed[key] && !queue[key] && !checked[key] && !(indexHealthy() && S.index.files[key] && !opts.manual))
       for (let i = 0; i < toCheck.length; i++) {
         const key = toCheck[i]
         checked[key] = true
@@ -594,7 +603,7 @@ async function discover(opts) {
     if (S.view === 'setup' && !(document.activeElement && document.activeElement.tagName === 'INPUT')) renderSetup()
     else rerenderData()
   }
-  if (!S.search.error) syncLinks()
+  if (!S.search.error) { syncLinks(); healIndex() }
 }
 
 function campaignFileCount() {
@@ -607,6 +616,7 @@ function searchSummary() {
   if (S.search.error) return 'Search stopped: ' + S.search.error
   const folders = teamFolders().length
   const found = campaignFileCount()
+  if (indexInfo() && !S.index.error) return (S.index.readAt ? 'Team sync on · updated ' + ago(S.index.readAt) : 'Team sync starting…') + ' · ' + found + ' file' + (found === 1 ? '' : 's') + ' with campaign frames'
   return 'Searched ' + (folders ? folders + ' folder' + (folders === 1 ? '' : 's') : 'linked files') + (S.scan.checkedAt ? ' ' + ago(S.scan.checkedAt) : '') + ' · ' + found + ' file' + (found === 1 ? '' : 's') + ' with campaign frames'
 }
 function renderSearchStatus() {
@@ -617,7 +627,180 @@ function rerenderData() {
   else if (S.view === 'panel') render()
   else renderSearchStatus()
 }
-function searchIsStale() { return !S.scan.checkedAt || Date.now() - S.scan.checkedAt > SEARCH_STALE }
+// With Team sync working, changes arrive through it, so the full search can run less often.
+function searchIsStale() { return !S.scan.checkedAt || Date.now() - S.scan.checkedAt > (indexHealthy() ? 30 * 60000 : SEARCH_STALE) }
+
+// ---------- Team sync: a shared index kept in one Figma file's variables (Enterprise) ----------
+// Every campaign file's manifest is copied into a hidden variable collection in one shared
+// "Showroom Index" file: one text variable per design file, named "f/<fileKey>", holding that
+// file's manifest as JSON. One read of that file returns every campaign file at once, so it's
+// checked every 45 seconds while the plugin is open.
+// The manifests inside the design files stay the source of truth. The index is a fast copy:
+// this window copies its own file's manifest in whenever it changes, and anything newer that
+// a normal search finds is copied in too, so the index repairs itself.
+const INDEX_COLLECTION = 'Showroom index'
+const INDEX_POLL = 45000
+let indexQueue = Promise.resolve()
+let indexPublishTimer = null
+
+function indexInfo() {
+  if (S.prefs.index && S.prefs.index.key) return { key: S.prefs.index.key, name: S.prefs.index.name || '', builtIn: false }
+  return TEAM.indexFile ? { key: String(TEAM.indexFile), name: '', builtIn: true } : null
+}
+function indexHealthy() { return !!(indexInfo() && S.index.readAt && !S.index.error && Date.now() - S.index.readAt < 5 * 60000) }
+function parseFileLink(text) {
+  const t = String(text || '').trim()
+  const m = t.match(/figma\.com\/(?:design|file)\/([A-Za-z0-9]{10,})(?:\/([^/?#]+))?/) || t.match(/^([A-Za-z0-9]{10,})$/)
+  if (!m) return null
+  let name = ''
+  try { name = m[2] ? decodeURIComponent(m[2]).replace(/[-_]+/g, ' ').trim() : '' } catch (e) {}
+  return { key: m[1], name: name || 'Index file' }
+}
+// Index reads and writes run one at a time.
+function indexTask(fn) { const run = indexQueue.then(fn, fn); indexQueue = run.catch(() => {}); return run }
+
+async function readIndex() {
+  const info = indexInfo()
+  const res = await api('/v1/files/' + info.key + '/variables/local')
+  const meta = res.meta || {}
+  const cols = Object.values(meta.variableCollections || {}).filter((c) => c && c.name === INDEX_COLLECTION && !c.remote)
+  const modeOf = (col) => col.defaultModeId || (col.modes && col.modes[0] && col.modes[0].modeId) || ''
+  const files = {}, vars = {}
+  for (const v of Object.values(meta.variables || {})) {
+    const col = v && cols.find((c) => c.id === v.variableCollectionId)
+    if (!col || !/^f\//.test(v.name || '')) continue
+    const values = v.valuesByMode || {}
+    const raw = values[modeOf(col)] != null ? values[modeOf(col)] : values[Object.keys(values)[0]]
+    let m = null
+    try { m = JSON.parse(raw) } catch (e) {}
+    if (!m || !m.campaigns || typeof m.campaigns !== 'object') continue
+    const key = v.name.slice(2)
+    // Two people could create the collection at the same moment; keep the newest entry.
+    if (!files[key] || (m.updatedAt || 0) > (files[key].updatedAt || 0)) { files[key] = m; vars[key] = { id: v.id, modeId: modeOf(col) } }
+  }
+  S.index.files = files
+  S.index.vars = vars
+  S.index.colId = cols[0] ? cols[0].id : ''
+  S.index.modeId = cols[0] ? modeOf(cols[0]) : ''
+  S.index.readAt = Date.now()
+  S.index.error = ''
+}
+
+// Copies newer index entries into the search results, which everything else reads from.
+function mergeIndex() {
+  const files = S.scan.files = S.scan.files || {}
+  let changed = false
+  for (const key of Object.keys(S.index.files)) {
+    if (key === S.file.key) continue
+    const m = S.index.files[key]
+    const prev = files[key]
+    if (prev && prev.manifest && (prev.manifest.updatedAt || 0) >= (m.updatedAt || 0)) continue
+    // This computer read the file after that entry was written and found no campaign frames.
+    if (prev && !prev.manifest && (prev.scannedAt || 0) > (m.updatedAt || 0)) continue
+    files[key] = Object.assign({}, prev || {}, { name: m.fileName || (prev && prev.name) || '', manifest: m, indexAt: Date.now(), error: '', gone: false })
+    changed = true
+  }
+  return changed
+}
+
+function indexValue(m) { const copy = Object.assign({}, m); delete copy.links; return JSON.stringify(copy) }
+
+// Writes several files' manifests to the index in one request.
+async function writeIndex(list) {
+  const info = indexInfo()
+  if (!info || !S.token || S.index.canWrite === false || !list.length) return
+  const body = { variables: [], variableModeValues: [] }
+  let colId = S.index.colId, modeId = S.index.modeId
+  if (!colId) {
+    colId = 'col_new'; modeId = 'mode_new'
+    body.variableCollections = [{ action: 'CREATE', id: colId, name: INDEX_COLLECTION, initialModeId: modeId, hiddenFromPublishing: true }]
+  }
+  list = list.slice(0, 100)
+  for (const it of list) {
+    const existing = S.index.vars[it.key]
+    if (existing) { body.variableModeValues.push({ variableId: existing.id, modeId: existing.modeId, value: indexValue(it.manifest) }); continue }
+    const tmp = 'v_' + it.key
+    body.variables.push({ action: 'CREATE', id: tmp, name: 'f/' + it.key, variableCollectionId: colId, resolvedType: 'STRING', hiddenFromPublishing: true })
+    body.variableModeValues.push({ variableId: tmp, modeId: modeId, value: indexValue(it.manifest) })
+  }
+  if (!body.variables.length) delete body.variables
+  try {
+    const res = await api('/v1/files/' + info.key + '/variables', { method: 'POST', body: body })
+    const ids = (res && res.meta && res.meta.tempIdToRealId) || {}
+    if (body.variableCollections) { S.index.colId = ids[colId] || ''; S.index.modeId = ids[modeId] || '' }
+    for (const it of list) {
+      if (!S.index.vars[it.key] && ids['v_' + it.key]) S.index.vars[it.key] = { id: ids['v_' + it.key], modeId: S.index.modeId }
+      S.index.files[it.key] = JSON.parse(indexValue(it.manifest))
+    }
+    S.index.canWrite = true
+    S.index.writeError = ''
+  } catch (e) {
+    if (e.kind === 'forbidden') S.index.canWrite = false
+    else S.index.writeError = e.message
+    // Our idea of the index may be out of date (e.g. someone deleted the collection): re-read next time.
+    if (!retryable(e)) S.index.readAt = 0
+  }
+}
+
+// What this window should copy into the index: this file's manifest if it changed, and any
+// file a search found with a newer manifest than the index has.
+function indexChanges() {
+  const out = []
+  const ix = S.index.files
+  const m = S.file.manifest
+  if (S.file.key && m && (hasCampaigns(m) || ix[S.file.key]) && (!ix[S.file.key] || (m.updatedAt || 0) > (ix[S.file.key].updatedAt || 0))) out.push({ key: S.file.key, manifest: m })
+  const files = S.scan.files || {}
+  for (const key of Object.keys(files)) {
+    if (key === S.file.key) continue
+    const f = files[key], entry = ix[key]
+    if (f.gone && entry && hasCampaigns(entry)) { out.push({ key: key, manifest: { v: 1, fileKey: key, fileName: entry.fileName, updatedAt: Date.now(), campaigns: {} } }); continue }
+    if (!f.manifest) continue
+    if (entry ? (f.manifest.updatedAt || 0) > (entry.updatedAt || 0) : hasCampaigns(f.manifest)) out.push({ key: key, manifest: f.manifest })
+  }
+  return out
+}
+function healIndex() {
+  if (!indexInfo() || !S.token || S.index.canWrite === false || !S.index.readAt) return
+  return indexTask(async () => {
+    if (!S.index.readAt) return
+    const list = indexChanges()
+    if (list.length) { await writeIndex(list); renderSearchStatus() }
+  })
+}
+// After this file's campaign list changes, copy it in (a moment later, so quick edits batch up).
+function queueIndexPublish() {
+  if (!indexInfo() || !S.index.readAt) return
+  clearTimeout(indexPublishTimer)
+  indexPublishTimer = setTimeout(() => healIndex(), 1200)
+}
+
+// Reads the index, folds in what changed and copies back anything newer. Runs every 45 s.
+async function pollIndex() {
+  if (!indexInfo() || !S.token || Date.now() < (S.index.pauseUntil || 0)) return
+  return indexTask(async () => {
+    const before = (campaign() || { items: [] }).items.map((it) => it.id).join(',')
+    try { await readIndex() } catch (e) {
+      S.index.error = e.kind === 'forbidden' ? 'Your token can’t read the index file’s variables. It needs File variables access, an Enterprise plan and a Full seat.'
+        : e.kind === 'notfound' ? 'Index file not found. Check the link in Settings.' : e.message
+      if (e.kind === 'rate') S.index.pauseUntil = Date.now() + 120000
+      renderSearchStatus()
+      return
+    }
+    const changed = mergeIndex()
+    const list = indexChanges()
+    if (list.length) await writeIndex(list)
+    if (changed) { S.scan.savedAt = Date.now(); send('save-scan', { scan: S.scan }) }
+    if (!changed) { if (S.view === 'setup') renderSetupIfIdle(); else renderSearchStatus(); return }
+    const after = (campaign() || { items: [] }).items.map((it) => it.id).join(',')
+    if (S.view === 'wall') { renderWall(); if (after !== before) refreshWall('auto') }
+    else if (S.view === 'setup') renderSetupIfIdle()
+    else rerenderData()
+  })
+}
+function renderSetupIfIdle() {
+  if (S.view === 'setup' && !(document.activeElement && document.activeElement.tagName === 'INPUT')) renderSetup()
+  else renderSearchStatus()
+}
 
 // ---------- version history ----------
 async function loadVersions(fileKey, more) {
@@ -884,7 +1067,7 @@ function footer() {
   const me = S.prefs.me
   if (!S.token) return '<div class="foot"><span class="dot" style="background:var(--danger)"></span><span class="grow">Not connected to Figma’s API</span><button class="btn ghost" id="connect" style="height:28px">Connect</button></div>'
   const folders = canSearch()
-  return '<div class="foot"><span class="dot" style="background:' + (S.search.error ? 'var(--warn)' : 'var(--ok)') + '"></span><span class="grow" id="search-status" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + esc(searchSummary()) + '">' +
+  return '<div class="foot"><span class="dot" style="background:' + (S.search.error || S.index.error ? 'var(--warn)' : 'var(--ok)') + '"></span><span class="grow" id="search-status" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + esc(searchSummary()) + '">' +
     (folders ? esc(searchSummary()) : 'Connected' + (me && me.handle ? ' as ' + esc(me.handle) : '') + ' · no team folders yet') + '</span>' +
     (folders ? '<button class="icon" id="search-now" title="Search for team campaigns now" aria-label="Search for team campaigns now"' + (S.search.busy ? ' disabled' : '') + '>' + icon('refresh', 14) + '</button>' : '<button class="btn ghost" id="connect" style="height:28px">Set up</button>') + '</div>'
 }
@@ -927,7 +1110,7 @@ function renderSetup() {
   let html = '<div class="view"><div class="top"><button class="icon" id="back" aria-label="Back">' + icon('left') + '</button><div class="grow" style="font-size:14px;font-weight:600">Settings</div></div><div class="scroll">'
   html += '<div class="stack">' + h2('Connect to Figma')
   html += '<div class="muted small">The wall reads frames from other files with Figma’s API, using your personal access token. It’s stored only on this computer.</div>'
-  html += '<ol class="steps small muted"><li>In Figma, open <b>Settings › Security › Personal access tokens</b>.</li><li>Generate a token with these set to read-only: <b>File content</b>, <b>File metadata</b>, <b>File versions</b>, <b>Projects</b> (called <b>Folders</b> in some accounts; add <b>Folder metadata</b> too if it’s listed) and <b>Current user</b>.</li><li>Paste it below.</li></ol>'
+  html += '<ol class="steps small muted"><li>In Figma, open <b>Settings › Security › Personal access tokens</b>.</li><li>Generate a token with these set to read-only: <b>File content</b>, <b>File metadata</b>, <b>File versions</b>, <b>Projects</b> (called <b>Folders</b> in some accounts; add <b>Folder metadata</b> too if it’s listed) and <b>Current user</b>. For Team sync, also set <b>File variables</b> to read and write.</li><li>Paste it below.</li></ol>'
   html += '<input class="field" id="token" type="password" placeholder="figd_…" autocomplete="off" aria-label="Personal access token" value="' + esc(S.token) + '">'
   html += '<div class="row"><button class="btn primary grow" id="test-token">Test and save</button>' + (S.token ? '<button class="btn danger" id="clear-token">Remove</button>' : '') + '</div>'
   html += '<div id="token-result">' + (S.tokenResult || '') + '</div></div>'
@@ -935,6 +1118,21 @@ function renderSetup() {
   html += '<div class="sep"></div><div class="stack">' + h2('Finding team campaigns')
   html += '<div class="muted small">Campaign frames are saved inside each design file. Campaign files link to each other, and the plugin also searches your team’s folders, so everyone sees the same campaigns.</div>'
   const statusLine = (st) => st.error ? '<span style="color:var(--danger)">' + esc(st.error) + '</span>' : st.checkedAt ? esc(st.count || 0) + ' files · checked ' + esc(ago(st.checkedAt)) : 'Not searched yet'
+  // Team sync: the shared index file (Enterprise).
+  const index = indexInfo()
+  html += '<div class="label" style="margin:0">Team sync</div>'
+  if (index) {
+    const count = Object.keys(S.index.files || {}).filter((k) => hasCampaigns(S.index.files[k])).length
+    const line = S.index.error ? '<span style="color:var(--danger)">' + esc(S.index.error) + '</span>'
+      : S.index.readAt ? 'On · ' + count + ' campaign file' + (count === 1 ? '' : 's') + ' · updated ' + esc(ago(S.index.readAt)) : 'Connecting…'
+    const note = S.index.canWrite === false ? '<div class="small" style="color:var(--warn);margin-top:2px">Read-only: your token can’t write File variables, or you can’t edit this file. You still see the team’s changes; yours reach them through the normal search.</div>'
+      : S.index.writeError ? '<div class="small" style="color:var(--warn);margin-top:2px">Couldn’t update the index: ' + esc(S.index.writeError) + '</div>' : ''
+    html += '<div class="card"><div class="sel-row"><div class="grow"><div class="nm">' + esc(index.name || 'Index file') + '</div><div class="muted small">' + line + (index.builtIn ? ' · team default' : '') + '</div>' + note + '</div>' +
+      (index.builtIn ? '' : '<button class="icon" id="remove-index" aria-label="Turn off Team sync">' + icon('x', 14) + '</button>') + '</div></div>'
+  } else {
+    html += '<div class="muted small">Optional, needs an Enterprise plan. Make an empty design file (e.g. “Showroom Index”) that the whole team can edit, and paste its link. Campaign changes then reach everyone within a minute.</div>'
+    html += '<div class="row"><input class="field" id="index-link" placeholder="figma.com/design/…/Showroom-Index" aria-label="Index file link"><button class="btn" id="add-index">Add</button></div>'
+  }
   // Team: finds every folder by itself.
   const team = teamInfo()
   const ts = team && S.scan.team && S.scan.team.id === team.id ? S.scan.team : null
@@ -1006,7 +1204,8 @@ function renderSetup() {
       send('save-token', { token: token })
       out.innerHTML = '<div class="notice" style="color:var(--ok)">Connected as ' + esc(me.handle) + (me.email ? ' (' + esc(me.email) + ')' : '') + '.</div>'
       S.token = token
-      if (canSearch()) discover()
+      S.index.canWrite = null; S.index.error = ''   // a new token may have different access
+      pollIndex().then(() => { if (canSearch()) discover() })
     } catch (e) {
       out.innerHTML = '<div class="notice error">' + esc(e.message) + '</div>'
     }
@@ -1028,6 +1227,20 @@ function renderSetup() {
     send('save-prefs', { prefs: { team: t } })
     renderSetup()
     discover()
+  })
+  on('add-index', 'click', () => {
+    const f = parseFileLink($('index-link').value)
+    if (!f) { toast('Paste the index file’s link (Share › Copy link).', true); return }
+    S.prefs.index = f
+    S.index = { files: {}, vars: {}, colId: '', modeId: '', readAt: 0, error: '', writeError: '', canWrite: null, pauseUntil: 0 }
+    send('save-prefs', { prefs: { index: f } })
+    renderSetup()
+    pollIndex()
+  })
+  on('remove-index', 'click', () => {
+    S.prefs.index = null
+    S.index = { files: {}, vars: {}, colId: '', modeId: '', readAt: 0, error: '', writeError: '', canWrite: null, pauseUntil: 0 }
+    send('save-prefs', { prefs: { index: null } }); renderSetup()
   })
   on('remove-team', 'click', () => { S.prefs.team = null; send('save-prefs', { prefs: { team: null } }); renderSetup() })
   on('look-back', 'change', (e) => {
@@ -1440,10 +1653,12 @@ window.onmessage = (event) => {
     if (incomingScan && (firstLoad || (!S.search.busy && (incomingScan.savedAt || 0) > (S.scan.savedAt || 0)))) S.scan = incomingScan
     rememberThisFile()
     syncLinks()
+    queueIndexPublish()
     if (msg.message) toast(msg.message)
     if (firstLoad) {
       S.view = 'panel'
-      if (S.token && canSearch() && searchIsStale()) setTimeout(() => discover(), 300)
+      // Team sync first (one quick read), then the full search if it's due.
+      setTimeout(async () => { await pollIndex(); if (S.token && canSearch() && searchIsStale()) discover() }, 300)
     }
     if (msg.external && S.view === 'setup') { renderSearchStatus(); return }
     if (S.view === 'wall') { renderWall(); return }
@@ -1459,7 +1674,8 @@ window.onmessage = (event) => {
   if (msg.type === 'error') toast(msg.message, true)
 }
 
-window.showroomTest = { discover: discover }   // lets the automated tests run a search directly
+window.showroomTest = { discover: discover, pollIndex: pollIndex }
+setInterval(() => { pollIndex() }, INDEX_POLL)   // lets the automated tests run a search directly
 send('init')
 </script>
 </body>

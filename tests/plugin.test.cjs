@@ -64,7 +64,8 @@ function makeEnv({ fileKey, fileName = 'Holiday Emails', user = 'Bryce', store }
 
 // ---------- a fake Figma REST API ----------
 function makeApi() {
-  const api = { calls: [], files: {}, folders: {}, folderMeta: {}, teams: {}, subfolders: {}, fail: null }
+  const api = { calls: [], files: {}, folders: {}, folderMeta: {}, teams: {}, subfolders: {}, fail: null, vars: {}, varsReadOnly: false }
+  let nextId = 1
   // files[key] = { name, version, touched, nodes: { id: doc }, env?, versions: [...], old: { versionId: { id: doc } } }
   api.fetch = async (url, opts) => {
     await new Promise((r) => setTimeout(r, 2))
@@ -78,6 +79,20 @@ function makeApi() {
     if (m) {
       const f = api.folders[m[1]]; if (!f) return resp(404, { err: 'Not found' })
       return resp(200, { files: f.map((k) => ({ key: k, name: api.files[k].name, last_modified: api.files[k].touched })) })
+    }
+    // Variables (Team sync index): vars[fileKey] = { collections: {}, variables: {} }
+    m = p.match(/^\/v1\/files\/([^/]+)\/variables(\/local)?$/)
+    if (m) {
+      if (!api.files[m[1]]) return resp(404, { error: true, message: 'Not found' })
+      const store = api.vars[m[1]] = api.vars[m[1]] || { variableCollections: {}, variables: {} }
+      if (!opts.method) return resp(200, { status: 200, meta: structuredClone(store) })
+      if (api.varsReadOnly) return resp(403, { error: true, message: 'Forbidden' })
+      const b = JSON.parse(opts.body); const map = {}
+      for (const c of b.variableCollections || []) { const id = 'VC:' + nextId++, mode = 'M:' + nextId++; map[c.id] = id; map[c.initialModeId] = mode; store.variableCollections[id] = { id, name: c.name, defaultModeId: mode, modes: [{ modeId: mode, name: 'Mode 1' }] } }
+      for (const v of b.variables || []) { const id = 'V:' + nextId++; map[v.id] = id; store.variables[id] = { id, name: v.name, variableCollectionId: map[v.variableCollectionId] || v.variableCollectionId, resolvedType: v.resolvedType, valuesByMode: {} } }
+      for (const mv of b.variableModeValues || []) { const vid = map[mv.variableId] || mv.variableId; if (!store.variables[vid]) return resp(400, { error: true, message: 'bad variable' }); store.variables[vid].valuesByMode[map[mv.modeId] || mv.modeId] = mv.value }
+      api.posts = (api.posts || 0) + 1
+      return resp(200, { status: 200, error: false, meta: { tempIdToRealId: map } })
     }
     m = p.match(/^\/v2\/folders\/([^/]+)\/meta$/)
     if (m) { const at = api.folderMeta[m[1]]; return at ? resp(200, { id: m[1], name: 'Folder', updated_at: at }) : resp(404, { err: 'Not found' }) }
@@ -367,6 +382,51 @@ function pointer(w, type, target, extra) {
   await wl.showroomTest.discover(); await tick(20)
   check('team’s folder list is reused, not fetched every search', !since().includes('/v2/teams/9001/folders'), since().join(' | '))
   click(wl, '#back'); await tick(10)
+
+  // ===== Team sync: a shared index in a file's variables =====
+  api.files.INDEXFILE0099 = { name: 'Showroom Index', version: 1, touched: new Date().toISOString(), nodes: {} }
+  const indexEntries = () => { const st = api.vars.INDEXFILE0099; return st ? Object.values(st.variables).reduce((o, v) => { o[v.name] = JSON.parse(Object.values(v.valuesByMode)[0]); return o }, {}) : {} }
+  click(wb, '#settings'); await tick(10)
+  $(wb, '#index-link').value = 'https://www.figma.com/design/INDEXFILE0099/Showroom-Index?node-id=0-1'
+  click(wb, '#add-index'); await tick(1600)
+  let entries = indexEntries()
+  check('Team sync: index created with Bryce’s file and the files his search found', !!entries['f/EMAILFILE0001'] && !!entries['f/ADFILE00002'] && Object.keys(api.vars.INDEXFILE0099.variableCollections).length === 1, JSON.stringify(Object.keys(entries)))
+  check('Team sync: entries hold the campaign list, without links', entries['f/ADFILE00002'] && entries['f/ADFILE00002'].campaigns[cid] && !('links' in entries['f/EMAILFILE0001']))
+  check('Team sync shown as on in Settings', /On · 2 campaign files/.test(text(wb)), text(wb).slice(0, 600))
+  click(wb, '#back'); await tick(10)
+  // Kim: brand-new to the team, only the index file set up, plugin open in an unrelated file.
+  const kim = makeEnv({ fileKey: 'KIMFILE00007', fileName: 'Kim scratch', user: 'Kim' })
+  api.files.KIMFILE00007 = { name: 'Kim scratch', version: 1, touched: new Date().toISOString(), nodes: {} }
+  const wk = await boot(kim, api)
+  mark = api.calls.length
+  await connect(wk)
+  click(wk, '#settings'); await tick(10)
+  $(wk, '#index-link').value = 'https://www.figma.com/design/INDEXFILE0099/Showroom-Index'
+  click(wk, '#add-index'); await tick(200)
+  click(wk, '#back'); await tick(20)
+  check('Kim sees the team’s campaign from the index alone, without opening any design file', /frames from 2 files/.test(text(wk)) && !since().some((x) => /\?depth=1/.test(x)), text(wk).slice(0, 300) + ' | ' + since().join(' | '))
+  // Sam adds a frame; it reaches Kim on her next index check (every 45 s in real use).
+  click(ws, '#settings'); await tick(10)
+  $(ws, '#index-link').value = 'https://www.figma.com/design/INDEXFILE0099/Showroom-Index'
+  click(ws, '#add-index'); await tick(200)
+  click(ws, '#back'); await tick(10)
+  const mpu2 = sam.mk('7:2', 'Leaderboard', 'FRAME', 728, 90)
+  sam.setSel([mpu2]); await tick(150)
+  click(ws, '#add'); await tick(1600)
+  await wk.showroomTest.pollIndex(); await tick(50)
+  check('a frame Sam adds reaches Kim through the index', /frames from 2 files/.test(text(wk)) && entries['f/ADFILE00002'] && Object.keys(indexEntries()['f/ADFILE00002'].campaigns[cid].items).length === 2, text(wk).slice(0, 300))
+  const kimCount = (text(wk).match(/(\d+)\s*frames from 2 files/) || [])[1]
+  check('Kim’s frame count went up by one', kimCount === '5', kimCount)
+  // Someone whose token can only read: still sees the team's changes, and is told why theirs don't sync.
+  api.varsReadOnly = true
+  const postsBefore = api.posts
+  const own = bryce.mk('1:9', 'Promo banner', 'FRAME', 600, 300)
+  bryce.setSel([own]); await tick(150)
+  click(wb, '#add'); await tick(1600)
+  click(wb, '#settings'); await tick(10)
+  check('read-only token: no write, and Settings says why', api.posts === postsBefore && /Read-only/.test(text(wb)), text(wb).slice(0, 700))
+  click(wb, '#back'); await tick(10)
+  api.varsReadOnly = false
 
   // ===== carry-over from the Campaign Wall test builds =====
   const oldStore = new Map()
