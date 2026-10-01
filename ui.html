@@ -255,6 +255,29 @@ body.presenting .fr { box-shadow: none; }
   .fr.flip { transition: none; } .fr.arrive, .fr.arrive::after, .arrival, .view.enter, .item.new { animation: none; }
   #viewopts:not(.hidden), #filters:not(.hidden), #shortcuts:not(.hidden), #inspector:not(.hidden), #history:not(.hidden) { animation: none; }
 }
+/* First-run setup */
+.welcome { padding: 22px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
+.welcome .hero { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px 6px; }
+.welcome .hero .mark { width: 40px; height: 40px; border-radius: 11px; background: var(--ink); color: var(--onink); display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+.welcome h1 { margin: 6px 0 0; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+.welcome .lede { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.ob-step { border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: flex; gap: 11px; transition: border-color .2s; }
+.ob-step.done { border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
+.ob-num { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 11.5px; font-weight: 700;
+  background: var(--bg2); color: var(--muted); transition: background .25s, color .25s, transform .25s; }
+.ob-step.done .ob-num { background: var(--ok); color: #fff; transform: scale(1.05); }
+.ob-step .ob-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.ob-step .ob-title { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.ob-step .ob-title em { font-style: normal; font-weight: 500; font-size: 10.5px; color: var(--muted); }
+.ob-step .ob-desc { color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+.scopes { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; }
+.scopes .sc { display: flex; gap: 7px; align-items: flex-start; }
+.scopes .sc i { font-style: normal; width: 15px; height: 15px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; margin-top: 1px; }
+.scopes .ok i { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.scopes .fail i { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.scopes .skip i { background: var(--bg2); color: var(--muted); }
+.scopes .sc small { display: block; color: var(--muted); font-size: 10.5px; }
+.scopes code { font-size: 10.5px; background: var(--bg2); padding: 0 4px; border-radius: 4px; }
 .marquee { position: absolute; z-index: 2; border: 1px solid var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); pointer-events: none; }
 #viewopts { position: absolute; right: 12px; top: 56px; width: 264px; z-index: 6; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 12px; }
 #viewopts .vo-title { font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
@@ -310,7 +333,7 @@ const IMAGE_MAX_AGE = 20 * 24 * 3600 * 1000   // render URLs from the API expire
 const S = {
   view: 'loading', data: null, token: '', cache: { files: {} }, scan: { files: {} }, prefs: {}, selection: { items: [], skipped: 0, total: 0 },
   file: { key: '', name: '', keyFromApi: false, manifest: { campaigns: {} } }, channelChoice: 'auto', creating: false,
-  search: { busy: false, status: '', error: '' }, history: null,
+  search: { busy: false, status: '', error: '' }, history: null, ob: { checks: null, busy: false, error: '' },
   index: { files: {}, vars: {}, colId: '', modeId: '', readAt: 0, error: '', writeError: '', canWrite: null, pauseUntil: 0 },
   wall: { zoom: 1, tx: 40, ty: 80, selected: [], busy: false, status: '', banner: null, fitted: false,
     phase: {}, tried: {}, retried: {}, loaded: {}, pending: false, synced: false,
@@ -1864,6 +1887,131 @@ function openItem(itemId, versionId) {
   if (it) send('open-item', { fileKey: it.fileKey, nodeId: it.nodeId, versionId: versionId || '' })
 }
 
+// ---------- first-run setup ----------
+// Three steps: connect a token (each permission checked separately), find the team, turn on Team sync.
+// Steps the team has built in (TEAM.teamId / folders / indexFile) show as already done.
+const SCOPE_CHECKS = [
+  { key: 'me', scope: 'current_user:read', label: 'Your name' },
+  { key: 'meta', scope: 'file_metadata:read', label: 'File info (who edited, when)' },
+  { key: 'content', scope: 'file_content:read', label: 'Frames and previews' },
+  { key: 'versions', scope: 'file_versions:read', label: 'Version history' },
+  { key: 'folders', scope: 'folders:read', label: 'Team folders' },
+  { key: 'variables', scope: 'file_variables:read', label: 'Team sync' },
+]
+async function checkAccess() {
+  if (!S.token || S.ob.busy) return
+  S.ob.busy = true; S.ob.checks = {}; renderWelcomeIfOpen()
+  const run = async (key, path, skipNote) => {
+    if (!path) { S.ob.checks[key] = { state: 'skip', note: skipNote }; return }
+    try { await api(path); S.ob.checks[key] = { state: 'ok' } } catch (e) {
+      S.ob.checks[key] = { state: e.kind === 'network' ? 'skip' : 'fail', note: e.kind === 'forbidden' ? 'Not allowed: tick this scope on a new token.' : e.message }
+    }
+    renderWelcomeIfOpen()
+  }
+  const key = S.file.key
+  await run('me', '/v1/me')
+  await run('meta', key ? '/v1/files/' + key + '/meta' : '', 'Checked once this file has a link')
+  await run('content', key ? '/v1/files/' + key + '?depth=1' : '', 'Checked once this file has a link')
+  await run('versions', key ? '/v1/files/' + key + '/versions?page_size=1' : '', 'Checked once this file has a link')
+  const team = teamInfo()
+  const folder = TEAM.folders[0] || (S.prefs.folders || [])[0]
+  await run('folders', team ? '/v2/teams/' + team.id + '/folders' : folder ? '/v2/folders/' + folder.id + '/files' : '', 'Checked when you add your team')
+  const idx = indexInfo()
+  await run('variables', idx ? '/v1/files/' + idx.key + '/variables/local' : '', 'Checked when you turn on Team sync (Enterprise)')
+  S.ob.busy = false
+  renderWelcomeIfOpen()
+}
+function renderWelcomeIfOpen() { if (S.view === 'welcome' && !(document.activeElement && document.activeElement.tagName === 'INPUT')) renderWelcome() }
+function renderWelcome() {
+  const me = S.prefs.me
+  const team = teamInfo(), idx = indexInfo()
+  const builtInTeam = !!(TEAM.teamId || TEAM.folders.length)
+  const step = (n, done, title, tag, desc, body) => '<div class="ob-step' + (done ? ' done' : '') + '"><div class="ob-num">' + (done ? icon('check', 13) : n) + '</div><div class="ob-body">' +
+    '<div class="ob-title">' + title + (tag ? '<em>' + tag + '</em>' : '') + '</div>' + (desc ? '<div class="ob-desc">' + desc + '</div>' : '') + (body || '') + '</div></div>'
+  let html = '<div class="view"><div class="scroll" style="padding:0"><div class="welcome">'
+  html += '<div class="hero"><div class="mark">' + icon('wall', 22) + '</div><h1>Welcome to Showroom</h1><div class="lede">Every frame in a campaign, side by side at real size, live from its own file. Three quick steps and you’re in.</div></div>'
+
+  // 1. Token
+  let body1 = ''
+  if (!S.token) {
+    body1 += '<div class="ob-desc">In Figma, open <b>Settings › Security › Personal access tokens</b> and make a token with: <code>current_user:read</code> <code>file_content:read</code> <code>file_metadata:read</code> <code>file_versions:read</code> <code>folders:read</code>, plus <code>file_variables</code> read and write for Team sync.</div>'
+    body1 += '<div class="row"><input class="field" id="ob-token" type="password" placeholder="figd_…" autocomplete="off" aria-label="Personal access token"><button class="btn primary" id="ob-connect">Connect</button></div>'
+    if (S.ob.error) body1 += '<div class="notice error small">' + esc(S.ob.error) + '</div>'
+  } else {
+    body1 += '<div class="scopes">' + SCOPE_CHECKS.map((sc) => {
+      const r = S.ob.checks && S.ob.checks[sc.key]
+      const state = r ? r.state : 'skip'
+      const mark = !r ? (S.ob.busy ? '…' : '–') : state === 'ok' ? '✓' : state === 'fail' ? '✕' : '–'
+      return '<div class="sc ' + (r ? state : 'skip') + '"><i>' + mark + '</i><div>' + esc(sc.label) + ' <code>' + sc.scope + '</code>' + (r && r.note ? '<small>' + esc(r.note) + '</small>' : '') + '</div></div>'
+    }).join('') + '</div>'
+    if (!S.ob.checks && !S.ob.busy) body1 += '<button class="btn" id="ob-check" style="align-self:flex-start;height:28px">Check access</button>'
+  }
+  html += step(1, !!S.token, 'Connect to Figma', '', S.token ? 'Connected' + (me && me.handle ? ' as <b>' + esc(me.handle) + '</b>' : '') + '. Your token stays on this computer.' : 'Showroom reads frames through Figma’s API with your own token. It stays on this computer.', body1)
+
+  // 2. Team
+  let body2 = ''
+  const ts = team && S.scan.team && S.scan.team.id === team.id ? S.scan.team : null
+  if (builtInTeam) body2 = ''
+  else if (team) body2 = ''
+  else body2 = '<div class="row"><input class="field" id="ob-team" placeholder="figma.com/files/team/…" aria-label="Team link"><button class="btn" id="ob-team-add"' + (S.token ? '' : ' disabled') + '>Add</button></div>'
+  html += step(2, builtInTeam || !!team, 'Find your team', builtInTeam || team ? '' : 'Optional',
+    builtInTeam ? 'Set up for you: Showroom already knows your team’s folders.' : team ? '<b>' + esc(teamName(team)) + '</b>' + (ts && ts.folders ? ' · ' + ts.folders.length + ' folders found' : ' · searching…') : 'Paste your team’s link (from Figma’s file browser) so Showroom can find campaign frames in every folder.', body2)
+
+  // 3. Team sync
+  let body3 = ''
+  if (!idx) body3 = '<div class="row"><input class="field" id="ob-index" placeholder="figma.com/design/…/Showroom-Index" aria-label="Index file link"><button class="btn" id="ob-index-add"' + (S.token ? '' : ' disabled') + '>Add</button></div>'
+  html += step(3, !!idx, 'Turn on Team sync', idx ? '' : 'Optional · Enterprise',
+    idx ? (S.index.error ? '<span style="color:var(--danger)">' + esc(S.index.error) + '</span>' : 'On' + (TEAM.indexFile ? ', set up for you' : '') + '. Campaign changes reach everyone within a minute.') : 'Link a shared “Showroom Index” file the team can edit. Changes then reach everyone within a minute.', body3)
+
+  html += '<div class="row" style="margin-top:2px"><button class="btn primary grow" id="ob-start"' + (S.token ? '' : ' disabled') + '>Start using Showroom</button><button class="btn ghost" id="ob-skip">Skip for now</button></div>'
+  html += '</div></div></div>'
+  $('app').innerHTML = html
+
+  const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn) }
+  on('ob-connect', 'click', async () => {
+    const token = $('ob-token').value.trim()
+    if (!token) { $('ob-token').focus(); return }
+    S.ob.error = ''
+    const btn = $('ob-connect'); btn.disabled = true; btn.textContent = 'Checking…'
+    try {
+      const me = await testToken(token)
+      S.prefs.me = { handle: me.handle, email: me.email }
+      send('save-prefs', { prefs: { me: S.prefs.me } })
+      send('save-token', { token: token })
+      S.token = token
+      renderWelcome()
+      checkAccess()
+    } catch (e) { S.ob.error = e.kind === 'forbidden' ? 'Figma didn’t accept that token. Check it was copied in full.' : e.message; renderWelcome() }
+  })
+  on('ob-token', 'keydown', (e) => { if (e.key === 'Enter') $('ob-connect').click() })
+  on('ob-check', 'click', () => checkAccess())
+  on('ob-team-add', 'click', () => {
+    const t = parseTeamLink($('ob-team').value)
+    if (!t) { toast('Paste a team link, like figma.com/files/team/123456/Marketing', true); return }
+    S.prefs.team = t; send('save-prefs', { prefs: { team: t } })
+    renderWelcome()
+    discover().then(() => { if (S.view === 'welcome') { checkAccess() } })
+  })
+  on('ob-index-add', 'click', () => {
+    const f = parseFileLink($('ob-index').value)
+    if (!f) { toast('Paste the index file’s link (Share › Copy link).', true); return }
+    S.prefs.index = f
+    S.index = { files: {}, vars: {}, colId: '', modeId: '', readAt: 0, error: '', writeError: '', canWrite: null, pauseUntil: 0 }
+    send('save-prefs', { prefs: { index: f } })
+    renderWelcome()
+    pollIndex().then(() => { if (S.view === 'welcome') checkAccess() })
+  })
+  const finish = () => {
+    S.prefs.onboarded = true
+    send('save-prefs', { prefs: { onboarded: true } })
+    S.view = !S.data.activeCampaignId && allCampaigns().length > 1 ? 'home' : 'panel'
+    render()
+    if (S.token && canSearch() && searchIsStale()) discover()
+  }
+  on('ob-start', 'click', finish)
+  on('ob-skip', 'click', finish)
+}
+
 // ---------- campaign home: every campaign as a card ----------
 function avatar(name) {
   let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360
@@ -1926,6 +2074,7 @@ function renderSetup() {
   const c = campaign()
   const h2 = (t) => '<div style="font-size:14px;font-weight:600">' + t + '</div>'
   let html = '<div class="view"><div class="top"><button class="icon" id="back" aria-label="Back">' + icon('left') + '</button><div class="grow" style="font-size:14px;font-weight:600">Settings</div></div><div class="scroll">'
+  html += '<button class="btn ghost" id="open-guide" style="align-self:flex-start;height:26px;padding:0 6px;margin:-4px 0 4px">' + icon('check', 13) + 'Setup guide</button>'
   html += '<div class="stack">' + h2('Connect to Figma')
   html += '<div class="muted small">The wall reads frames from other files with Figma’s API, using your personal access token. It’s stored only on this computer.</div>'
   html += '<ol class="steps small muted"><li>In Figma, open <b>Settings › Security › Personal access tokens</b>.</li><li>Generate a token with these scopes: <b>current_user:read</b>, <b>file_content:read</b>, <b>file_metadata:read</b>, <b>file_versions:read</b> and <b>folders:read</b>. For Team sync, also <b>file_variables:read</b> and <b>file_variables:write</b>.</li><li>Paste it below.</li></ol>'
@@ -2011,6 +2160,7 @@ function renderSetup() {
   $('app').innerHTML = html
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn) }
   on('back', 'click', () => { S.view = 'panel'; S.tokenResult = ''; render() })
+  on('open-guide', 'click', () => { S.view = 'welcome'; render(); if (S.token && !S.ob.checks) checkAccess() })
   on('test-token', 'click', async () => {
     const token = $('token').value.trim()
     const out = { set innerHTML(v) { S.tokenResult = v; const el = $('token-result'); if (el) el.innerHTML = v } }
@@ -2571,6 +2721,7 @@ window.onmessage = (event) => {
     if (firstLoad) {
       S.view = 'panel'
       if (!S.data.activeCampaignId && allCampaigns().length > 1) S.view = 'home'
+      if (!S.prefs.onboarded) { S.view = 'welcome'; if (S.token) setTimeout(checkAccess, 400) }
       // Team sync first (one quick read), then the full search if it's due.
       setTimeout(async () => { await pollIndex(); if (S.token && canSearch() && searchIsStale()) discover() }, 300)
     }

@@ -126,7 +126,7 @@ function makeApi() {
 }
 
 // ---------- boot one plugin window ----------
-async function boot(env, api, { folders } = {}) {
+async function boot(env, api, { folders, welcome } = {}) {
   let html = fs.readFileSync(path.join(ROOT, 'ui.html'), 'utf8')
   if (folders) html = html.replace("folders: [\n    // { id: '123456789', name: 'Email' },\n  ],", 'folders: ' + JSON.stringify(folders) + ',')
   const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true })
@@ -144,6 +144,8 @@ async function boot(env, api, { folders } = {}) {
   vm.runInContext(code, ctx)
   w.eval(html.match(/<script>([\s\S]*?)<\/script>/)[1])
   await tick(80)
+  // Most tests start past the first-run setup screen.
+  if (!welcome && w.document.getElementById('ob-skip')) { w.document.getElementById('ob-skip').click(); await tick(30) }
   return w
 }
 
@@ -566,6 +568,25 @@ function pointer(w, type, target, extra) {
   check('a teammate’s status change shows up', !!wb.document.querySelector('.fr[data-id="ADFILE00002|7:1"] .st-approved'))
   }
   click(wb, '#wall-back'); await tick(30)
+
+  // ===== first-run setup =====
+  {
+    const api2 = makeApi()
+    const newbie = makeEnv({ fileKey: 'WELCOMEFILE01', fileName: 'Spring Site', user: 'Ana' })
+    api2.files.WELCOMEFILE01 = { name: 'Spring Site', version: 1, touched: new Date().toISOString(), nodes: {}, env: newbie, versions: [] }
+    const wn = await boot(newbie, api2, { welcome: true })
+    check('first run opens the setup guide with three steps', /Welcome to Showroom/.test(text(wn)) && wn.document.querySelectorAll('.ob-step').length === 3)
+    check('Start is disabled until Figma is connected', $(wn, '#ob-start').disabled)
+    $(wn, '#ob-token').value = 'figd_new'
+    click(wn, '#ob-connect'); await tick(250)
+    const okRows = [...wn.document.querySelectorAll('.scopes .sc.ok')].map((r) => r.textContent)
+    check('connecting checks each permission separately', okRows.length === 4 && /File info/.test(okRows.join()) && /Version history/.test(okRows.join()) && wn.document.querySelectorAll('.scopes .sc.skip').length === 2, okRows.join(' | '))
+    check('step 1 shows as done', wn.document.querySelector('.ob-step').classList.contains('done') && /Connected as/.test(text(wn)))
+    click(wn, '#ob-start'); await tick(40)
+    check('finishing setup goes to the panel and is remembered', /Start a campaign/.test(text(wn)) && newbie.store.get('showroom.prefs').onboarded === true)
+    click(wn, '#settings'); await tick(10); click(wn, '#open-guide'); await tick(200)
+    check('the setup guide can be reopened from Settings', /Welcome to Showroom/.test(text(wn)))
+  }
 
   // ===== carry-over from the Campaign Wall test builds =====
   const oldStore = new Map()
