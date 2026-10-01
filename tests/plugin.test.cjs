@@ -480,9 +480,12 @@ function pointer(w, type, target, extra) {
   pointer(wb, 'pointerdown', adsHead); pointer(wb, 'pointerup', adsHead); await tick(20)
   check('clicking a file heading selects that file’s frames', /frames selected/.test($(wb, '#inspector').textContent) && wb.document.querySelectorAll('#world .fr.sel').length === [...wb.document.querySelectorAll('#world .fr')].filter((f) => /ADFILE00002/.test(f.dataset.id)).length)
   // Clusters within rows
-  const caps = () => [...wb.document.querySelectorAll('#world .cl span')].map((s) => s.textContent)
+  const caps = () => [...wb.document.querySelectorAll('#world .sec-t')].map((s) => s.textContent)
   console.log('   file rows, clusters:', caps().join(', '))
-  check('file rows cluster their frames by channel, with a caption under each', caps().length >= 2 && caps().includes('Email'), caps().join(', '))
+  check('file rows cluster their frames by channel, in Figma-style sections', caps().length >= 2 && caps().includes('Email'), caps().join(', '))
+  const secT = [...wb.document.querySelectorAll('#world .sec-t')].find((t) => t.textContent === 'Email')
+  pointer(wb, 'pointerdown', secT); pointer(wb, 'pointerup', secT); await tick(20)
+  check('clicking a section’s name selects the frames in it', wb.document.querySelectorAll('#world .fr.sel').length >= 1 && /^Select the (\d+) frame/.test(secT.title) && wb.document.querySelectorAll('#world .fr.sel').length === Number(secT.title.match(/\d+/)[0]), secT.title)
   click(wb, '#view-opts'); await tick(10)
   click(wb, '#viewopts [data-vo="subFile"][data-val="off"]'); await tick(20)
   check('clustering can be turned off', caps().length === 0 && (bryce.store.get('showroom.prefs').wallView || {}).subFile === 'off')
@@ -678,7 +681,7 @@ function pointer(w, type, target, extra) {
     click(wl, '#settings'); await tick(10)
     $(wl, '#index-link').value = 'https://www.figma.com/design/INDEXFILE0099/Showroom-Index'
     click(wl, '#add-index'); await tick(300)
-    check('Settings offers to save team settings into the Team sync file', !!$(wl, '#save-team-settings') && /No team settings saved/.test(text(wl)))
+    check('Settings offers to save team settings into the Team sync file', !!$(wl, '#save-team-settings') && /aren’t stored in this file yet/.test(text(wl)))
     click(wl, '#save-team-settings'); await tick(300)
     const cfgVar = Object.values(api.vars.INDEXFILE0099.variables).find((v) => v.name === 'config')
     const cfg = cfgVar && JSON.parse(Object.values(cfgVar.valuesByMode)[0])

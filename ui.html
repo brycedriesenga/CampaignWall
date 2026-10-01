@@ -285,12 +285,25 @@ body.presenting .fr { box-shadow: none; }
 .scopes .skip i { background: var(--bg2); color: var(--muted); }
 .scopes .sc small { display: block; color: var(--muted); font-size: 10.5px; }
 .scopes code { font-size: 10.5px; background: var(--bg2); padding: 0 4px; border-radius: 4px; }
-/* Cluster captions: a hairline under each cluster of frames with its file / page / channel. */
-.cl { position: absolute; height: 0; border-top: calc(2px * var(--inv)) solid var(--cv-line); pointer-events: none; }
-.cl span { position: absolute; left: 0; top: 0; transform-origin: 0 0; transform: scale(var(--inv)); padding-top: 6px; font-size: 11px; color: var(--cv-sub);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: max(40px, calc(var(--w) * var(--z) * 1px)); }
-#viewport.no-headings .cl { display: none; }
-body.presenting .cl { display: none; }
+/* Sections: a light Figma-style container around each cluster of frames (same file, page or channel).
+   The box is placed in world units around the frames; its padding and the room for frame names and
+   the section name above are screen-sized (× --inv), capped by the space the layout leaves (--px, --pb). */
+.sec { position: absolute; pointer-events: none; --lh: 38px; }
+.far .sec, #viewport.no-meta .sec { --lh: 23px; }
+#viewport.no-names .sec { --lh: 4px; }
+.sec::before { content: ''; position: absolute; z-index: 0;
+  left: calc(-1 * min(calc(14px * var(--inv)), var(--px))); right: calc(-1 * min(calc(14px * var(--inv)), var(--px)));
+  top: calc(-1 * (var(--lh) + 10px) * var(--inv)); bottom: calc(-1 * min(calc(14px * var(--inv)), var(--pb)));
+  background: color-mix(in srgb, var(--cv-ink) 3.5%, transparent);
+  border: calc(1px * var(--inv)) solid color-mix(in srgb, var(--cv-ink) 11%, transparent); border-radius: calc(10px * var(--inv)); }
+.sec-t { position: absolute; left: 0; bottom: calc(100% + var(--lh) * var(--inv));   /* a tab sitting on the box's top edge */
+  transform-origin: 0 100%; transform: scale(var(--inv)); padding: 2px 9px; pointer-events: auto; cursor: pointer;
+  background: var(--cv-bg); border: 1px solid color-mix(in srgb, var(--cv-ink) 11%, transparent); border-radius: 99px;
+  font-size: 11px; line-height: 14px; font-weight: 600; color: var(--cv-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: max(48px, calc(var(--w) * var(--z) * 1px)); }
+.sec-t:hover { color: var(--cv-ink); border-color: color-mix(in srgb, var(--cv-ink) 30%, transparent); }
+#viewport.no-headings .sec-t { display: none; }
+body.presenting .sec { display: none; }
 .marquee { position: absolute; z-index: 2; border: 1px solid var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); pointer-events: none; }
 #viewopts { position: absolute; right: 12px; top: 56px; width: 280px; max-height: calc(100% - 80px); overflow: auto; z-index: 6; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 12px; }
 #viewopts .vo-title { font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
@@ -2311,8 +2324,8 @@ function renderSetup() {
     const cfg = indexConfig()
     html += '<div class="sep"></div><div class="sel-row"><div class="grow"><div class="muted small">' + (cfg
       ? 'Team settings in this file: ' + esc([cfg.team ? (cfg.team.name || 'a team') : '', (cfg.folders || []).length ? cfg.folders.length + ' folder' + (cfg.folders.length === 1 ? '' : 's') : '', cfg.lookBackDays ? 'Look back ' + cfg.lookBackDays + ' days' : ''].filter(Boolean).join(' · ') || 'none') + (cfg.by ? ' · saved by ' + esc(cfg.by) + ' ' + esc(ago(cfg.at)) : '')
-      : 'No team settings saved in this file yet. Save yours so teammates only need to link it.') + '</div></div>' +
-      '<button class="btn" id="save-team-settings" style="height:26px;padding:0 8px">' + (cfg ? 'Update' : 'Save') + '</button></div></div>'
+      : 'Your team link, folders and Look back aren’t stored in this file yet. Save them here, and teammates who link this file get them automatically. They won’t have to add the team or folders themselves.') + '</div></div>' +
+      '<button class="btn" id="save-team-settings" style="height:26px;padding:0 8px" title="Copy your team link, folders and Look back into the Team sync file">' + (cfg ? 'Update' : 'Save') + '</button></div></div>'
   } else if (TEAM_PRESETS.length) {
     html += '<div class="muted small">Which team are you on? This connects you to its Team sync file.</div>' + presetPicker('set-preset-')
     html += '<div class="row"><input class="field" id="index-link" placeholder="Or paste a Team sync file link" aria-label="Index file link"><button class="btn" id="add-index">Add</button></div>'
@@ -2488,7 +2501,12 @@ function wallGroups(c, by) {
   return groups.map((g) => {
     const order = [], byKey = {}
     for (const it of g.items) { const k = clusterOf(it, mode).key; if (!byKey[k]) { byKey[k] = []; order.push(k) } byKey[k].push(it) }
-    return Object.assign({}, g, { items: [].concat.apply([], order.map((k) => byKey[k])), clustered: order.length > 1, mode: mode })
+    return Object.assign({}, g, { items: [].concat.apply([], order.map((k) => byKey[k])), clusters: order.length, mode: mode })
+  }).map((g, i, all) => {
+    // Sections only add something when a row mixes files (or channels/pages). If any row does,
+    // every row gets them so the wall looks consistent; if none does, the wall stays plain.
+    g.clustered = all.some((x) => x.clusters > 1)
+    return g
   })
 }
 function wallGroupsRaw(c, by) {
@@ -2518,11 +2536,12 @@ function layout(c) {
   let maxX = 0
   for (const src of wallGroups(c, view.group)) {
     const items = src.items
-    // Clusters get a wider gap between them and a caption line underneath. Captions stay
-    // screen-sized like frame names, so their room grows with the row gap to fit at fit-to-screen zoom.
-    const CAP = src.clustered ? Math.round(ROW_GAP * 0.75) : 0
-    const g = { label: src.label, y: y + LABEL, items: [], segments: [] }
-    let x = 0, rowY = y + LABEL, rowH = 0, seg = null, prevKey = null
+    // Clusters sit in Figma-style sections: a wider gap between them, and extra room above the row
+    // for the section's name (TOP) and below it for the section's padding (BOT). Section names and
+    // padding stay screen-sized like frame names, so that room grows with the row gap.
+    const TOP = src.clustered ? ROW_GAP : 0, BOT = src.clustered ? Math.round(ROW_GAP * 0.3) : 0
+    const g = { label: src.label, y: y + LABEL + TOP, items: [], segments: [] }
+    let x = 0, rowY = y + LABEL + TOP, rowH = 0, seg = null, prevKey = null
     const close = () => { if (seg) { g.segments.push(seg); seg = null } }
     for (const it of items) {
       const n = nodeInfo(it)
@@ -2530,19 +2549,20 @@ function layout(c) {
       const h = Math.max(40, (n && (n.viewH || n.height)) || it.height || 300)
       const cl = src.clustered ? clusterOf(it, src.mode) : null
       const newCluster = cl && prevKey !== null && cl.key !== prevKey
-      if (newCluster && x > 0) x += GAP * 1.5
-      if (x > 0 && x + w > MAX_ROW) { close(); x = 0; rowY += rowH + LABEL + GAP + CAP; rowH = 0 }
-      if (cl && (!seg || newCluster)) { close(); seg = { label: cl.label, x1: x, x2: x + w, y: rowY } }
+      if (newCluster && x > 0) x += GAP * 2
+      if (x > 0 && x + w > MAX_ROW) { close(); x = 0; rowY += rowH + LABEL + GAP + TOP + BOT; rowH = 0 }
+      if (cl && (!seg || newCluster)) { close(); seg = { label: cl.label, x1: x, x2: x + w, y: rowY, ids: [] } }
       g.items.push({ it: it, n: n, x: x, y: rowY, w: w, h: h })
-      if (seg) seg.x2 = x + w
+      if (seg) { seg.x2 = x + w; seg.ids.push(it.id) }
       x += w + GAP; rowH = Math.max(rowH, h); maxX = Math.max(maxX, x - GAP)
       if (cl) prevKey = cl.key
     }
     close()
-    // Captions sit just under the tallest frame in their row.
+    // Sections in a row share its height (its tallest frame), so they line up.
     g.segments.forEach((sg) => { sg.h = Math.max.apply(null, g.items.filter((p) => p.y === sg.y).map((p) => p.h)) })
+    g.pad = { x: Math.round(GAP * 0.6), b: BOT }
     groups.push(g)
-    y = rowY + rowH + ROW_GAP + CAP
+    y = rowY + rowH + ROW_GAP + BOT
   }
   return { groups: groups, width: maxX, height: Math.max(0, y - ROW_GAP) }
 }
@@ -2594,9 +2614,11 @@ function renderWall() {
   S.wall.selected = S.wall.selected.filter((id) => c.items.some((it) => it.id === id))
   let html = ''
   for (const g of L.groups) {
-    for (const sg of g.segments || []) {
-      html += '<div class="cl" style="left:' + sg.x1 + 'px;top:' + (sg.y + sg.h + 18) + 'px;width:' + (sg.x2 - sg.x1) + 'px;--w:' + (sg.x2 - sg.x1) + '"><span>' + esc(sg.label) + '</span></div>'
-    }
+    const gi = L.groups.indexOf(g)
+    ;(g.segments || []).forEach((sg, si) => {
+      html += '<div class="sec" style="left:' + sg.x1 + 'px;top:' + sg.y + 'px;width:' + (sg.x2 - sg.x1) + 'px;height:' + sg.h + 'px;--w:' + (sg.x2 - sg.x1) + ';--px:' + g.pad.x + 'px;--pb:' + g.pad.b + 'px">' +
+        '<div class="sec-t" data-seg="' + gi + ':' + si + '" title="Select the ' + sg.ids.length + ' frame' + (sg.ids.length === 1 ? '' : 's') + ' in ' + esc(sg.label) + '">' + esc(sg.label) + '</div></div>'
+    })
     if (g.label) html += '<div class="ch" data-group="' + L.groups.indexOf(g) + '" title="Select all ' + esc(g.label) + ' frames" style="top:' + g.y + 'px">' + esc(g.label) + '<em>' + g.items.length + ' frame' + (g.items.length === 1 ? '' : 's') + '</em></div>'
     for (const p of g.items) {
       const it = p.it, n = p.n
@@ -2846,7 +2868,7 @@ function bindWall() {
     // middle mouse button) pans. In Present mode everything pans.
     const pan = !target || e.button === 1 || S.wall.spaceDown || !!S.wall.present || target.classList.contains('dim')
     drag = { x: e.clientX, y: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, tx: S.wall.tx, ty: S.wall.ty, moved: false,
-      target: target, heading: e.target.closest('.ch'), additive: e.shiftKey || e.metaKey || e.ctrlKey,
+      target: target, heading: e.target.closest('.ch, .sec-t'), additive: e.shiftKey || e.metaKey || e.ctrlKey,
       box: e.shiftKey && !target && !S.wall.present, arrange: !pan && !(e.shiftKey || e.metaKey || e.ctrlKey) }
     vp.setPointerCapture(e.pointerId)
   })
@@ -2889,8 +2911,17 @@ function bindWall() {
     if (d.moved) return
     if (d.heading) {
       const c = campaign()
-      const group = (S.wall.bounds && S.wall.bounds.groups[Number(d.heading.dataset.group)]) || { items: [] }
-      const ids = group.items.filter((p) => matchesFilter(p.it)).map((p) => p.it.id)
+      const groups = (S.wall.bounds && S.wall.bounds.groups) || []
+      let ids
+      if (d.heading.dataset.seg) {
+        // A section's name selects the frames in that section.
+        const [gi, si] = d.heading.dataset.seg.split(':').map(Number)
+        const sg = groups[gi] && groups[gi].segments[si]
+        ids = sg ? groups[gi].items.filter((p) => sg.ids.indexOf(p.it.id) >= 0 && matchesFilter(p.it)).map((p) => p.it.id) : []
+      } else {
+        const group = groups[Number(d.heading.dataset.group)] || { items: [] }
+        ids = group.items.filter((p) => matchesFilter(p.it)).map((p) => p.it.id)
+      }
       setSelection(d.additive ? Array.from(new Set(S.wall.selected.concat(ids))) : ids)
       return
     }

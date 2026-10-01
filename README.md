@@ -54,7 +54,7 @@ The wall reads frames straight from their files through Figma's API, so it's alw
 - **Filter:** the funnel button shows only certain channels, people, or frames updated since you last looked. The other frames fade out.
 - **Present:** press P or click **Present**. Use the arrow keys to step through frames full-size, and Esc to go back.
 - **Position:** each campaign reopens at the zoom and position you left it.
-- **View options:** the sliders button at the top right of the wall changes how it looks, just for you: background colour (light, mid grey, dark, black, or match Figma), dot grid, frame borders or shadows, frame names, file info, row headings, spacing, and grouping rows by channel, by file or not at all. **Cluster within rows** keeps frames from the same file (or file and page) together inside a channel row, with a small caption under each cluster. Grouped by file, it clusters by channel or page instead.
+- **View options:** the sliders button at the top right of the wall changes how it looks, just for you: background colour (light, mid grey, dark, black, or match Figma), dot grid, frame borders or shadows, frame names, file info, row headings, spacing, and grouping rows by channel, by file or not at all. **Cluster within rows** keeps frames from the same file (or file and page) together inside a channel row, each in a light Figma-style section with its name on top. Click a section's name to select its frames. Grouped by file, it clusters by channel or page instead.
 - **Select several frames:** Shift-click, or Shift-drag a box on empty space. Clicking a channel name selects that row, ⌘/Ctrl+A selects all, and Esc clears.
 - **Refresh:**
   - The toolbar button re-checks every frame.
