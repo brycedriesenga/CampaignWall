@@ -697,15 +697,22 @@ async function lastTouched(key, manual) {
 }
 
 // opts.manual: the refresh button. Lists every folder and re-reads every edited file.
+// opts.teamOnly: just refresh the team's folder list (used by the setup guide).
+const SYNC_NEW_DAYS = 2   // with Team sync on, only files edited this recently are opened to look for new campaign frames
 async function discover(opts) {
   opts = opts || {}
   if (!S.token || S.search.busy || !canSearch()) return
-  S.search.busy = true; S.search.error = ''
+  S.search.busy = true; S.search.error = ''; S.search.stop = false
+  if (S.view === 'panel' || S.view === 'home') render()   // shows the Stop button
   const scan = S.scan
   scan.files = scan.files || {}
   scan.folders = scan.folders || {}
   const now = Date.now()
-  const since = now - lookBackDays() * DAY
+  // Team sync already lists every campaign file, so files this computer hasn't seen don't all need
+  // opening: only ones edited in the last couple of days (they might have brand-new campaign frames).
+  // The refresh button still does the full Look back.
+  const since = now - (indexHealthy() && !opts.manual ? Math.min(SYNC_NEW_DAYS, lookBackDays()) : lookBackDays()) * DAY
+  const stopIfAsked = () => { if (S.search.stop) { const e = new Error('Stopped'); e.kind = 'stopped'; throw e } }
   const status = (text) => { S.search.status = text; renderSearchStatus() }
   const queue = {}     // files to read, by key
   const listed = {}    // files seen in a folder listing this time
@@ -725,11 +732,13 @@ async function discover(opts) {
         scan.team = { id: team.id, checkedAt: now, folders: keep, error: e.kind === 'forbidden' ? 'Your token can’t list this team’s folders. It needs folders:read access.' : e.message }
       }
     }
+    if (opts.teamOnly) { S.search.status = ''; return }
 
     // 2. Folders. Listing a folder is a light request, so each one is listed every search.
     // (Figma's per-folder "has it changed?" check needs a token scope personal tokens don't offer.)
     const folders = teamFolders()
     for (let i = 0; i < folders.length; i++) {
+      stopIfAsked()
       status('Checking folder ' + (i + 1) + ' of ' + folders.length + '…')
       const folder = folders[i]
       const shownName = folderName(folder)
@@ -778,6 +787,7 @@ async function discover(opts) {
       // Campaign files first, then the most recently edited.
       todo.sort((a, b) => (b.linked - a.linked) || ((Date.parse(b.lastModified) || 0) - (Date.parse(a.lastModified) || 0)))
       for (const f of todo) {
+        stopIfAsked()
         f.read = true
         done += 1
         status('Searching files ' + done + ' of ' + Object.keys(queue).length + '…')
@@ -797,10 +807,11 @@ async function discover(opts) {
     scan.checkedAt = Date.now()
     S.search.status = ''
   } catch (e) {
-    S.search.error = e.message
+    if (e.kind === 'stopped') { scan.checkedAt = Date.now(); toast('Search stopped. What it found so far is kept.') }
+    else S.search.error = e.message
     S.search.status = ''
   } finally {
-    S.search.busy = false
+    S.search.busy = false; S.search.stop = false
     scan.savedAt = Date.now()
     send('save-scan', { scan: scan })
     // Settings shows per-folder results, so redraw it too (unless someone is typing there).
@@ -1855,7 +1866,9 @@ function footer() {
   const folders = canSearch()
   return '<div class="foot"><span class="dot" style="background:' + (S.search.error || S.index.error ? 'var(--warn)' : 'var(--ok)') + '"></span><span class="grow" id="search-status" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + esc(searchSummary()) + '">' +
     (folders ? esc(searchSummary()) : 'Connected' + (me && me.handle ? ' as ' + esc(me.handle) : '') + ' · no team folders yet') + '</span>' +
-    (folders ? '<button class="icon" id="search-now" title="Search for team campaigns now" aria-label="Search for team campaigns now"' + (S.search.busy ? ' disabled' : '') + '>' + icon('refresh', 14) + '</button>' : '<button class="btn ghost" id="connect" style="height:28px">Set up</button>') + '</div>'
+    (!folders ? '<button class="btn ghost" id="connect" style="height:28px">Set up</button>'
+      : S.search.busy ? '<button class="btn ghost" id="search-stop" style="height:26px;padding:0 8px" title="Stop searching (what it found so far is kept)">Stop</button>'
+      : '<button class="icon" id="search-now" title="Search every team folder now (full Look back)" aria-label="Search for team campaigns now">' + icon('refresh', 14) + '</button>') + '</div>'
 }
 
 function bindPanel() {
@@ -1876,6 +1889,7 @@ function bindPanel() {
   on('connect', 'click', () => { S.view = 'setup'; render() })
   on('home', 'click', () => { S.view = 'home'; render() })
   on('search-now', 'click', () => discover({ manual: true }))
+  on('search-stop', 'click', () => { S.search.stop = true; S.search.status = 'Stopping…'; renderSearchStatus() })
   on('unhide-items', 'click', () => send('unhide-items', { campaignId: campaign().id }))
   on('channel', 'change', (e) => { S.channelChoice = e.target.value; render() })
   on('add', 'click', () => { const c = campaign(); send('add-selection', { campaignId: c.id, campaignName: c.name, channel: S.channelChoice }) })
@@ -1999,7 +2013,7 @@ function renderWelcome() {
     if (!t) { toast('Paste a team link, like figma.com/files/team/123456/Marketing', true); return }
     S.prefs.team = t; send('save-prefs', { prefs: { team: t } })
     renderWelcome()
-    discover().then(() => { if (S.view === 'welcome') { checkAccess() } })
+    discover({ teamOnly: true }).then(() => { if (S.view === 'welcome') checkAccess() })
   })
   on('ob-index-add', 'click', () => {
     const f = parseFileLink($('ob-index').value)
@@ -2106,6 +2120,7 @@ function renderHome() {
   on('settings', 'click', () => { S.view = 'setup'; render() })
   on('connect', 'click', () => { S.view = 'setup'; render() })
   on('search-now', 'click', () => discover({ manual: true }))
+  on('search-stop', 'click', () => { S.search.stop = true; S.search.status = 'Stopping…'; renderSearchStatus() })
   on('home-new', 'click', () => { S.creating = true; S.view = 'panel'; render() })
   on('home-q', 'input', (e) => { S.homeQuery = e.target.value; const pos = e.target.selectionStart; renderHome(); const el = $('home-q'); if (el) { el.focus(); el.setSelectionRange(pos, pos) } })
   const pick = (id) => { const c = campaigns.find((x) => x.id === id); S.data.activeCampaignId = id; send('set-active', { campaignId: id, campaignName: c ? c.name : '' }) }

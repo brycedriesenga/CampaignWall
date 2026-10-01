@@ -39,6 +39,8 @@ Campaign membership lives **inside each design file**, so it's shared with no se
   1. Team (optional, `TEAM.teamId` or `prefs.team`): `GET /v2/teams/:id/folders` plus `/v2/folders/:id/folders` up to 3 levels (tier 2), falling back to `/v1/teams/:id/projects`. Cached in `scan.team`, refreshed daily or on manual search.
   2. Folders (built-in + `prefs.folders` + team's): `GET /v2/folders/:id/files`, falling back to `/v1/projects/:id/files` (tier 2), every search. The per-folder `GET /v2/folders/:id/meta` check was removed: it needs `folder_metadata:read`, which personal access tokens don't offer (they 401). Folder names come from the team's folder list or the listing; the team's name only from the pasted link (`folders:read` doesn't return it), else "Your team".
      - New files are read if edited within Look back (`prefs.lookBackDays`, default `TEAM.lookBackDays` = 30).
+     - With Team sync healthy (and not a manual search), files never seen before are only read if edited in the last `SYNC_NEW_DAYS` (2). The index already lists every campaign file, so a new computer doesn't open every file in the team's folders.
+  - `opts.teamOnly` (setup guide) only refreshes the team's folder list. A running search can be stopped (the footer's Stop sets `S.search.stop`; it's checked per folder and per file read; partial results are kept and the search counts as done).
      - Edited campaign files are read right away; edited files without campaigns at most once a day (manual search ignores that).
   3. Linked files not seen in a listing: `GET /v1/files/:key/meta` (tier 3; reuses the wall's `cache.lastTouchedAt` if under 5 min old). Read only if `last_touched_at` differs from `scan.files[key].touched`. Up to 4 rounds, since newly read files can add links.
   - Reading = `GET /v1/files/:key?depth=1&plugin_data=shared` (tier 1), preceded by a meta call to record `touched`. Campaign files are read first, then newest-first.
@@ -230,7 +232,7 @@ Code → UI: `state` (full), `selection`, `error`.
   - that the v2 folders endpoint's response fields match what the code parses;
   - that the image render for a version works for old versions.
 - v0.3 adds links between campaign files, the daily re-check, Look back and team folder discovery. `npm test` has 59 checks. Also to confirm in real Figma: the team folders response and folder `meta` `updated_at` behaviour.
-- v0.4 adds Team sync (the variables index). `npm test` has 118 checks. First real test on 2026-09-30 worked: team link found 21 folders, a folder listed 4 files, the index filled with 2 files, and the wall showed both. Personal tokens offer these scopes: current_user, file_content, file_metadata, file_versions, file_variables read/write, folders:read (no projects or folder_metadata).
+- v0.4 adds Team sync (the variables index). `npm test` has 122 checks. First real test on 2026-09-30 worked: team link found 21 folders, a folder listed 4 files, the index filled with 2 files, and the wall showed both. Personal tokens offer these scopes: current_user, file_content, file_metadata, file_versions, file_variables read/write, folders:read (no projects or folder_metadata).
 
 ## Next steps (not built)
 

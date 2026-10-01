@@ -626,6 +626,35 @@ function pointer(w, type, target, extra) {
     check('Sync reports what changed', /Board synced/.test(wj.document.getElementById('toast').textContent), wj.document.getElementById('toast').textContent)
   }
 
+  // ===== a new computer with Team sync: no big search =====
+  {
+    api.files.MIDFILE00008 = { name: 'Old site work', version: 1, touched: new Date(Date.now() - 10 * 86400e3).toISOString(), nodes: {} }
+    api.folders['333'] = ['PLAINFILE0004', 'OLDFILE00005', 'MIDFILE00008']
+    api.files.PLAINFILE0004.touched = new Date(Date.now() + 20000).toISOString()
+    const mac = makeEnv({ fileKey: 'MACFILE00009', fileName: 'Scratch', user: 'Bryce', store: new Map() })
+    api.files.MACFILE00009 = { name: 'Scratch', version: 1, touched: new Date().toISOString(), nodes: {}, env: mac }
+    const wm = await boot(mac, api)
+    await connect(wm)
+    click(wm, '#settings'); await tick(10)
+    $(wm, '#index-link').value = 'https://www.figma.com/design/INDEXFILE0099/Showroom-Index'
+    click(wm, '#add-index'); await tick(300)
+    let mark2 = api.calls.length
+    const reads2 = (key) => api.calls.slice(mark2).filter((x) => x.indexOf('/v1/files/' + key + '?depth') === 0).length
+    $(wm, '#folder-link').value = 'https://www.figma.com/files/team/1/project/333/Misc'
+    click(wm, '#add-folder'); await tick(400)
+    check('with Team sync on, a new computer only opens recently edited files', reads2('PLAINFILE0004') === 1 && reads2('MIDFILE00008') === 0 && reads2('OLDFILE00005') === 0, api.calls.slice(mark2).join(' | '))
+    mark2 = api.calls.length
+    click(wm, '#back'); await tick(20)
+    click(wm, '#search-now'); await tick(400)
+    check('…while the refresh button still searches the full Look back', reads2('MIDFILE00008') === 1, api.calls.slice(mark2).join(' | '))
+    // Stop a running search
+    api.files.MIDFILE00008.touched = new Date(Date.now() + 30000).toISOString()
+    wm.showroomTest.discover({ manual: true }); await tick(1)
+    check('a running search shows a Stop button', !!$(wm, '#search-stop'))
+    click(wm, '#search-stop'); await tick(300)
+    check('Stop ends the search and keeps what it found', !$(wm, '#search-stop') && /Search stopped/.test(wm.document.getElementById('toast').textContent), wm.document.getElementById('toast').textContent)
+  }
+
   // ===== first-run setup =====
   {
     const api2 = makeApi()
