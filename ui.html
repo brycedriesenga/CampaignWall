@@ -85,18 +85,28 @@ textarea.field { height: 90px; padding: 8px 10px; resize: vertical; font: 11px/1
 #banner { position: absolute; left: 12px; right: 12px; top: 58px; z-index: 4; }
 body.walling, body.walling * { user-select: none; -webkit-user-select: none; }
 body.walling input, body.walling textarea { user-select: text; -webkit-user-select: text; }
-#viewport { flex: 1; min-height: 0; position: relative; overflow: hidden; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
-  background-color: var(--bg2); background-image: radial-gradient(color-mix(in srgb, var(--text) 12%, transparent) 1px, transparent 1px); background-size: 20px 20px; }
+/* The wall's canvas has its own colours, so it can be light or dark whatever Figma's theme is (View options). */
+#viewport { --cv-bg: var(--bg2); --cv-ink: var(--text); --cv-sub: var(--muted); --cv-line: color-mix(in srgb, var(--cv-ink) 16%, transparent);
+  flex: 1; min-height: 0; position: relative; overflow: hidden; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+  color: var(--cv-ink); background-color: var(--cv-bg); background-image: radial-gradient(color-mix(in srgb, var(--cv-ink) 14%, transparent) 1px, transparent 1px); background-size: 20px 20px; }
+#viewport[data-bg="light"] { --cv-bg: #f0f0f0; --cv-ink: #1e1e1e; --cv-sub: #6b6b6b; }
+#viewport[data-bg="gray"] { --cv-bg: #9e9e9e; --cv-ink: #111111; --cv-sub: #2e2e2e; }
+#viewport[data-bg="dark"] { --cv-bg: #1e1e1e; --cv-ink: #f2f2f2; --cv-sub: #a3a3a3; }
+#viewport[data-bg="black"] { --cv-bg: #000000; --cv-ink: #ffffff; --cv-sub: #9a9a9a; }
+#viewport.no-grid { background-image: none; }
+#viewport[data-frame="none"] .fr { box-shadow: none; }
+#viewport[data-frame="shadow"] .fr { box-shadow: 0 calc(2px * var(--inv)) calc(6px * var(--inv)) rgba(0,0,0,.12), 0 calc(10px * var(--inv)) calc(30px * var(--inv)) rgba(0,0,0,.16); }
+#viewport.no-names .lbl, #viewport.no-headings .ch, #viewport.no-edges .edge, #viewport.no-meta .lbl .mt { display: none; }
 #viewport.panning { cursor: grabbing; }
 #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
-.fr { position: absolute; background: var(--bg); box-shadow: 0 0 0 calc(1px * var(--inv)) color-mix(in srgb, var(--text) 16%, transparent); }
+.fr { position: absolute; background: var(--bg); box-shadow: 0 0 0 calc(1px * var(--inv)) var(--cv-line); }
 .fr.sel { outline: calc(2px * var(--inv)) solid var(--brand); outline-offset: calc(2px * var(--inv)); }
 .fr img { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; pointer-events: none; }
 .fr img { position: relative; z-index: 1; transition: opacity .3s ease; }
 .fr img.ld { opacity: 0; }
 /* Loading skeleton: a soft sweep plus a small spinner and what's happening, kept screen-sized at any zoom. */
-.fr .sk { position: absolute; inset: 0; overflow: hidden; background: var(--bg2); display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: calc(8px * var(--inv)); color: var(--muted); font-size: calc(12px * var(--inv)); text-align: center; }
+.fr .sk { position: absolute; inset: 0; overflow: hidden; background: color-mix(in srgb, var(--cv-ink) 7%, var(--cv-bg)); display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: calc(8px * var(--inv)); color: var(--cv-sub); font-size: calc(12px * var(--inv)); text-align: center; }
 .fr .sk::before { content: ''; position: absolute; inset: 0; transform: translateX(-100%); animation: sk-sweep 1.6s ease-in-out infinite;
   background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--text) 7%, transparent) 50%, transparent 80%); }
 .fr .sk .spin { width: calc(18px * var(--inv)); height: calc(18px * var(--inv)); border-radius: 50%; animation: sk-spin .8s linear infinite;
@@ -114,11 +124,11 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
   width: max-content; max-width: max(24px, calc(var(--w) * var(--z) * 1px)); pointer-events: none; }
 .lbl .nm { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lbl .upd { margin-right: 5px; vertical-align: 1px; }
-.lbl .mt { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lbl .mt { font-size: 10.5px; color: var(--cv-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .upd { background: var(--brand); color: var(--onbrand); font-size: 9.5px; font-weight: 600; padding: 1px 6px; border-radius: 99px; }
 .ch { position: absolute; right: 100%; transform-origin: 100% 0; transform: scale(var(--inv)); padding-right: 24px; text-align: right;
   font-size: 15px; font-weight: 700; white-space: nowrap; }
-.ch em { display: block; font-style: normal; font-size: 11px; color: var(--muted); font-weight: 500; }
+.ch em { display: block; font-style: normal; font-size: 11px; color: var(--cv-sub); font-weight: 500; }
 .far .lbl .mt { display: none; }
 .fr .edge { position: absolute; pointer-events: none; outline: calc(1px * var(--inv)) dashed color-mix(in srgb, var(--brand) 70%, transparent); }
 .ch { pointer-events: auto; cursor: pointer; }
@@ -137,6 +147,21 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 .hist-row .mt { display: block; font-size: 10.5px; color: var(--muted); }
 #history { position: absolute; right: 12px; top: 60px; bottom: 12px; width: 340px; z-index: 5; padding: 12px; overflow: auto; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
 .marquee { position: absolute; z-index: 2; border: 1px solid var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); pointer-events: none; }
+#viewopts { position: absolute; right: 12px; top: 56px; width: 264px; z-index: 6; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 12px; }
+#viewopts .vo-title { font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.seg { display: flex; gap: 2px; padding: 2px; border-radius: 7px; background: var(--bg2); }
+.seg button { flex: 1; height: 26px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; }
+.seg button.on { background: var(--bg); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); font-weight: 600; }
+.swatches { display: flex; gap: 8px; }
+.swatches button { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border); cursor: pointer; padding: 0; position: relative; }
+.swatches button.on { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--brand); }
+.swatches .auto { background: linear-gradient(135deg, #f0f0f0 50%, #1e1e1e 50%); }
+.vo-toggle { display: flex; align-items: center; justify-content: space-between; font-size: 12px; padding: 3px 0; cursor: pointer; }
+.vo-toggle input { width: 28px; height: 16px; appearance: none; -webkit-appearance: none; border-radius: 99px; background: var(--bg3); position: relative; cursor: pointer; margin: 0; transition: background .15s; }
+.vo-toggle input::after { content: ''; position: absolute; left: 2px; top: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s; }
+.vo-toggle input:checked { background: var(--brand); }
+.vo-toggle input:checked::after { transform: translateX(12px); }
+.icon.on { background: var(--bg2); color: var(--text); }
 #inspector { position: absolute; left: 12px; bottom: 12px; width: 290px; z-index: 4; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
 #grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 5;
   background: linear-gradient(135deg, transparent 50%, var(--muted) 50%, var(--muted) 56%, transparent 56%, transparent 70%, var(--muted) 70%, var(--muted) 76%, transparent 76%); opacity: .6; }
@@ -1003,6 +1028,60 @@ async function syncItems(list, opts) {
   if (S.wall.pending) { S.wall.pending = false; setTimeout(loadMissing, 0) }
 }
 
+// ---------- wall view options (saved per person in prefs.wallView) ----------
+const WALL_VIEW_DEFAULTS = { bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, edges: true, spacing: 'normal', group: 'channel' }
+function wallView() { return Object.assign({}, WALL_VIEW_DEFAULTS, S.prefs.wallView || {}) }
+function applyWallView() {
+  const vp = $('viewport'); if (!vp) return
+  const v = wallView()
+  vp.dataset.bg = v.bg
+  vp.dataset.frame = v.frame
+  vp.classList.toggle('no-grid', !v.grid)
+  vp.classList.toggle('no-names', !v.names)
+  vp.classList.toggle('no-meta', !v.meta)
+  vp.classList.toggle('no-headings', !v.headings)
+  vp.classList.toggle('no-edges', !v.edges)
+}
+function setWallView(change) {
+  const before = wallView()
+  S.prefs.wallView = Object.assign({}, before, change)
+  send('save-prefs', { prefs: { wallView: S.prefs.wallView } })
+  applyWallView()
+  // Spacing, grouping and labels change where frames sit, so lay the wall out again and re-fit.
+  const v = wallView()
+  if (v.spacing !== before.spacing || v.group !== before.group || v.names !== before.names) { S.wall.fitted = S.wall.touched; renderWall() }
+  renderViewOptions()
+}
+function toggleViewOptions(open) {
+  const box = $('viewopts'); if (!box) return
+  const show = open === undefined ? box.classList.contains('hidden') : open
+  box.classList.toggle('hidden', !show)
+  $('view-opts').classList.toggle('on', show)
+  $('view-opts').setAttribute('aria-expanded', String(show))
+  if (show) renderViewOptions()
+}
+function renderViewOptions() {
+  const box = $('viewopts'); if (!box || box.classList.contains('hidden')) return
+  const v = wallView()
+  const seg = (key, options) => '<div class="seg" role="radiogroup">' + options.map((o) =>
+    '<button role="radio" aria-checked="' + (v[key] === o[0]) + '" class="' + (v[key] === o[0] ? 'on' : '') + '" data-vo="' + key + '" data-val="' + o[0] + '">' + o[1] + '</button>').join('') + '</div>'
+  const toggle = (key, label) => '<label class="vo-toggle"><span>' + label + '</span><input type="checkbox" data-vo-toggle="' + key + '"' + (v[key] ? ' checked' : '') + '></label>'
+  const bgs = [['auto', 'Match Figma'], ['light', 'Light'], ['gray', 'Mid grey'], ['dark', 'Dark'], ['black', 'Black']]
+  const swatch = { light: '#f0f0f0', gray: '#9e9e9e', dark: '#1e1e1e', black: '#000000' }
+  let html = '<div><div class="vo-title">Background</div><div class="swatches">' + bgs.map((b) =>
+    '<button class="' + (b[0] === 'auto' ? 'auto ' : '') + (v.bg === b[0] ? 'on' : '') + '" data-vo="bg" data-val="' + b[0] + '" title="' + b[1] + '" aria-label="' + b[1] + '"' +
+    (swatch[b[0]] ? ' style="background:' + swatch[b[0]] + '"' : '') + '></button>').join('') + '</div></div>'
+  html += '<div><div class="vo-title">Frames</div>' + seg('frame', [['border', 'Border'], ['shadow', 'Shadow'], ['none', 'None']]) + '</div>'
+  html += '<div><div class="vo-title">Group rows by</div>' + seg('group', [['channel', 'Channel'], ['file', 'File'], ['none', 'Nothing']]) + '</div>'
+  html += '<div><div class="vo-title">Spacing</div>' + seg('spacing', [['tight', 'Tight'], ['normal', 'Normal'], ['roomy', 'Roomy']]) + '</div>'
+  html += '<div>' + toggle('grid', 'Dot grid') + toggle('names', 'Frame names') + toggle('meta', 'File and edit info') + toggle('headings', 'Row headings') + toggle('edges', 'Frame edge (overflowing content)') + '</div>'
+  html += '<button class="btn ghost" id="vo-reset" style="align-self:flex-start;height:26px;padding:0 6px">Reset to defaults</button>'
+  box.innerHTML = html
+  box.querySelectorAll('[data-vo]').forEach((el) => el.addEventListener('click', () => setWallView({ [el.dataset.vo]: el.dataset.val })))
+  box.querySelectorAll('[data-vo-toggle]').forEach((el) => el.addEventListener('change', () => setWallView({ [el.dataset.voToggle]: el.checked })))
+  $('vo-reset').addEventListener('click', () => setWallView(Object.assign({}, WALL_VIEW_DEFAULTS)))
+}
+
 // ---------- loading states on the wall ----------
 const PHASE_TEXT = { queued: 'Waiting…', reading: 'Reading from Figma…', rendering: 'Rendering image…', image: 'Loading image…' }
 function skeleton(text) { return '<div class="sk"><div class="spin"></div><div class="tx">' + esc(text) + '</div></div>' }
@@ -1366,17 +1445,34 @@ function closeWall() {
   render()
 }
 
-function layout(c) {
+// Groups for the wall's rows: by channel (in the channel list's order), by file, or one group.
+function wallGroups(c, by) {
+  if (by === 'none') return [{ label: '', items: c.items.slice() }]
+  if (by === 'file') {
+    const order = []
+    const byKey = {}
+    for (const it of c.items) {
+      if (!byKey[it.fileKey]) { const fc = S.cache.files[it.fileKey]; byKey[it.fileKey] = { label: (fc && fc.name) || it.fileName || 'File', items: [] }; order.push(byKey[it.fileKey]) }
+      byKey[it.fileKey].items.push(it)
+    }
+    return order.sort((a, b) => a.label.localeCompare(b.label))
+  }
   const channels = S.data.channels.slice()
   c.items.forEach((it) => { if (channels.indexOf(it.channel) < 0) channels.push(it.channel) })
-  const GAP = 80, LABEL = 60, ROW_GAP = 240, MAX_ROW = 9000
+  return channels.map((ch) => ({ label: ch, items: c.items.filter((it) => it.channel === ch) })).filter((g) => g.items.length)
+}
+
+const SPACING = { tight: [32, 120], normal: [80, 240], roomy: [200, 480] }   // [gap between frames, gap between rows]
+function layout(c) {
+  const view = wallView()
+  const sp = SPACING[view.spacing] || SPACING.normal
+  const GAP = sp[0], LABEL = view.names ? 60 : 16, ROW_GAP = sp[1], MAX_ROW = 9000
   const groups = []
   let y = 0
   let maxX = 0
-  for (const ch of channels) {
-    const items = c.items.filter((it) => it.channel === ch)
-    if (!items.length) continue
-    const g = { channel: ch, y: y + LABEL, items: [] }
+  for (const src of wallGroups(c, view.group)) {
+    const items = src.items
+    const g = { label: src.label, y: y + LABEL, items: [] }
     let x = 0, rowY = y + LABEL, rowH = 0
     for (const it of items) {
       const n = nodeInfo(it)
@@ -1401,10 +1497,14 @@ function renderWallShell() {
   html += '<button class="icon" id="wall-refresh" title="Check every frame for changes" aria-label="Check every frame for changes">' + icon('refresh') + '</button>'
   html += '<div class="sep" style="width:1px;height:20px"></div>'
   html += '<button class="icon" id="zoom-out" aria-label="Zoom out">' + icon('minus') + '</button><button class="zoomval" id="zoom-val" title="Zoom to 100%">100%</button><button class="icon" id="zoom-in" aria-label="Zoom in">' + icon('plus') + '</button>'
-  html += '<button class="icon" id="zoom-fit" title="Fit everything" aria-label="Fit everything">' + icon('fit') + '</button></div>'
+  html += '<button class="icon" id="zoom-fit" title="Fit everything" aria-label="Fit everything">' + icon('fit') + '</button>'
+  html += '<div class="sep" style="width:1px;height:20px"></div>'
+  html += '<button class="icon" id="view-opts" title="View options" aria-label="View options" aria-expanded="false">' + icon('gear') + '</button></div>'
   html += '<div id="viewport"><div id="world"></div><div id="banner"></div></div>'
+  html += '<div id="viewopts" class="card hidden" role="dialog" aria-label="View options"></div>'
   html += '<div id="inspector" class="card hidden"></div><div id="history" class="card hidden" role="dialog" aria-label="Version history"></div><div id="grip" title="Drag to resize"></div></div>'
   $('app').innerHTML = html
+  applyWallView()
   bindWall()
   renderWall()
 }
@@ -1431,7 +1531,7 @@ function renderWall() {
   S.wall.selected = S.wall.selected.filter((id) => c.items.some((it) => it.id === id))
   let html = ''
   for (const g of L.groups) {
-    html += '<div class="ch" data-channel="' + esc(g.channel) + '" title="Select all ' + esc(g.channel) + ' frames" style="top:' + g.y + 'px">' + esc(g.channel) + '<em>' + g.items.length + ' frame' + (g.items.length === 1 ? '' : 's') + '</em></div>'
+    if (g.label) html += '<div class="ch" data-group="' + L.groups.indexOf(g) + '" title="Select all ' + esc(g.label) + ' frames" style="top:' + g.y + 'px">' + esc(g.label) + '<em>' + g.items.length + ' frame' + (g.items.length === 1 ? '' : 's') + '</em></div>'
     for (const p of g.items) {
       const it = p.it, n = p.n
       const fc = S.cache.files[it.fileKey] || {}
@@ -1640,6 +1740,7 @@ function bindWall() {
   $('zoom-out').addEventListener('click', () => { const vp = $('viewport'); zoomAt(0.8, vp.clientWidth / 2, vp.clientHeight / 2) })
   $('zoom-val').addEventListener('click', () => { const vp = $('viewport'); zoomAt(1 / S.wall.zoom, vp.clientWidth / 2, vp.clientHeight / 2) })
   $('zoom-fit').addEventListener('click', fit)
+  $('view-opts').addEventListener('click', () => toggleViewOptions())
   $('mark-seen').addEventListener('click', () => {
     const c = campaign(); const seen = {}
     c.items.forEach((it) => { const n = nodeInfo(it); if (n && n.hash) seen[it.id] = n.hash })
@@ -1701,7 +1802,8 @@ function bindWall() {
     if (d.moved) return
     if (d.heading) {
       const c = campaign()
-      const ids = c.items.filter((it) => it.channel === d.heading.dataset.channel).map((it) => it.id)
+      const group = (S.wall.bounds && S.wall.bounds.groups[Number(d.heading.dataset.group)]) || { items: [] }
+      const ids = group.items.map((p) => p.it.id)
       setSelection(d.additive ? Array.from(new Set(S.wall.selected.concat(ids))) : ids)
       return
     }
@@ -1734,9 +1836,14 @@ function bindWall() {
     if (S.view !== 'wall' || /INPUT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return
     const sel = window.getSelection(); if (sel && sel.rangeCount && !sel.isCollapsed) sel.removeAllRanges()
   })
+  // Clicking anywhere outside the View options box closes it.
+  document.addEventListener('pointerdown', (e) => {
+    const box = $('viewopts')
+    if (S.view === 'wall' && box && !box.classList.contains('hidden') && !e.target.closest('#viewopts, #view-opts')) toggleViewOptions(false)
+  }, true)
   document.addEventListener('keydown', (e) => {
     if (S.view !== 'wall' || /INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return
-    if (e.key === 'Escape') setSelection([])
+    if (e.key === 'Escape') { if (!$('viewopts').classList.contains('hidden')) { toggleViewOptions(false); return } setSelection([]) }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); const c = campaign(); setSelection(c ? c.items.map((it) => it.id) : []) }
   })
 }

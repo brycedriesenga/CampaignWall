@@ -109,6 +109,12 @@ Tiles are sized to `absoluteRenderBounds`, because `/images` renders content tha
 - `syncItems` called while busy sets `S.wall.pending`, and `loadMissing` runs when the current round ends (it used to be silently dropped).
 - `tier1Gate` shows "Pausing for Figma's rate limit (N s)…" in the wall bar while it waits.
 
+**View options (v0.5):** the sliders button at the right of the wall bar opens `#viewopts`. Settings are saved per person in `prefs.wallView` (`wallView()` merges them over `WALL_VIEW_DEFAULTS`).
+- **Settings:** background `bg` (auto, light, gray, dark, black), `frame` (border, shadow, none), `group` (channel, file, none), `spacing` (tight, normal, roomy, mapped through `SPACING`), and the toggles `grid`, `names`, `meta`, `headings` and `edges`.
+- **Canvas colours** are CSS vars on `#viewport`: `--cv-bg`, `--cv-ink`, `--cv-sub` and `--cv-line`, set by `data-bg`. The other settings are `data-frame` and `no-*` classes, applied by `applyWallView()`.
+- **Layout:** spacing, grouping and names change the layout, so they re-render. If you haven't panned or zoomed, the wall also re-fits. `wallGroups()` builds the rows. Headings carry `data-group` (an index into `S.wall.bounds.groups`), and clicking one selects that group.
+- **Closing:** Esc or a click outside closes the box.
+
 Wall selection is `S.wall.selected` (an array):
 - Shift, Ctrl or ⌘-click toggles a frame.
 - Shift-drag on the background draws a selection box.
@@ -134,7 +140,7 @@ Code → UI: `state` (full), `selection`, `error`.
   - that the v2 folders endpoint's response fields match what the code parses;
   - that the image render for a version works for old versions.
 - v0.3 adds links between campaign files, the daily re-check, Look back and team folder discovery. `npm test` has 59 checks. Also to confirm in real Figma: the team folders response and folder `meta` `updated_at` behaviour.
-- v0.4 adds Team sync (the variables index). `npm test` has 69 checks. First real test on 2026-09-30 worked: team link found 21 folders, a folder listed 4 files, the index filled with 2 files, and the wall showed both. Personal tokens offer these scopes: current_user, file_content, file_metadata, file_versions, file_variables read/write, folders:read (no projects or folder_metadata).
+- v0.4 adds Team sync (the variables index). `npm test` has 77 checks. First real test on 2026-09-30 worked: team link found 21 folders, a folder listed 4 files, the index filled with 2 files, and the wall showed both. Personal tokens offer these scopes: current_user, file_content, file_metadata, file_versions, file_variables read/write, folders:read (no projects or folder_metadata).
 
 ## Next steps (not built)
 

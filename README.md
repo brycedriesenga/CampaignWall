@@ -40,6 +40,7 @@ The wall reads frames straight from their files through Figma's API, so it's alw
 - **Open the wall:** click **Open wall**, and drag the bottom-right corner to resize the window.
   - Pan by dragging or scrolling. Zoom by pinching, or hold ⌘/Ctrl and scroll.
   - Click a frame for details. Double-click it to jump to the real frame.
+- **View options:** the sliders button at the top right of the wall changes how it looks, just for you: background colour (light, mid grey, dark, black, or match Figma), dot grid, frame borders or shadows, frame names, file info, row headings, spacing, and grouping rows by channel, by file or not at all.
 - **Select several frames:** Shift-click, or Shift-drag a box on empty space. Clicking a channel name selects that row, ⌘/Ctrl+A selects all, and Esc clears.
 - **Refresh:**
   - The toolbar button re-checks every frame.
