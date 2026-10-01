@@ -285,11 +285,17 @@ body.presenting .fr { box-shadow: none; }
 .scopes .skip i { background: var(--bg2); color: var(--muted); }
 .scopes .sc small { display: block; color: var(--muted); font-size: 10.5px; }
 .scopes code { font-size: 10.5px; background: var(--bg2); padding: 0 4px; border-radius: 4px; }
+/* Cluster captions: a hairline under each cluster of frames with its file / page / channel. */
+.cl { position: absolute; height: 0; border-top: calc(2px * var(--inv)) solid var(--cv-line); pointer-events: none; }
+.cl span { position: absolute; left: 0; top: 0; transform-origin: 0 0; transform: scale(var(--inv)); padding-top: 6px; font-size: 11px; color: var(--cv-sub);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: max(40px, calc(var(--w) * var(--z) * 1px)); }
+#viewport.no-headings .cl { display: none; }
+body.presenting .cl { display: none; }
 .marquee { position: absolute; z-index: 2; border: 1px solid var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); pointer-events: none; }
-#viewopts { position: absolute; right: 12px; top: 56px; width: 264px; z-index: 6; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 12px; }
+#viewopts { position: absolute; right: 12px; top: 56px; width: 280px; max-height: calc(100% - 80px); overflow: auto; z-index: 6; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 12px; }
 #viewopts .vo-title { font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
 .seg { display: flex; gap: 2px; padding: 2px; border-radius: 7px; background: var(--bg2); }
-.seg button { flex: 1; height: 26px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; }
+.seg button { flex: 1; height: 26px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; padding: 0 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .seg button.on { background: var(--bg); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); font-weight: 600; }
 .swatches { display: flex; gap: 8px; }
 .swatches button { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border); cursor: pointer; padding: 0; position: relative; }
@@ -333,6 +339,11 @@ const TEAM = {
   lookBackDays: 30,  // default for Settings › Look back: new files are only searched if edited this recently
   indexFile: '',     // optional Team sync file key (Enterprise): figma.com/design/<this part>/Showroom-Index
 }
+// For an org-wide release: list each team's Team sync file here. The setup guide then asks
+// "Which team are you on?" and everything else (team, folders, Look back) comes from that file's
+// saved team settings. Example: { name: 'Merrell Digital', indexFile: 'dyRO1Ym4WwBa1admKnSVQs' }
+const TEAM_PRESETS = [
+]
 
 const API_HOST = 'https://api.figma.com'
 const PANEL = { width: 360, height: 640 }
@@ -522,10 +533,15 @@ async function testToken(token) {
 const DAY = 86400000
 const SEARCH_STALE = 5 * 60000      // search again on open if the last search is older than this
 
-function lookBackDays() { return Number(S.prefs.lookBackDays) || TEAM.lookBackDays || 30 }
+// Where each setting comes from, in order: your own Settings, then what's built into the plugin,
+// then the team settings saved in the Team sync file.
+function indexConfig() { return (S.index && S.index.config) || null }
+function lookBackDays() { return Number(S.prefs.lookBackDays) || (indexConfig() && Number(indexConfig().lookBackDays)) || TEAM.lookBackDays || 30 }
 function teamInfo() {
   if (S.prefs.team && S.prefs.team.id) return { id: S.prefs.team.id, name: S.prefs.team.name || '', builtIn: false }
-  return TEAM.teamId ? { id: String(TEAM.teamId), name: '', builtIn: true } : null
+  if (TEAM.teamId) return { id: String(TEAM.teamId), name: '', builtIn: true }
+  const cfg = indexConfig()
+  return cfg && cfg.team && cfg.team.id ? { id: String(cfg.team.id), name: cfg.team.name || '', builtIn: true, fromIndex: true } : null
 }
 function hasCampaigns(m) { return !!(m && m.campaigns && Object.keys(m.campaigns).length) }
 // Campaign frames or a saved frame order: either is worth sharing through Team sync.
@@ -538,6 +554,7 @@ function teamFolders() {
   const found = team && S.scan.team && S.scan.team.id === team.id ? S.scan.team.folders || [] : []
   return TEAM.folders.map((f) => Object.assign({ builtIn: true }, f))
     .concat((S.prefs.folders || []).map((f) => Object.assign({ builtIn: false }, f)))
+    .concat(((indexConfig() || {}).folders || []).map((f) => Object.assign({ builtIn: true, fromIndex: true }, f)))
     .concat(found.map((f) => Object.assign({ fromTeam: true }, f)))
     .filter((f) => f.id && !seen[f.id] && (seen[f.id] = true))
 }
@@ -870,6 +887,24 @@ function indexInfo() {
   if (S.prefs.index && S.prefs.index.key) return { key: S.prefs.index.key, name: S.prefs.index.name || '', builtIn: false }
   return TEAM.indexFile ? { key: String(TEAM.indexFile), name: '', builtIn: true } : null
 }
+// Joining a team from TEAM_PRESETS (or pasting a Team sync link) sets the index file.
+function joinIndex(f) {
+  S.prefs.index = f
+  S.index = { files: {}, vars: {}, colId: '', modeId: '', readAt: 0, error: '', writeError: '', canWrite: null, pauseUntil: 0 }
+  send('save-prefs', { prefs: { index: f } })
+  return pollIndex()
+}
+function presetPicker(idPrefix) {
+  if (!TEAM_PRESETS.length) return ''
+  return '<div class="chips">' + TEAM_PRESETS.map((p, i) => '<button class="btn" data-preset="' + i + '" id="' + idPrefix + i + '" style="height:28px">' + esc(p.name) + '</button>').join('') + '</div>'
+}
+function bindPresets(after) {
+  document.querySelectorAll('[data-preset]').forEach((el) => el.addEventListener('click', () => {
+    const p = TEAM_PRESETS[Number(el.dataset.preset)]
+    joinIndex({ key: String(p.indexFile), name: p.name }).then(() => after && after())
+    after && after()
+  }))
+}
 function indexHealthy() { return !!(indexInfo() && S.index.readAt && !S.index.error && Date.now() - S.index.readAt < 5 * 60000) }
 function parseFileLink(text) {
   const t = String(text || '').trim()
@@ -889,8 +924,15 @@ async function readIndex() {
   const cols = Object.values(meta.variableCollections || {}).filter((c) => c && c.name === INDEX_COLLECTION && !c.remote)
   const modeOf = (col) => col.defaultModeId || (col.modes && col.modes[0] && col.modes[0].modeId) || ''
   const files = {}, vars = {}
+  let config = null, configVar = null
   for (const v of Object.values(meta.variables || {})) {
     const col = v && cols.find((c) => c.id === v.variableCollectionId)
+    if (col && v.name === 'config') {
+      // The team's shared settings (team, folders, Look back), saved from Settings › Team sync.
+      try { config = JSON.parse((v.valuesByMode || {})[modeOf(col)] || '{}') } catch (e) {}
+      configVar = { id: v.id, modeId: modeOf(col) }
+      continue
+    }
     if (!col || !/^f\//.test(v.name || '')) continue
     const values = v.valuesByMode || {}
     const raw = values[modeOf(col)] != null ? values[modeOf(col)] : values[Object.keys(values)[0]]
@@ -903,6 +945,8 @@ async function readIndex() {
   }
   S.index.files = files
   S.index.vars = vars
+  S.index.config = config && typeof config === 'object' ? config : null
+  S.index.configVar = configVar
   S.index.colId = cols[0] ? cols[0].id : ''
   S.index.modeId = cols[0] ? modeOf(cols[0]) : ''
   S.index.readAt = Date.now()
@@ -963,6 +1007,44 @@ async function writeIndex(list) {
     // Our idea of the index may be out of date (e.g. someone deleted the collection): re-read next time.
     if (!retryable(e)) S.index.readAt = 0
   }
+}
+
+// Saves the team's settings into the index file, so anyone who links it gets them automatically.
+function teamSettingsToShare() {
+  const team = (S.prefs.team && S.prefs.team.id) ? S.prefs.team : (teamInfo() && !teamInfo().fromIndex ? teamInfo() : (S.index.config && S.index.config.team) || null)
+  const folders = (S.prefs.folders || []).concat(((S.index.config || {}).folders || []).filter((f) => !(S.prefs.folders || []).some((x) => x.id === f.id)))
+  return { v: 1, team: team ? { id: String(team.id), name: team.name || '' } : null, folders: folders.map((f) => ({ id: String(f.id), name: f.name || '' })),
+    lookBackDays: Number(S.prefs.lookBackDays) || (S.index.config && S.index.config.lookBackDays) || TEAM.lookBackDays || 30,
+    by: (S.prefs.me && S.prefs.me.handle) || '', at: Date.now() }
+}
+function saveTeamSettings() {
+  const info = indexInfo(); if (!info || !S.token) return Promise.resolve()
+  const cfg = teamSettingsToShare()
+  return indexTask(async () => {
+    if (!S.index.readAt) await readIndex()
+    const body = { variables: [], variableModeValues: [] }
+    let colId = S.index.colId, modeId = S.index.modeId
+    if (!colId) {
+      colId = 'col_new'; modeId = 'mode_new'
+      body.variableCollections = [{ action: 'CREATE', id: colId, name: INDEX_COLLECTION, initialModeId: modeId, hiddenFromPublishing: true }]
+    }
+    if (S.index.configVar) body.variableModeValues.push({ variableId: S.index.configVar.id, modeId: S.index.configVar.modeId, value: JSON.stringify(cfg) })
+    else {
+      body.variables.push({ action: 'CREATE', id: 'cfg_new', name: 'config', variableCollectionId: colId, resolvedType: 'STRING', hiddenFromPublishing: true })
+      body.variableModeValues.push({ variableId: 'cfg_new', modeId: modeId, value: JSON.stringify(cfg) })
+    }
+    if (!body.variables.length) delete body.variables
+    try {
+      const res = await api('/v1/files/' + info.key + '/variables', { method: 'POST', body: body })
+      const ids = (res && res.meta && res.meta.tempIdToRealId) || {}
+      if (body.variableCollections) { S.index.colId = ids[colId] || ''; S.index.modeId = ids[modeId] || '' }
+      if (!S.index.configVar && ids.cfg_new) S.index.configVar = { id: ids.cfg_new, modeId: S.index.modeId || modeId }
+      S.index.config = cfg
+      toast('Team settings saved to ' + (info.name || 'the Team sync file') + '. Anyone who links it gets them.')
+    } catch (e) {
+      toast(e.kind === 'forbidden' ? 'Couldn’t save: your token needs file_variables:write and edit access to the Team sync file.' : 'Couldn’t save team settings: ' + e.message, true)
+    }
+  })
 }
 
 // What this window should copy into the index: this file's manifest if it changed, and any
@@ -1197,7 +1279,24 @@ async function syncItems(list, opts) {
 }
 
 // ---------- wall view options (saved per person in prefs.wallView) ----------
-const WALL_VIEW_DEFAULTS = { bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, edge: 'both', spacing: 'normal', group: 'channel' }
+const WALL_VIEW_DEFAULTS = { bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, edge: 'both', spacing: 'normal', group: 'channel',
+  subChannel: 'file', subFile: 'channel', subNone: 'off' }   // how frames cluster inside each row, per grouping
+// Inside a row, frames can cluster by the other dimension: by file (and page) in channel rows,
+// by channel (or page) in file rows. Each choice: [value, button label].
+const SUB_OPTIONS = {
+  channel: { key: 'subChannel', options: [['file', 'File'], ['filepage', 'File + page'], ['off', 'Off']] },
+  file: { key: 'subFile', options: [['channel', 'Channel'], ['page', 'Page'], ['off', 'Off']] },
+  none: { key: 'subNone', options: [['channel', 'Channel'], ['file', 'File'], ['off', 'Off']] },
+}
+function subMode(view) { const so = SUB_OPTIONS[view.group] || SUB_OPTIONS.channel; return view[so.key] || 'off' }
+function clusterOf(it, mode) {
+  const file = (S.cache.files[it.fileKey] || {}).name || it.fileName || 'File'
+  if (mode === 'file') return { key: it.fileKey, label: file }
+  if (mode === 'filepage') return { key: it.fileKey + '|' + (it.pageName || ''), label: file + (it.pageName ? ' · ' + it.pageName : '') }
+  if (mode === 'channel') return { key: it.channel, label: it.channel }
+  if (mode === 'page') return { key: it.pageName || '', label: it.pageName || 'Page' }
+  return { key: '', label: '' }
+}
 function wallView() {
   const v = Object.assign({}, WALL_VIEW_DEFAULTS, S.prefs.wallView || {})
   if (S.prefs.wallView && S.prefs.wallView.edges === false && !S.prefs.wallView.edge) v.edge = 'none'   // older on/off setting
@@ -1221,7 +1320,7 @@ function setWallView(change) {
   applyWallView()
   // Spacing, grouping and labels change where frames sit, so lay the wall out again and re-fit.
   const v = wallView()
-  if (v.spacing !== before.spacing || v.group !== before.group || v.names !== before.names) { S.wall.fitted = S.wall.touched; renderWall() }
+  if (v.spacing !== before.spacing || v.group !== before.group || v.names !== before.names || subMode(v) !== subMode(before)) { S.wall.fitted = S.wall.touched; renderWall() }
   renderViewOptions()
 }
 function toggleViewOptions(open) {
@@ -1235,8 +1334,8 @@ function toggleViewOptions(open) {
 function renderViewOptions() {
   const box = $('viewopts'); if (!box || box.classList.contains('hidden')) return
   const v = wallView()
-  const seg = (key, options) => '<div class="seg" role="radiogroup">' + options.map((o) =>
-    '<button role="radio" aria-checked="' + (v[key] === o[0]) + '" class="' + (v[key] === o[0] ? 'on' : '') + '" data-vo="' + key + '" data-val="' + o[0] + '">' + o[1] + '</button>').join('') + '</div>'
+  const seg = (key, options, tips) => '<div class="seg" role="radiogroup">' + options.map((o) =>
+    '<button role="radio" aria-checked="' + (v[key] === o[0]) + '" class="' + (v[key] === o[0] ? 'on' : '') + '" data-vo="' + key + '" data-val="' + o[0] + '"' + (tips && tips[o[0]] ? ' title="' + esc(tips[o[0]]) + '"' : '') + '>' + o[1] + '</button>').join('') + '</div>'
   const toggle = (key, label) => '<label class="vo-toggle"><span>' + label + '</span><input type="checkbox" data-vo-toggle="' + key + '"' + (v[key] ? ' checked' : '') + '></label>'
   const bgs = [['auto', 'Match Figma'], ['light', 'Light'], ['gray', 'Mid grey'], ['dark', 'Dark'], ['black', 'Black']]
   const swatch = { light: '#f0f0f0', gray: '#9e9e9e', dark: '#1e1e1e', black: '#000000' }
@@ -1245,8 +1344,10 @@ function renderViewOptions() {
     (swatch[b[0]] ? ' style="background:' + swatch[b[0]] + '"' : '') + '></button>').join('') + '</div></div>'
   html += '<div><div class="vo-title">Frames</div>' + seg('frame', [['border', 'Border'], ['shadow', 'Shadow'], ['none', 'None']]) + '</div>'
   html += '<div><div class="vo-title">Group rows by</div>' + seg('group', [['channel', 'Channel'], ['file', 'File'], ['none', 'Nothing']]) + '</div>'
+  const so = SUB_OPTIONS[v.group] || SUB_OPTIONS.channel
+  html += '<div><div class="vo-title">Cluster within rows by</div>' + seg(so.key, so.options) + '</div>'
   html += '<div><div class="vo-title">Spacing</div>' + seg('spacing', [['tight', 'Tight'], ['normal', 'Normal'], ['roomy', 'Roomy']]) + '</div>'
-  html += '<div><div class="vo-title">Content outside a frame’s edge</div>' + seg('edge', [['both', 'Fade + line'], ['fade', 'Fade'], ['line', 'Line'], ['none', 'Show all']]) + '</div>'
+  html += '<div><div class="vo-title">Content outside a frame’s edge</div>' + seg('edge', [['both', 'Both'], ['fade', 'Fade'], ['line', 'Line'], ['none', 'Off']], { both: 'Fade it and draw the frame’s edge', fade: 'Fade content outside the frame', line: 'Draw the frame’s edge as a dashed line', none: 'Show everything as rendered' }) + '</div>'
   html += '<div>' + toggle('grid', 'Dot grid') + toggle('names', 'Frame names') + toggle('meta', 'File and edit info') + toggle('headings', 'Row headings') + '</div>'
   html += '<div class="row" style="justify-content:space-between"><button class="btn ghost" id="vo-reset" style="height:26px;padding:0 6px">Reset to defaults</button>' +
     '<button class="btn ghost" id="vo-keys" style="height:26px;padding:0 6px">' + icon('keys', 14) + 'Shortcuts</button></div>'
@@ -1975,7 +2076,8 @@ function renderWelcomeIfOpen() { if (S.view === 'welcome' && !(document.activeEl
 function renderWelcome() {
   const me = S.prefs.me
   const team = teamInfo(), idx = indexInfo()
-  const builtInTeam = !!(TEAM.teamId || TEAM.folders.length)
+  const fromIndex = !!(team && team.fromIndex) || !!((indexConfig() || {}).folders || []).length
+  const builtInTeam = !!(TEAM.teamId || TEAM.folders.length) || fromIndex
   const step = (n, done, title, tag, desc, body) => '<div class="ob-step' + (done ? ' done' : '') + '"><div class="ob-num">' + (done ? icon('check', 13) : n) + '</div><div class="ob-body">' +
     '<div class="ob-title">' + title + (tag ? '<em>' + tag + '</em>' : '') + '</div>' + (desc ? '<div class="ob-desc">' + desc + '</div>' : '') + (body || '') + '</div></div>'
   let html = '<div class="view"><div class="scroll" style="padding:0"><div class="welcome">'
@@ -2005,11 +2107,20 @@ function renderWelcome() {
   else if (team) body2 = ''
   else body2 = '<div class="row"><input class="field" id="ob-team" placeholder="figma.com/files/team/…" aria-label="Team link"><button class="btn" id="ob-team-add"' + (S.token ? '' : ' disabled') + '>Add</button></div>'
   html += step(2, builtInTeam || !!team, 'Find your team', builtInTeam || team ? '' : 'Optional',
+    fromIndex ? 'Set up from your Team sync file: ' + esc(team ? teamName(team) : 'your team') + '’s folders are already known.' :
     builtInTeam ? 'Set up for you: Showroom already knows your team’s folders.' : team ? '<b>' + esc(teamName(team)) + '</b>' + (ts && ts.folders ? ' · ' + ts.folders.length + ' folders found' : ' · searching…') : 'Paste your team’s link (from Figma’s file browser) so Showroom can find campaign frames in every folder.', body2)
 
   // 3. Team sync
   let body3 = ''
-  if (!idx) body3 = '<div class="row"><input class="field" id="ob-index" placeholder="figma.com/design/…/Showroom-Index" aria-label="Index file link"><button class="btn" id="ob-index-add"' + (S.token ? '' : ' disabled') + '>Add</button></div>'
+  if (!idx) {
+    if (TEAM_PRESETS.length) body3 += '<div class="ob-desc">Which team are you on?</div>' + presetPicker('ob-preset-')
+    body3 += '<div class="row"><input class="field" id="ob-index" placeholder="' + (TEAM_PRESETS.length ? 'Or paste a Team sync file link' : 'figma.com/design/…/Showroom-Index') + '" aria-label="Index file link"><button class="btn" id="ob-index-add"' + (S.token ? '' : ' disabled') + '>Add</button></div>'
+    body3 += '<details class="ob-desc"><summary style="cursor:pointer">Don’t have one? How to set it up</summary><ol class="steps" style="margin-top:6px">' +
+      '<li>Make a new design file called “Showroom Index – your team” in a folder everyone on the team can edit.</li>' +
+      '<li>Paste its link here. Showroom fills it in the first time someone connects.</li>' +
+      '<li>In Settings › Team sync, click <b>Save</b> to store your team and folders in it.</li>' +
+      '<li>Share the link (or ask whoever maintains Showroom to add it to the team list). Teammates then only need their token.</li></ol></details>'
+  }
   html += step(3, !!idx, 'Turn on Team sync', idx ? '' : 'Optional · Enterprise',
     idx ? (S.index.error ? '<span style="color:var(--danger)">' + esc(S.index.error) + '</span>' : 'On' + (TEAM.indexFile ? ', set up for you' : '') + '. Campaign changes reach everyone within a minute.') : 'Link a shared “Showroom Index” file the team can edit. Changes then reach everyone within a minute.', body3)
 
@@ -2042,6 +2153,7 @@ function renderWelcome() {
     renderWelcome()
     discover({ teamOnly: true }).then(() => { if (S.view === 'welcome') checkAccess() })
   })
+  bindPresets(() => { if (S.view === 'welcome') { renderWelcome(); checkAccess() } })
   on('ob-index-add', 'click', () => {
     const f = parseFileLink($('ob-index').value)
     if (!f) { toast('Paste the index file’s link (Share › Copy link).', true); return }
@@ -2195,7 +2307,15 @@ function renderSetup() {
     const note = S.index.canWrite === false ? '<div class="small" style="color:var(--warn);margin-top:2px">Read-only: your token can’t write File variables, or you can’t edit this file. You still see the team’s changes; yours reach them through the normal search.</div>'
       : S.index.writeError ? '<div class="small" style="color:var(--warn);margin-top:2px">Couldn’t update the index: ' + esc(S.index.writeError) + '</div>' : ''
     html += '<div class="card"><div class="sel-row"><div class="grow"><div class="nm">' + esc(index.name || 'Index file') + '</div><div class="muted small">' + line + (index.builtIn ? ' · team default' : '') + '</div>' + note + '</div>' +
-      (index.builtIn ? '' : '<button class="icon" id="remove-index" aria-label="Turn off Team sync">' + icon('x', 14) + '</button>') + '</div></div>'
+      (index.builtIn ? '' : '<button class="icon" id="remove-index" aria-label="Turn off Team sync">' + icon('x', 14) + '</button>') + '</div>'
+    const cfg = indexConfig()
+    html += '<div class="sep"></div><div class="sel-row"><div class="grow"><div class="muted small">' + (cfg
+      ? 'Team settings in this file: ' + esc([cfg.team ? (cfg.team.name || 'a team') : '', (cfg.folders || []).length ? cfg.folders.length + ' folder' + (cfg.folders.length === 1 ? '' : 's') : '', cfg.lookBackDays ? 'Look back ' + cfg.lookBackDays + ' days' : ''].filter(Boolean).join(' · ') || 'none') + (cfg.by ? ' · saved by ' + esc(cfg.by) + ' ' + esc(ago(cfg.at)) : '')
+      : 'No team settings saved in this file yet. Save yours so teammates only need to link it.') + '</div></div>' +
+      '<button class="btn" id="save-team-settings" style="height:26px;padding:0 8px">' + (cfg ? 'Update' : 'Save') + '</button></div></div>'
+  } else if (TEAM_PRESETS.length) {
+    html += '<div class="muted small">Which team are you on? This connects you to its Team sync file.</div>' + presetPicker('set-preset-')
+    html += '<div class="row"><input class="field" id="index-link" placeholder="Or paste a Team sync file link" aria-label="Index file link"><button class="btn" id="add-index">Add</button></div>'
   } else {
     html += '<div class="muted small">Optional, needs an Enterprise plan. Make an empty design file (e.g. “Showroom Index”) that the whole team can edit, and paste its link. Campaign changes then reach everyone within a minute.</div>'
     html += '<div class="row"><input class="field" id="index-link" placeholder="figma.com/design/…/Showroom-Index" aria-label="Index file link"><button class="btn" id="add-index">Add</button></div>'
@@ -2207,7 +2327,7 @@ function renderSetup() {
   if (team) {
     html += '<div class="card"><div class="sel-row"><div class="grow"><div class="nm">' + esc(teamName(team)) + '</div><div class="muted small">' +
       (ts ? (ts.error ? '<span style="color:var(--danger)">' + esc(ts.error) + '</span>' : esc(ts.folders.length) + ' folder' + (ts.folders.length === 1 ? '' : 's') + ' found · checked ' + esc(ago(ts.checkedAt))) : 'Not searched yet') +
-      (team.builtIn ? ' · team default' : '') + '</div></div>' +
+      (team.fromIndex ? ' · from Team sync' : team.builtIn ? ' · team default' : '') + '</div></div>' +
       (team.builtIn ? '' : '<button class="icon" id="remove-team" aria-label="Remove team">' + icon('x', 14) + '</button>') + '</div></div>'
   } else {
     html += '<div class="muted small">Optional. Paste your team’s link (open the team in Figma’s file browser and copy the address) and every folder in it is searched.</div>'
@@ -2220,7 +2340,7 @@ function renderSetup() {
   if (folders.length) {
     html += '<div class="card">' + folders.map((f, i) => {
       const st = (S.scan.folders || {})[f.id] || {}
-      return (i ? '<div class="sep"></div>' : '') + '<div class="sel-row"><div class="grow"><div class="nm">' + esc(folderName(f)) + '</div><div class="muted small">' + statusLine(st) + (f.builtIn ? ' · team default' : '') + (inTeam(f.id) ? ' · already covered by your team' : '') + '</div></div>' +
+      return (i ? '<div class="sep"></div>' : '') + '<div class="sel-row"><div class="grow"><div class="nm">' + esc(folderName(f)) + '</div><div class="muted small">' + statusLine(st) + (f.fromIndex ? ' · from Team sync' : f.builtIn ? ' · team default' : '') + (inTeam(f.id) ? ' · already covered by your team' : '') + '</div></div>' +
         (f.builtIn ? '' : '<button class="icon" data-remove-folder="' + esc(f.id) + '" aria-label="Remove ' + esc(folderName(f)) + '">' + icon('x', 14) + '</button>') + '</div>'
     }).join('') + '</div>'
   }
@@ -2297,6 +2417,8 @@ function renderSetup() {
     renderSetup()
     discover()
   })
+  on('save-team-settings', 'click', () => saveTeamSettings().then(() => renderSetup()))
+  bindPresets(() => renderSetup())
   on('add-index', 'click', () => {
     const f = parseFileLink($('index-link').value)
     if (!f) { toast('Paste the index file’s link (Share › Copy link).', true); return }
@@ -2360,6 +2482,16 @@ function closeWall() {
 
 // Groups for the wall's rows: by channel (in the channel list's order), by file, or one group.
 function wallGroups(c, by) {
+  const groups = wallGroupsRaw(c, by)
+  const mode = subMode(wallView())
+  if (mode === 'off') return groups
+  return groups.map((g) => {
+    const order = [], byKey = {}
+    for (const it of g.items) { const k = clusterOf(it, mode).key; if (!byKey[k]) { byKey[k] = []; order.push(k) } byKey[k].push(it) }
+    return Object.assign({}, g, { items: [].concat.apply([], order.map((k) => byKey[k])), clustered: order.length > 1, mode: mode })
+  })
+}
+function wallGroupsRaw(c, by) {
   c = Object.assign({}, c, { items: orderItems(c) })
   if (by === 'none') return [{ label: '', items: c.items.slice() }]
   if (by === 'file') {
@@ -2386,18 +2518,31 @@ function layout(c) {
   let maxX = 0
   for (const src of wallGroups(c, view.group)) {
     const items = src.items
-    const g = { label: src.label, y: y + LABEL, items: [] }
-    let x = 0, rowY = y + LABEL, rowH = 0
+    // Clusters get a wider gap between them and a caption line underneath. Captions stay
+    // screen-sized like frame names, so their room grows with the row gap to fit at fit-to-screen zoom.
+    const CAP = src.clustered ? Math.round(ROW_GAP * 0.75) : 0
+    const g = { label: src.label, y: y + LABEL, items: [], segments: [] }
+    let x = 0, rowY = y + LABEL, rowH = 0, seg = null, prevKey = null
+    const close = () => { if (seg) { g.segments.push(seg); seg = null } }
     for (const it of items) {
       const n = nodeInfo(it)
       const w = Math.max(40, (n && (n.viewW || n.width)) || it.width || 400)
       const h = Math.max(40, (n && (n.viewH || n.height)) || it.height || 300)
-      if (x > 0 && x + w > MAX_ROW) { x = 0; rowY += rowH + LABEL + GAP; rowH = 0 }
+      const cl = src.clustered ? clusterOf(it, src.mode) : null
+      const newCluster = cl && prevKey !== null && cl.key !== prevKey
+      if (newCluster && x > 0) x += GAP * 1.5
+      if (x > 0 && x + w > MAX_ROW) { close(); x = 0; rowY += rowH + LABEL + GAP + CAP; rowH = 0 }
+      if (cl && (!seg || newCluster)) { close(); seg = { label: cl.label, x1: x, x2: x + w, y: rowY } }
       g.items.push({ it: it, n: n, x: x, y: rowY, w: w, h: h })
+      if (seg) seg.x2 = x + w
       x += w + GAP; rowH = Math.max(rowH, h); maxX = Math.max(maxX, x - GAP)
+      if (cl) prevKey = cl.key
     }
+    close()
+    // Captions sit just under the tallest frame in their row.
+    g.segments.forEach((sg) => { sg.h = Math.max.apply(null, g.items.filter((p) => p.y === sg.y).map((p) => p.h)) })
     groups.push(g)
-    y = rowY + rowH + ROW_GAP
+    y = rowY + rowH + ROW_GAP + CAP
   }
   return { groups: groups, width: maxX, height: Math.max(0, y - ROW_GAP) }
 }
@@ -2449,6 +2594,9 @@ function renderWall() {
   S.wall.selected = S.wall.selected.filter((id) => c.items.some((it) => it.id === id))
   let html = ''
   for (const g of L.groups) {
+    for (const sg of g.segments || []) {
+      html += '<div class="cl" style="left:' + sg.x1 + 'px;top:' + (sg.y + sg.h + 18) + 'px;width:' + (sg.x2 - sg.x1) + 'px;--w:' + (sg.x2 - sg.x1) + '"><span>' + esc(sg.label) + '</span></div>'
+    }
     if (g.label) html += '<div class="ch" data-group="' + L.groups.indexOf(g) + '" title="Select all ' + esc(g.label) + ' frames" style="top:' + g.y + 'px">' + esc(g.label) + '<em>' + g.items.length + ' frame' + (g.items.length === 1 ? '' : 's') + '</em></div>'
     for (const p of g.items) {
       const it = p.it, n = p.n

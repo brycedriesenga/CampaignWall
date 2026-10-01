@@ -53,6 +53,9 @@ Campaign membership lives **inside each design file**, so it's shared with no se
   - 403 on write → `S.index.canWrite = false` (Settings shows "Read-only"); 403/404 on read → `S.index.error`; 429 pauses polling for 2 min. Reads and writes run one at a time (`indexTask`).
   - While the index is healthy (read OK in the last 5 min): the full search is due every 30 min instead of 5, link-following skips files the index covers, and a folder file known only from the index gets its `lastModified` recorded instead of being read.
   - The design files stay the source of truth. People who can't write the index still see everyone's changes, but theirs only spread through other people's searches.
+  - **Team settings (v0.9):** a STRING variable named `config` in the same collection holds `{v, team:{id,name}|null, folders:[{id,name}], lookBackDays, by, at}`. `readIndex` puts it in `S.index.config` (`S.index.configVar` for updating). Settings › Team sync has Save/Update (`saveTeamSettings()`, built by `teamSettingsToShare()` from this person's team, folders and Look back).
+    - Effective values: `teamInfo()` = prefs → `TEAM.teamId` → index config (`fromIndex: true`); `teamFolders()` also adds the config's folders; `lookBackDays()` = prefs → index config → `TEAM` → 30. Settings labels them "· from Team sync".
+  - **Presets (v0.9):** `TEAM_PRESETS = [{ name, indexFile }]` near the top of ui.html, one per team, for the org release. When set, Settings and the setup guide's step 3 show "Which team are you on?" buttons (`presetPicker`, `bindPresets` → `joinIndex`). Everything else comes from that index's `config`. Step 3 also has a "Don't have one? How to set it up" section.
   - Needs Enterprise, a Full seat, File variables read (and write to publish), and edit access to the index file. Tested on 2026-09-30 with `tools/test-variables-index.mjs`: all checks passed, about 1–2 s per call, and values of 100k+ characters were accepted.
 - **Campaign list:** `allCampaigns()` merges the current file's live manifest (from code.js), the scanned manifests, and local data.
   - Local data only holds drafts (campaigns with no frames yet).
@@ -113,6 +116,10 @@ Tiles are sized to `absoluteRenderBounds`, because `/images` renders content tha
 
 **View options (v0.5):** the sliders button at the right of the wall bar opens `#viewopts`. Settings are saved per person in `prefs.wallView` (`wallView()` merges them over `WALL_VIEW_DEFAULTS`).
 - **Settings:** background `bg` (auto, light, gray, dark, black), `frame` (border, shadow, none), `group` (channel, file, none), `spacing` (tight, normal, roomy, mapped through `SPACING`), `edge` (both, fade, line, none), and the toggles `grid`, `names`, `meta` and `headings`.
+- **Clusters within rows (v0.9):** one setting per grouping, chosen by `SUB_OPTIONS`: `subChannel` (file, filepage, off; default file), `subFile` (channel, page, off; default channel), `subNone` (channel, file, off; default off).
+  - `wallGroups()` wraps `wallGroupsRaw()` and reorders each row's items into clusters (`clusterOf(it, mode)`), in order of first appearance. A row with one cluster isn't marked `clustered`.
+  - `layout()` adds a `GAP*1.5` gap between clusters and `CAP = ROW_GAP * 0.75` of room under the row, and records `g.segments [{label, x1, x2, y, h}]`. CAP scales with the row gap because captions are screen-sized; a fixed 56 overlapped the next row at fit zoom.
+  - `renderWall` draws `.cl` (hairline plus counter-scaled caption) under each cluster. Hidden with `no-headings` and in Present.
 - **Canvas colours** are CSS vars on `#viewport`: `--cv-bg`, `--cv-ink`, `--cv-sub` and `--cv-line`, set by `data-bg`. The other settings are `data-frame` and `no-*` classes, applied by `applyWallView()`.
 - **Layout:** spacing, grouping and names change the layout, so they re-render. If you haven't panned or zoomed, the wall also re-fits. `wallGroups()` builds the rows. Headings carry `data-group` (an index into `S.wall.bounds.groups`), and clicking one selects that group.
 - **Closing:** Esc or a click outside closes the box.

@@ -54,7 +54,7 @@ The wall reads frames straight from their files through Figma's API, so it's alw
 - **Filter:** the funnel button shows only certain channels, people, or frames updated since you last looked. The other frames fade out.
 - **Present:** press P or click **Present**. Use the arrow keys to step through frames full-size, and Esc to go back.
 - **Position:** each campaign reopens at the zoom and position you left it.
-- **View options:** the sliders button at the top right of the wall changes how it looks, just for you: background colour (light, mid grey, dark, black, or match Figma), dot grid, frame borders or shadows, frame names, file info, row headings, spacing, and grouping rows by channel, by file or not at all.
+- **View options:** the sliders button at the top right of the wall changes how it looks, just for you: background colour (light, mid grey, dark, black, or match Figma), dot grid, frame borders or shadows, frame names, file info, row headings, spacing, and grouping rows by channel, by file or not at all. **Cluster within rows** keeps frames from the same file (or file and page) together inside a channel row, with a small caption under each cluster. Grouped by file, it clusters by channel or page instead.
 - **Select several frames:** Shift-click, or Shift-drag a box on empty space. Clicking a channel name selects that row, ⌘/Ctrl+A selects all, and Esc clears.
 - **Refresh:**
   - The toolbar button re-checks every frame.
@@ -70,9 +70,32 @@ The wall reads frames straight from their files through Figma's API, so it's alw
 
 ## Rolling it out to the team
 
-**Set up Team sync** (Enterprise, Full seats): make an empty design file called "Showroom Index" in a team folder that everyone can edit. Paste its link in **Settings › Team sync**, or build it in with `indexFile: '<file key>'` in `TEAM`. The first person to connect fills it in; nothing else is needed. People whose token can't write variables still see everyone's changes.
+### Setting up a team (one person per team, once)
 
-**Build the team in.** In `ui.html`, set the team's ID so everyone's plugin searches its folders, or list the channel folders by hand:
+Each team gets its own Team sync file. That keeps each team's campaigns, folders and settings separate. Needs Enterprise and Full seats.
+
+1. Make an empty design file called "Showroom Index – <team>" in a folder the whole team can edit.
+2. Open Showroom, go to **Settings › Team sync** and paste the file's link.
+3. In Settings, add the team's link (or its channel folders) and set Look back.
+4. Under Team sync, click **Save** next to "No team settings saved in this file yet". The team, folders and Look back are now stored in the file.
+5. Share the file's link with the team, or add it to `TEAM_PRESETS` (below). Teammates paste the link (or pick their team) and get everything else automatically.
+
+People whose token can't write variables still see everyone's changes. The setup guide's "Don't have one? How to set it up" section has the same steps.
+
+### Prefilling teams for an org-wide release
+
+At the top of `ui.html`, list each team's Team sync file:
+
+```js
+const TEAM_PRESETS = [
+  { name: 'Merrell Digital', indexFile: 'dyRO1Ym4WwBa1admKnSVQs' },
+  { name: 'Saucony Digital', indexFile: '<that team’s index file key>' },
+]
+```
+
+The file key is the part after `/design/` in the file's link. With presets set, the setup guide asks "Which team are you on?" and one click sets everything up. A new team only needs a preset added once its index file exists and has its team settings saved.
+
+**Or build a single team in.** In `ui.html`, set the team's ID so everyone's plugin searches its folders, or list the channel folders by hand:
 
 ```js
 const TEAM = {

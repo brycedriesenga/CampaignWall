@@ -126,8 +126,9 @@ function makeApi() {
 }
 
 // ---------- boot one plugin window ----------
-async function boot(env, api, { folders, welcome } = {}) {
+async function boot(env, api, { folders, welcome, presets } = {}) {
   let html = fs.readFileSync(path.join(ROOT, 'ui.html'), 'utf8')
+  if (presets) html = html.replace('const TEAM_PRESETS = [\n]', 'const TEAM_PRESETS = ' + JSON.stringify(presets))
   if (folders) html = html.replace("folders: [\n    // { id: '123456789', name: 'Email' },\n  ],", 'folders: ' + JSON.stringify(folders) + ',')
   const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true })
   const w = dom.window
@@ -478,6 +479,15 @@ function pointer(w, type, target, extra) {
   const adsHead = [...wb.document.querySelectorAll('#world .ch')].find((h) => /Holiday Ads/.test(h.textContent))
   pointer(wb, 'pointerdown', adsHead); pointer(wb, 'pointerup', adsHead); await tick(20)
   check('clicking a file heading selects that file’s frames', /frames selected/.test($(wb, '#inspector').textContent) && wb.document.querySelectorAll('#world .fr.sel').length === [...wb.document.querySelectorAll('#world .fr')].filter((f) => /ADFILE00002/.test(f.dataset.id)).length)
+  // Clusters within rows
+  const caps = () => [...wb.document.querySelectorAll('#world .cl span')].map((s) => s.textContent)
+  console.log('   file rows, clusters:', caps().join(', '))
+  check('file rows cluster their frames by channel, with a caption under each', caps().length >= 2 && caps().includes('Email'), caps().join(', '))
+  click(wb, '#view-opts'); await tick(10)
+  click(wb, '#viewopts [data-vo="subFile"][data-val="off"]'); await tick(20)
+  check('clustering can be turned off', caps().length === 0 && (bryce.store.get('showroom.prefs').wallView || {}).subFile === 'off')
+  click(wb, '#viewopts [data-vo="group"][data-val="channel"]'); await tick(20)
+  check('the cluster option follows the grouping', /Cluster within rows by/.test($(wb, '#viewopts').textContent) && !!$(wb, '#viewopts [data-vo="subChannel"][data-val="filepage"]') && $(wb, '#viewopts [data-vo="subChannel"][data-val="file"]').classList.contains('on'))
   wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
   check('Esc closes View options', $(wb, '#viewopts').classList.contains('hidden'))
   click(wb, '#view-opts'); await tick(10); click(wb, '#vo-reset'); await tick(20); click(wb, '#view-opts'); await tick(10)
@@ -661,6 +671,35 @@ function pointer(w, type, target, extra) {
     check('a running search shows a Stop button', !!$(wm, '#search-stop'))
     click(wm, '#search-stop'); await tick(300)
     check('Stop ends the search and keeps what it found', !$(wm, '#search-stop') && /Search stopped/.test(wm.document.getElementById('toast').textContent), wm.document.getElementById('toast').textContent)
+  }
+
+  // ===== team settings saved in the Team sync file, and team presets =====
+  {
+    click(wl, '#settings'); await tick(10)
+    $(wl, '#index-link').value = 'https://www.figma.com/design/INDEXFILE0099/Showroom-Index'
+    click(wl, '#add-index'); await tick(300)
+    check('Settings offers to save team settings into the Team sync file', !!$(wl, '#save-team-settings') && /No team settings saved/.test(text(wl)))
+    click(wl, '#save-team-settings'); await tick(300)
+    const cfgVar = Object.values(api.vars.INDEXFILE0099.variables).find((v) => v.name === 'config')
+    const cfg = cfgVar && JSON.parse(Object.values(cfgVar.valuesByMode)[0])
+    check('team settings are saved as a “config” variable', cfg && cfg.team && cfg.team.id === '9001' && cfg.lookBackDays === 90 && cfg.folders.length >= 1, JSON.stringify(cfg))
+    check('Settings shows what’s saved', /Team settings in this file:/.test(text(wl)) && !!$(wl, '#save-team-settings') && /Update/.test($(wl, '#save-team-settings').textContent))
+    click(wl, '#back'); await tick(10)
+
+    // Nia: new, the plugin has the team listed as a preset.
+    const nia = makeEnv({ fileKey: 'NIAFILE00011', fileName: 'Nia scratch', user: 'Nia', store: new Map() })
+    api.files.NIAFILE00011 = { name: 'Nia scratch', version: 1, touched: new Date().toISOString(), nodes: {}, env: nia }
+    const wn = await boot(nia, api, { welcome: true, presets: [{ name: 'Merrell Digital', indexFile: 'INDEXFILE0099' }] })
+    check('the setup guide asks which team you’re on', /Which team are you on\?/.test(text(wn)) && !!$(wn, '#ob-preset-0') && /Don’t have one\?/.test(text(wn)))
+    $(wn, '#ob-token').value = 'figd_nia'
+    click(wn, '#ob-connect'); await tick(300)
+    click(wn, '#ob-preset-0'); await tick(400)
+    check('picking a team links its Team sync file', (nia.store.get('showroom.prefs').index || {}).key === 'INDEXFILE0099')
+    check('…and the team step fills in from the saved team settings', /Set up from your Team sync file/.test(text(wn)), text(wn).slice(0, 600))
+    click(wn, '#ob-start'); await tick(100)
+    click(wn, '#settings'); await tick(20)
+    check('Settings shows the team and folders as coming from Team sync, with Look back 90', /from Team sync/.test(text(wn)) && $(wn, '#look-back').value === '90', text(wn).slice(0, 900))
+    click(wn, '#back'); await tick(10)
   }
 
   // ===== first-run setup =====
