@@ -98,6 +98,8 @@ function makeApi() {
     if (m) { const at = api.folderMeta[m[1]]; return at ? resp(200, { id: m[1], name: 'Folder', updated_at: at }) : resp(404, { err: 'Not found' }) }
     m = p.match(/^\/v2\/folders\/([^/]+)\/folders$/)
     if (m) return resp(200, { folders: api.subfolders[m[1]] || [] })
+    m = p.match(/^\/v1\/teams\/([^/]+)\/projects$/)
+    if (m) return api.teams[m[1]] ? resp(200, { name: 'Marketing', projects: api.teams[m[1]] }) : resp(404, { err: 'Not found' })
     m = p.match(/^\/v2\/teams\/([^/]+)\/folders$/)
     if (m) { const t = api.teams[m[1]]; return t ? resp(200, { folders: t }) : resp(404, { err: 'Not found' }) }
     m = p.match(/^\/v1\/files\/([^/]+)\/meta$/)
@@ -375,9 +377,9 @@ function pointer(w, type, target, extra) {
   api.files.SOCIALFILE06 = { name: 'Holiday Social', version: 1, touched: new Date().toISOString(), nodes: {} }
   api.folders['444'] = []; api.folders['445'] = ['SOCIALFILE06']
   mark = api.calls.length
-  $(wl, '#team-link').value = 'https://www.figma.com/files/team/9001/Marketing'
+  $(wl, '#team-link').value = 'https://www.figma.com/files/1205220171640458560/team/9001'
   click(wl, '#add-team'); await tick(250)
-  check('team link finds its folders and subfolders', since().includes('/v2/teams/9001/folders') && reads('SOCIALFILE06') === 1 && /2 folders found/.test(text(wl)), text(wl).slice(0, 200) + ' | ' + since().join(' | '))
+  check('team link finds its folders and subfolders, and the team’s name', since().includes('/v2/teams/9001/folders') && reads('SOCIALFILE06') === 1 && /2 folders found/.test(text(wl)) && /Marketing/.test(text(wl)), text(wl).slice(0, 200) + ' | ' + since().join(' | '))
   mark = api.calls.length
   await wl.showroomTest.discover(); await tick(20)
   check('team’s folder list is reused, not fetched every search', !since().includes('/v2/teams/9001/folders'), since().join(' | '))

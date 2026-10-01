@@ -37,7 +37,7 @@ Campaign membership lives **inside each design file**, so it's shared with no se
   - `rememberThisFile()` copies the current file's live manifest into `scan.files`, so other files learn about it.
 - **Discovery** (`discover(opts)` in ui.html), in order:
   1. Team (optional, `TEAM.teamId` or `prefs.team`): `GET /v2/teams/:id/folders` plus `/v2/folders/:id/folders` up to 3 levels (tier 2), falling back to `/v1/teams/:id/projects`. Cached in `scan.team`, refreshed daily or on manual search.
-  2. Folders (built-in + `prefs.folders` + team's): `GET /v2/folders/:id/meta` (tier 3) first; if `updated_at` is unchanged and the folder was listed in the last 6 h, skip listing. Otherwise `GET /v2/folders/:id/files`, falling back to `/v1/projects/:id/files` (tier 2). If the meta call fails once, it's skipped for the session (`S.search.noFolderMeta`).
+  2. Folders (built-in + `prefs.folders` + team's): `GET /v2/folders/:id/meta` (tier 3) first; if `updated_at` is unchanged and the folder was listed in the last 6 h, skip listing. Otherwise `GET /v2/folders/:id/files`, falling back to `/v1/projects/:id/files` (tier 2). If the meta call fails (a 401 means the token lacks Folder metadata), it's skipped for 7 days or until a new token is saved (`scan.folderMetaOffAt`). Folder and team names come from meta, the listing, the team's folder list, or `GET /v1/teams/:id/projects` (`scan.team.name`) when the pasted link had no name.
      - New files are read if edited within Look back (`prefs.lookBackDays`, default `TEAM.lookBackDays` = 30).
      - Edited campaign files are read right away; edited files without campaigns at most once a day (manual search ignores that).
   3. Linked files not seen in a listing: `GET /v1/files/:key/meta` (tier 3; reuses the wall's `cache.lastTouchedAt` if under 5 min old). Read only if `last_touched_at` differs from `scan.files[key].touched`. Up to 4 rounds, since newly read files can add links.
@@ -72,7 +72,7 @@ Campaign membership lives **inside each design file**, so it's shared with no se
 - `showroom.data`: `{ activeCampaignId, channels[], campaigns: [{ id, name, createdAt, renamedAt }] (drafts and names), seen: { itemId: hash }, hidden: [campaignId], hiddenItems: { campaignId: [itemId] }, rev, savedAt }`
 - `showroom.token`: the personal access token.
 - `showroom.cache`: `{ savedAt, files: { [fileKey]: { name, version, stamp, lastTouchedAt, lastTouchedBy, checkedAt, error, nodes: { [nodeId]: { name, width, height, viewW, viewH, offX, offY, hash, url, urlAt, changedAt, missing, renderFailed } } } } }`
-- `showroom.scan`: `{ savedAt, checkedAt, team: { id, checkedAt, folders: [{ id, name }], error }, folders: { id: { name, checkedAt, listedAt, updatedAt, count, error } }, files: { key: { name, lastModified, touched, scannedAt, indexAt, manifest|null, error, gone } } }`
+- `showroom.scan`: `{ savedAt, checkedAt, folderMetaOffAt, team: { id, name, checkedAt, folders: [{ id, name }], error }, folders: { id: { name, checkedAt, listedAt, updatedAt, count, error } }, files: { key: { name, lastModified, touched, scannedAt, indexAt, manifest|null, error, gone } } }`
 - `showroom.prefs`: `{ me, wallSize, folders: [{ id, name }], team: { id, name }, index: { key, name }, lookBackDays }`
 - On frames: `showroom/campaigns` holds a JSON array of campaign IDs. It's used for relaunch buttons.
 - On the file root: `showroom/fileKey` holds a pasted file key when `figma.fileKey` is unavailable.
@@ -127,7 +127,7 @@ Code → UI: `state` (full), `selection`, `error`.
   - that the v2 folders endpoint's response fields match what the code parses;
   - that the image render for a version works for old versions.
 - v0.3 adds links between campaign files, the daily re-check, Look back and team folder discovery. `npm test` has 59 checks. Also to confirm in real Figma: the team folders response and folder `meta` `updated_at` behaviour.
-- v0.4 adds Team sync (the variables index). `npm test` has 66 checks. The variables API itself was confirmed with the test script, but the plugin's Team sync hasn't been run in real Figma yet.
+- v0.4 adds Team sync (the variables index). `npm test` has 66 checks. First real test on 2026-09-30 worked: team link found 21 folders, a folder listed 4 files, the index filled with 2 files, and the wall showed both. Bryce's token gets 401 on `/v2/folders/:id/meta` (no Folder metadata scope), which is handled.
 
 ## Next steps (not built)
 

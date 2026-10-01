@@ -305,7 +305,8 @@ async function api(path, opts) {
     let detail = ''
     try { const body = await res.json(); detail = body.err || body.message || '' } catch (e) {}
     const err = new ApiError(detail || ('HTTP ' + res.status))
-    err.kind = res.status === 403 ? 'forbidden' : res.status === 404 ? 'notfound' : 'http'
+    // 401 here means the token is missing a scope, which is the same as "not allowed".
+    err.kind = res.status === 403 || res.status === 401 ? 'forbidden' : res.status === 404 ? 'notfound' : 'http'
     err.status = res.status; throw err
   }
   return res.json()
@@ -425,16 +426,40 @@ async function listAll(path, pick) {
   return out
 }
 const retryable = (e) => e.kind === 'network' || e.kind === 'rate'
-const notAvailable = (e) => e.status === 400 || e.status === 403 || e.status === 404
+const notAvailable = (e) => e.status === 400 || e.status === 401 || e.status === 403 || e.status === 404
+// Links don't always include a name, so a folder or team can start out as "Folder 123" until Figma tells us its name.
+const placeholderName = (name) => !name || /^(Folder|Team) \d+$/.test(name)
+function folderName(f) {
+  if (!placeholderName(f.name)) return f.name
+  const st = (S.scan.folders || {})[f.id]
+  return st && !placeholderName(st.name) ? st.name : f.name
+}
+function teamName(team) {
+  const ts = S.scan.team
+  return !placeholderName(team.name) ? team.name : ts && ts.id === team.id && ts.name ? ts.name : 'Team ' + team.id
+}
 
-// Lists a folder's files. Figma is moving folders to a v2 endpoint; fall back to the v1 one.
+// Lists a folder's files (and notes the folder's name if Figma includes it).
+// Figma is moving folders to a v2 endpoint; fall back to the v1 one.
 async function listFolder(folder) {
-  const pick = (res) => (res.files || res.data || []).filter((f) => f && f.key)
-    .map((f) => ({ key: f.key, name: f.name || '', lastModified: f.last_modified || f.lastModified || f.updated_at || '' }))
-  try { return await listAll('/v2/folders/' + folder.id + '/files', pick) } catch (e) {
-    if (!notAvailable(e)) throw e
-    return listAll('/v1/projects/' + folder.id + '/files', pick)
+  let name = ''
+  const pick = (res) => {
+    name = name || res.name || (res.folder && res.folder.name) || ''
+    return (res.files || res.data || []).filter((f) => f && f.key)
+      .map((f) => ({ key: f.key, name: f.name || '', lastModified: f.last_modified || f.lastModified || f.updated_at || '' }))
   }
+  let files
+  try { files = await listAll('/v2/folders/' + folder.id + '/files', pick) } catch (e) {
+    if (!notAvailable(e)) throw e
+    files = await listAll('/v1/projects/' + folder.id + '/files', pick)
+  }
+  files.folderName = name
+  return files
+}
+
+// The team's name, from the v1 team endpoint (the v2 one doesn't include it).
+async function fetchTeamName(teamId) {
+  try { const res = await api('/v1/teams/' + teamId + '/projects'); return res.name || '' } catch (e) { if (retryable(e)) throw e; return '' }
 }
 
 // Lists a team's folders, including subfolders up to three levels down. Falls back to v1 "projects".
@@ -505,7 +530,9 @@ async function discover(opts) {
       status('Finding the team’s folders…')
       const keep = scan.team && scan.team.id === team.id ? scan.team.folders || [] : []
       try {
-        scan.team = { id: team.id, checkedAt: now, folders: await listTeamFolders(team.id), error: '' }
+        const found = await listTeamFolders(team.id)
+        const name = placeholderName(team.name) ? (scan.team && scan.team.id === team.id && scan.team.name) || (await fetchTeamName(team.id)) : ''
+        scan.team = { id: team.id, name: name, checkedAt: now, folders: found, error: '' }
       } catch (e) {
         if (retryable(e)) throw e
         scan.team = { id: team.id, checkedAt: now, folders: keep, error: e.kind === 'forbidden' ? 'Your token can’t list this team’s folders. It needs Projects (read) access.' : e.message }
@@ -519,19 +546,29 @@ async function discover(opts) {
       const folder = folders[i]
       const prev = scan.folders[folder.id] || {}
       let updatedAt = ''
-      if (!S.search.noFolderMeta) {
-        try { const meta = await api('/v2/folders/' + folder.id + '/meta'); updatedAt = meta.updated_at || (meta.folder && meta.folder.updated_at) || '' } catch (e) {
+      let realName = ''
+      // Tokens without "Folder metadata" access can't make this check; then folders are simply
+      // listed each time, and the check isn't tried again for a week (or until a new token).
+      if (now - (scan.folderMetaOffAt || 0) > 7 * DAY) {
+        try {
+          const meta = await api('/v2/folders/' + folder.id + '/meta')
+          updatedAt = meta.updated_at || (meta.folder && meta.folder.updated_at) || ''
+          realName = meta.name || (meta.folder && meta.folder.name) || ''
+        } catch (e) {
           if (retryable(e)) throw e
-          S.search.noFolderMeta = true   // token without folder metadata access: just list
+          scan.folderMetaOffAt = now
         }
       }
+      const teamCopy = ((scan.team && scan.team.folders) || []).find((t) => t.id === folder.id)
+      if (!realName && teamCopy && !placeholderName(teamCopy.name)) realName = teamCopy.name
+      const shownName = realName || folderName(folder)
       if (!opts.manual && !opts.relist && !prev.error && prev.listedAt && now - prev.listedAt < FOLDER_RELIST && updatedAt && updatedAt === prev.updatedAt) {
-        scan.folders[folder.id] = Object.assign({}, prev, { name: folder.name, checkedAt: now })
+        scan.folders[folder.id] = Object.assign({}, prev, { name: shownName, checkedAt: now })
         continue
       }
       try {
         const files = await listFolder(folder)
-        scan.folders[folder.id] = { name: folder.name, checkedAt: now, listedAt: now, updatedAt: updatedAt, count: files.length, error: '' }
+        scan.folders[folder.id] = { name: realName || files.folderName || shownName, checkedAt: now, listedAt: now, updatedAt: updatedAt, count: files.length, error: '' }
         for (const f of files) {
           if (f.key === S.file.key) continue
           listed[f.key] = true
@@ -544,7 +581,7 @@ async function discover(opts) {
           if (hasCampaigns(known.manifest) || opts.manual || now - (known.scannedAt || 0) > DAY) add(f, hasCampaigns(known.manifest))
         }
       } catch (e) {
-        scan.folders[folder.id] = { name: folder.name, checkedAt: now, error: e.kind === 'forbidden' ? 'Your token can’t list this folder. It needs Projects (read) access.' : e.message }
+        scan.folders[folder.id] = { name: shownName, checkedAt: now, error: e.kind === 'forbidden' ? 'Your token can’t list this folder. It needs Projects (read) access.' : e.message }
         if (retryable(e)) throw e
       }
     }
@@ -1138,7 +1175,7 @@ function renderSetup() {
   const ts = team && S.scan.team && S.scan.team.id === team.id ? S.scan.team : null
   html += '<div class="label" style="margin:0">Team</div>'
   if (team) {
-    html += '<div class="card"><div class="sel-row"><div class="grow"><div class="nm">' + esc(team.name || 'Team ' + team.id) + '</div><div class="muted small">' +
+    html += '<div class="card"><div class="sel-row"><div class="grow"><div class="nm">' + esc(teamName(team)) + '</div><div class="muted small">' +
       (ts ? (ts.error ? '<span style="color:var(--danger)">' + esc(ts.error) + '</span>' : esc(ts.folders.length) + ' folder' + (ts.folders.length === 1 ? '' : 's') + ' found · checked ' + esc(ago(ts.checkedAt))) : 'Not searched yet') +
       (team.builtIn ? ' · team default' : '') + '</div></div>' +
       (team.builtIn ? '' : '<button class="icon" id="remove-team" aria-label="Remove team">' + icon('x', 14) + '</button>') + '</div></div>'
@@ -1148,12 +1185,13 @@ function renderSetup() {
   }
   // Folders added by hand.
   const folders = teamFolders().filter((f) => !f.fromTeam)
+  const inTeam = (id) => !!(ts && !ts.error && (ts.folders || []).some((t) => t.id === id))
   html += '<div class="label" style="margin:0">Folders</div>'
   if (folders.length) {
     html += '<div class="card">' + folders.map((f, i) => {
       const st = (S.scan.folders || {})[f.id] || {}
-      return (i ? '<div class="sep"></div>' : '') + '<div class="sel-row"><div class="grow"><div class="nm">' + esc(f.name) + '</div><div class="muted small">' + statusLine(st) + (f.builtIn ? ' · team default' : '') + '</div></div>' +
-        (f.builtIn ? '' : '<button class="icon" data-remove-folder="' + esc(f.id) + '" aria-label="Remove ' + esc(f.name) + '">' + icon('x', 14) + '</button>') + '</div>'
+      return (i ? '<div class="sep"></div>' : '') + '<div class="sel-row"><div class="grow"><div class="nm">' + esc(folderName(f)) + '</div><div class="muted small">' + statusLine(st) + (f.builtIn ? ' · team default' : '') + (inTeam(f.id) ? ' · already covered by your team' : '') + '</div></div>' +
+        (f.builtIn ? '' : '<button class="icon" data-remove-folder="' + esc(f.id) + '" aria-label="Remove ' + esc(folderName(f)) + '">' + icon('x', 14) + '</button>') + '</div>'
     }).join('') + '</div>'
   }
   html += '<div class="row"><input class="field" id="folder-link" placeholder="Paste a folder link" aria-label="Folder link"><button class="btn" id="add-folder">Add</button></div>'
@@ -1204,7 +1242,7 @@ function renderSetup() {
       send('save-token', { token: token })
       out.innerHTML = '<div class="notice" style="color:var(--ok)">Connected as ' + esc(me.handle) + (me.email ? ' (' + esc(me.email) + ')' : '') + '.</div>'
       S.token = token
-      S.index.canWrite = null; S.index.error = ''   // a new token may have different access
+      S.index.canWrite = null; S.index.error = ''; S.scan.folderMetaOffAt = 0   // a new token may have different access
       pollIndex().then(() => { if (canSearch()) discover() })
     } catch (e) {
       out.innerHTML = '<div class="notice error">' + esc(e.message) + '</div>'
