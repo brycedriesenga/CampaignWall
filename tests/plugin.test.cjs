@@ -355,9 +355,6 @@ function pointer(w, type, target, extra) {
   $(wl, '#folder-link').value = 'https://www.figma.com/files/team/1/project/333/Misc'
   click(wl, '#add-folder'); await tick(200)
   check('new folder: recent file read, file older than Look back skipped', reads('PLAINFILE0004') === 1 && reads('OLDFILE00005') === 0, since().join(' | '))
-  mark = api.calls.length
-  await wl.showroomTest.discover(); await tick(20)
-  check('folder Figma says is unchanged isn’t listed again', since().includes('/v2/folders/333/meta') && !since().includes('/v2/folders/333/files'), since().join(' | '))
   api.files.PLAINFILE0004.touched = new Date(Date.now() + 9000).toISOString()
   api.folderMeta['333'] = '2026-09-02T00:00:00Z'
   mark = api.calls.length
@@ -379,7 +376,7 @@ function pointer(w, type, target, extra) {
   mark = api.calls.length
   $(wl, '#team-link').value = 'https://www.figma.com/files/1205220171640458560/team/9001'
   click(wl, '#add-team'); await tick(250)
-  check('team link finds its folders and subfolders, and the team’s name', since().includes('/v2/teams/9001/folders') && reads('SOCIALFILE06') === 1 && /2 folders found/.test(text(wl)) && /Marketing/.test(text(wl)), text(wl).slice(0, 200) + ' | ' + since().join(' | '))
+  check('team link finds its folders and subfolders', since().includes('/v2/teams/9001/folders') && reads('SOCIALFILE06') === 1 && /2 folders found/.test(text(wl)) && /Your team/.test(text(wl)), text(wl).slice(0, 200) + ' | ' + since().join(' | '))
   mark = api.calls.length
   await wl.showroomTest.discover(); await tick(20)
   check('team’s folder list is reused, not fetched every search', !since().includes('/v2/teams/9001/folders'), since().join(' | '))

@@ -330,7 +330,6 @@ async function testToken(token) {
 //     they've been edited. Files without campaign frames are re-read at most once a day.
 //  3. This file: the manifest of the file the plugin is open in is always read live.
 const DAY = 86400000
-const FOLDER_RELIST = 6 * 3600000   // list a folder at least this often, even if Figma says it hasn't changed
 const SEARCH_STALE = 5 * 60000      // search again on open if the last search is older than this
 
 function lookBackDays() { return Number(S.prefs.lookBackDays) || TEAM.lookBackDays || 30 }
@@ -431,12 +430,16 @@ const notAvailable = (e) => e.status === 400 || e.status === 401 || e.status ===
 const placeholderName = (name) => !name || /^(Folder|Team) \d+$/.test(name)
 function folderName(f) {
   if (!placeholderName(f.name)) return f.name
+  const fromTeam = ((S.scan.team && S.scan.team.folders) || []).find((t) => t.id === f.id)
+  if (fromTeam && !placeholderName(fromTeam.name)) return fromTeam.name
   const st = (S.scan.folders || {})[f.id]
   return st && !placeholderName(st.name) ? st.name : f.name
 }
+// Figma's folder access (folders:read) doesn't include the team's name, so unless the pasted
+// link had one, it's just "Your team".
 function teamName(team) {
   const ts = S.scan.team
-  return !placeholderName(team.name) ? team.name : ts && ts.id === team.id && ts.name ? ts.name : 'Team ' + team.id
+  return !placeholderName(team.name) ? team.name : ts && ts.id === team.id && ts.name ? ts.name : 'Your team'
 }
 
 // Lists a folder's files (and notes the folder's name if Figma includes it).
@@ -457,21 +460,23 @@ async function listFolder(folder) {
   return files
 }
 
-// The team's name, from the v1 team endpoint (the v2 one doesn't include it).
-async function fetchTeamName(teamId) {
-  try { const res = await api('/v1/teams/' + teamId + '/projects'); return res.name || '' } catch (e) { if (retryable(e)) throw e; return '' }
-}
-
 // Lists a team's folders, including subfolders up to three levels down. Falls back to v1 "projects".
 async function listTeamFolders(teamId) {
-  const pick = (res) => (res.folders || res.data || res.projects || []).filter((f) => f && f.id)
-    .map((f) => ({ id: String(f.id), name: f.name || 'Folder ' + f.id }))
+  let teamName = ''
+  const pick = (res) => {
+    teamName = teamName || res.team_name || (res.team && res.team.name) || (res.projects ? res.name : '') || ''
+    return (res.folders || res.data || res.projects || []).filter((f) => f && f.id)
+      .map((f) => ({ id: String(f.id), name: f.name || 'Folder ' + f.id }))
+  }
   let level
   try { level = await listAll('/v2/teams/' + teamId + '/folders', pick) } catch (e) {
     if (!notAvailable(e)) throw e
-    return listAll('/v1/teams/' + teamId + '/projects', pick)
+    const v1 = await listAll('/v1/teams/' + teamId + '/projects', pick)
+    v1.teamName = teamName
+    return v1
   }
   const out = []
+  out.teamName = teamName
   for (let depth = 0; level.length && depth < 3 && out.length < 300; depth++) {
     out.push.apply(out, level)
     const next = []
@@ -508,7 +513,6 @@ async function lastTouched(key, manual) {
 }
 
 // opts.manual: the refresh button. Lists every folder and re-reads every edited file.
-// opts.relist: list every folder again (used when Look back gets longer), without the extra reads.
 async function discover(opts) {
   opts = opts || {}
   if (!S.token || S.search.busy || !canSearch()) return
@@ -531,44 +535,23 @@ async function discover(opts) {
       const keep = scan.team && scan.team.id === team.id ? scan.team.folders || [] : []
       try {
         const found = await listTeamFolders(team.id)
-        const name = placeholderName(team.name) ? (scan.team && scan.team.id === team.id && scan.team.name) || (await fetchTeamName(team.id)) : ''
-        scan.team = { id: team.id, name: name, checkedAt: now, folders: found, error: '' }
+        scan.team = { id: team.id, name: found.teamName || '', checkedAt: now, folders: found.slice(), error: '' }
       } catch (e) {
         if (retryable(e)) throw e
-        scan.team = { id: team.id, checkedAt: now, folders: keep, error: e.kind === 'forbidden' ? 'Your token can’t list this team’s folders. It needs Projects (read) access.' : e.message }
+        scan.team = { id: team.id, checkedAt: now, folders: keep, error: e.kind === 'forbidden' ? 'Your token can’t list this team’s folders. It needs folders:read access.' : e.message }
       }
     }
 
-    // 2. Folders. Skip listing a folder Figma says hasn't changed (re-listed every few hours anyway).
+    // 2. Folders. Listing a folder is a light request, so each one is listed every search.
+    // (Figma's per-folder "has it changed?" check needs a token scope personal tokens don't offer.)
     const folders = teamFolders()
     for (let i = 0; i < folders.length; i++) {
       status('Checking folder ' + (i + 1) + ' of ' + folders.length + '…')
       const folder = folders[i]
-      const prev = scan.folders[folder.id] || {}
-      let updatedAt = ''
-      let realName = ''
-      // Tokens without "Folder metadata" access can't make this check; then folders are simply
-      // listed each time, and the check isn't tried again for a week (or until a new token).
-      if (now - (scan.folderMetaOffAt || 0) > 7 * DAY) {
-        try {
-          const meta = await api('/v2/folders/' + folder.id + '/meta')
-          updatedAt = meta.updated_at || (meta.folder && meta.folder.updated_at) || ''
-          realName = meta.name || (meta.folder && meta.folder.name) || ''
-        } catch (e) {
-          if (retryable(e)) throw e
-          scan.folderMetaOffAt = now
-        }
-      }
-      const teamCopy = ((scan.team && scan.team.folders) || []).find((t) => t.id === folder.id)
-      if (!realName && teamCopy && !placeholderName(teamCopy.name)) realName = teamCopy.name
-      const shownName = realName || folderName(folder)
-      if (!opts.manual && !opts.relist && !prev.error && prev.listedAt && now - prev.listedAt < FOLDER_RELIST && updatedAt && updatedAt === prev.updatedAt) {
-        scan.folders[folder.id] = Object.assign({}, prev, { name: shownName, checkedAt: now })
-        continue
-      }
+      const shownName = folderName(folder)
       try {
         const files = await listFolder(folder)
-        scan.folders[folder.id] = { name: realName || files.folderName || shownName, checkedAt: now, listedAt: now, updatedAt: updatedAt, count: files.length, error: '' }
+        scan.folders[folder.id] = { name: files.folderName || shownName, checkedAt: now, listedAt: now, count: files.length, error: '' }
         for (const f of files) {
           if (f.key === S.file.key) continue
           listed[f.key] = true
@@ -581,7 +564,7 @@ async function discover(opts) {
           if (hasCampaigns(known.manifest) || opts.manual || now - (known.scannedAt || 0) > DAY) add(f, hasCampaigns(known.manifest))
         }
       } catch (e) {
-        scan.folders[folder.id] = { name: shownName, checkedAt: now, error: e.kind === 'forbidden' ? 'Your token can’t list this folder. It needs Projects (read) access.' : e.message }
+        scan.folders[folder.id] = { name: shownName, checkedAt: now, error: e.kind === 'forbidden' ? 'Your token can’t list this folder. It needs folders:read access.' : e.message }
         if (retryable(e)) throw e
       }
     }
@@ -1147,7 +1130,7 @@ function renderSetup() {
   let html = '<div class="view"><div class="top"><button class="icon" id="back" aria-label="Back">' + icon('left') + '</button><div class="grow" style="font-size:14px;font-weight:600">Settings</div></div><div class="scroll">'
   html += '<div class="stack">' + h2('Connect to Figma')
   html += '<div class="muted small">The wall reads frames from other files with Figma’s API, using your personal access token. It’s stored only on this computer.</div>'
-  html += '<ol class="steps small muted"><li>In Figma, open <b>Settings › Security › Personal access tokens</b>.</li><li>Generate a token with these set to read-only: <b>File content</b>, <b>File metadata</b>, <b>File versions</b>, <b>Projects</b> (called <b>Folders</b> in some accounts; add <b>Folder metadata</b> too if it’s listed) and <b>Current user</b>. For Team sync, also set <b>File variables</b> to read and write.</li><li>Paste it below.</li></ol>'
+  html += '<ol class="steps small muted"><li>In Figma, open <b>Settings › Security › Personal access tokens</b>.</li><li>Generate a token with these scopes: <b>current_user:read</b>, <b>file_content:read</b>, <b>file_metadata:read</b>, <b>file_versions:read</b> and <b>folders:read</b>. For Team sync, also <b>file_variables:read</b> and <b>file_variables:write</b>.</li><li>Paste it below.</li></ol>'
   html += '<input class="field" id="token" type="password" placeholder="figd_…" autocomplete="off" aria-label="Personal access token" value="' + esc(S.token) + '">'
   html += '<div class="row"><button class="btn primary grow" id="test-token">Test and save</button>' + (S.token ? '<button class="btn danger" id="clear-token">Remove</button>' : '') + '</div>'
   html += '<div id="token-result">' + (S.tokenResult || '') + '</div></div>'
@@ -1242,7 +1225,7 @@ function renderSetup() {
       send('save-token', { token: token })
       out.innerHTML = '<div class="notice" style="color:var(--ok)">Connected as ' + esc(me.handle) + (me.email ? ' (' + esc(me.email) + ')' : '') + '.</div>'
       S.token = token
-      S.index.canWrite = null; S.index.error = ''; S.scan.folderMetaOffAt = 0   // a new token may have different access
+      S.index.canWrite = null; S.index.error = ''   // a new token may have different access
       pollIndex().then(() => { if (canSearch()) discover() })
     } catch (e) {
       out.innerHTML = '<div class="notice error">' + esc(e.message) + '</div>'
@@ -1285,7 +1268,7 @@ function renderSetup() {
     S.prefs.lookBackDays = Number(e.target.value) || 30
     send('save-prefs', { prefs: { lookBackDays: S.prefs.lookBackDays } })
     // Going further back finds older files that were skipped before.
-    discover({ relist: true })
+    discover()
   })
   document.querySelectorAll('[data-remove-folder]').forEach((el) => el.addEventListener('click', () => {
     const list = (S.prefs.folders || []).filter((x) => x.id !== el.dataset.removeFolder)

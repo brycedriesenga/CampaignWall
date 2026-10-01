@@ -22,13 +22,13 @@ The wall reads frames straight from their files through Figma's API, so it's alw
 
 1. **Get the plugin:** download or clone this repo. If the team has a published copy, see "Rolling it out to the team" below.
 2. **Import it:** in the **Figma desktop app**, go to **Plugins › Development › Import plugin from manifest…** and choose `manifest.json`.
-3. **Make a personal access token:** in Figma, go to **Settings › Security › Personal access tokens**. Set these to read-only:
-   - File content
-   - File metadata
-   - File versions (for History)
-   - Projects (for searching team folders; called Folders in some accounts. Add Folder metadata too if it's listed.)
-   - Current user
-   - For Team sync: File variables, set to **read and write**
+3. **Make a personal access token:** in Figma, go to **Settings › Security › Personal access tokens** and tick these scopes:
+   - `current_user:read`
+   - `file_content:read`
+   - `file_metadata:read`
+   - `file_versions:read` (for History)
+   - `folders:read` (for searching team folders)
+   - For Team sync: `file_variables:read` and `file_variables:write`
 4. **Connect:** run the plugin, open **Settings**, paste the token and click **Test and save**.
 5. **Team:** if the team isn't built in (see below), paste your team's link under **Finding team campaigns** in Settings, or paste each channel folder's link.
 

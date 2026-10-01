@@ -37,14 +37,13 @@ Campaign membership lives **inside each design file**, so it's shared with no se
   - `rememberThisFile()` copies the current file's live manifest into `scan.files`, so other files learn about it.
 - **Discovery** (`discover(opts)` in ui.html), in order:
   1. Team (optional, `TEAM.teamId` or `prefs.team`): `GET /v2/teams/:id/folders` plus `/v2/folders/:id/folders` up to 3 levels (tier 2), falling back to `/v1/teams/:id/projects`. Cached in `scan.team`, refreshed daily or on manual search.
-  2. Folders (built-in + `prefs.folders` + team's): `GET /v2/folders/:id/meta` (tier 3) first; if `updated_at` is unchanged and the folder was listed in the last 6 h, skip listing. Otherwise `GET /v2/folders/:id/files`, falling back to `/v1/projects/:id/files` (tier 2). If the meta call fails (a 401 means the token lacks Folder metadata), it's skipped for 7 days or until a new token is saved (`scan.folderMetaOffAt`). Folder and team names come from meta, the listing, the team's folder list, or `GET /v1/teams/:id/projects` (`scan.team.name`) when the pasted link had no name.
+  2. Folders (built-in + `prefs.folders` + team's): `GET /v2/folders/:id/files`, falling back to `/v1/projects/:id/files` (tier 2), every search. The per-folder `GET /v2/folders/:id/meta` check was removed: it needs `folder_metadata:read`, which personal access tokens don't offer (they 401). Folder names come from the team's folder list or the listing; the team's name only from the pasted link (`folders:read` doesn't return it), else "Your team".
      - New files are read if edited within Look back (`prefs.lookBackDays`, default `TEAM.lookBackDays` = 30).
      - Edited campaign files are read right away; edited files without campaigns at most once a day (manual search ignores that).
   3. Linked files not seen in a listing: `GET /v1/files/:key/meta` (tier 3; reuses the wall's `cache.lastTouchedAt` if under 5 min old). Read only if `last_touched_at` differs from `scan.files[key].touched`. Up to 4 rounds, since newly read files can add links.
   - Reading = `GET /v1/files/:key?depth=1&plugin_data=shared` (tier 1), preceded by a meta call to record `touched`. Campaign files are read first, then newest-first.
-  - `opts.manual` (refresh buttons): re-list every folder, refresh the team list, bypass the daily rule and the meta cache. `opts.relist` (Look back got longer): re-list every folder only.
+  - `opts.manual` (refresh buttons): refresh the team list, bypass the daily rule and the meta cache.
   - Runs on open if the last search is over 5 minutes old, on wall open, and from the refresh buttons. `canSearch()` is true with folders, a team, or any known campaign file.
-  - Unverified in real Figma: the v2 folder/team response fields, and whether a folder's `updated_at` moves when a file inside is edited (the 6 h re-list and daily re-check cover it if not).
 - **Team sync (v0.4, Enterprise):** a shared index in one file's variables. Config: `TEAM.indexFile` or `prefs.index {key,name}`.
   - Hidden collection named `Showroom index` (constant `INDEX_COLLECTION`), one mode, one STRING variable per design file named `f/<fileKey>`. Its value is that file's manifest JSON without `links`.
   - `pollIndex()` runs on open, after connecting, and every 45 s (`INDEX_POLL`): `GET /v1/files/:index/variables/local` (tier 2), then `mergeIndex()` copies entries newer (by manifest `updatedAt`) into `scan.files` (marked `indexAt`), so everything else works unchanged.
@@ -72,7 +71,7 @@ Campaign membership lives **inside each design file**, so it's shared with no se
 - `showroom.data`: `{ activeCampaignId, channels[], campaigns: [{ id, name, createdAt, renamedAt }] (drafts and names), seen: { itemId: hash }, hidden: [campaignId], hiddenItems: { campaignId: [itemId] }, rev, savedAt }`
 - `showroom.token`: the personal access token.
 - `showroom.cache`: `{ savedAt, files: { [fileKey]: { name, version, stamp, lastTouchedAt, lastTouchedBy, checkedAt, error, nodes: { [nodeId]: { name, width, height, viewW, viewH, offX, offY, hash, url, urlAt, changedAt, missing, renderFailed } } } } }`
-- `showroom.scan`: `{ savedAt, checkedAt, folderMetaOffAt, team: { id, name, checkedAt, folders: [{ id, name }], error }, folders: { id: { name, checkedAt, listedAt, updatedAt, count, error } }, files: { key: { name, lastModified, touched, scannedAt, indexAt, manifest|null, error, gone } } }`
+- `showroom.scan`: `{ savedAt, checkedAt, team: { id, name, checkedAt, folders: [{ id, name }], error }, folders: { id: { name, checkedAt, listedAt, count, error } }, files: { key: { name, lastModified, touched, scannedAt, indexAt, manifest|null, error, gone } } }`
 - `showroom.prefs`: `{ me, wallSize, folders: [{ id, name }], team: { id, name }, index: { key, name }, lookBackDays }`
 - On frames: `showroom/campaigns` holds a JSON array of campaign IDs. It's used for relaunch buttons.
 - On the file root: `showroom/fileKey` holds a pasted file key when `figma.fileKey` is unavailable.
@@ -127,7 +126,7 @@ Code → UI: `state` (full), `selection`, `error`.
   - that the v2 folders endpoint's response fields match what the code parses;
   - that the image render for a version works for old versions.
 - v0.3 adds links between campaign files, the daily re-check, Look back and team folder discovery. `npm test` has 59 checks. Also to confirm in real Figma: the team folders response and folder `meta` `updated_at` behaviour.
-- v0.4 adds Team sync (the variables index). `npm test` has 66 checks. First real test on 2026-09-30 worked: team link found 21 folders, a folder listed 4 files, the index filled with 2 files, and the wall showed both. Bryce's token gets 401 on `/v2/folders/:id/meta` (no Folder metadata scope), which is handled.
+- v0.4 adds Team sync (the variables index). `npm test` has 66 checks. First real test on 2026-09-30 worked: team link found 21 folders, a folder listed 4 files, the index filled with 2 files, and the wall showed both. Personal tokens offer these scopes: current_user, file_content, file_metadata, file_versions, file_variables read/write, folders:read (no projects or folder_metadata).
 
 ## Next steps (not built)
 
