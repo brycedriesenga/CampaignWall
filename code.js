@@ -124,6 +124,7 @@ function writeManifest(manifest) {
   let json = JSON.stringify(manifest);
   // Links to other files are only a shortcut for finding them, so drop them before refusing.
   if (json.length > MANIFEST_LIMIT && manifest.links) { delete manifest.links; json = JSON.stringify(manifest); }
+  if (json.length > MANIFEST_LIMIT && manifest.layouts) { delete manifest.layouts; json = JSON.stringify(manifest); }
   if (json.length > MANIFEST_LIMIT) throw new Error('This file has too many campaign frames for one file’s storage. Remove some older campaigns from it first.');
   figma.root.setSharedPluginData(NS, MANIFEST_KEY, json);
   const page = figma.root.children[0];
@@ -426,6 +427,18 @@ async function handle(msg) {
       if (Object.keys(links).sort().join(',') === before) return;
       manifest.links = links;
       try { writeManifest(manifest); } catch (e) { return; }   // e.g. a file you can only view
+      return sendState({ external: true });
+    }
+    case 'save-layout': {
+      // A campaign's frame order (from dragging frames on the wall). Saved in this file's
+      // manifest so it travels to the team; newest wins. Keeps the 50 most recent campaigns.
+      const manifest = readManifest();
+      const layouts = Object.assign({}, manifest.layouts || {});
+      layouts[msg.campaignId] = msg.layout;
+      const keys = Object.keys(layouts).sort((a, b) => ((layouts[b] && layouts[b].at) || 0) - ((layouts[a] && layouts[a].at) || 0));
+      keys.slice(50).forEach((k) => { delete layouts[k]; });
+      manifest.layouts = layouts;
+      try { writeManifest(manifest); } catch (e) { return sendState({ message: 'Order saved for you only: this file can’t be edited.' }); }
       return sendState({ external: true });
     }
     case 'save-cache':

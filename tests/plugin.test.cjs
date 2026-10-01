@@ -469,6 +469,69 @@ function pointer(w, type, target, extra) {
   check('Esc closes View options', $(wb, '#viewopts').classList.contains('hidden'))
   click(wb, '#view-opts'); await tick(10); click(wb, '#vo-reset'); await tick(20); click(wb, '#view-opts'); await tick(10)
   check('reset restores the defaults', vp().dataset.bg === 'auto' && !vp().classList.contains('no-grid') && vp().dataset.frame === 'border')
+
+  {
+  // ===== shortcuts, filters, present, remembered position, arranging =====
+  const key = (k, extra) => { wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', Object.assign({ key: k, bubbles: true }, extra || {}))); return tick(20) }
+  const selIds = () => [...wb.document.querySelectorAll('#world .fr.sel')].map((f) => f.dataset.id)
+  await key('Escape')
+  await key('ArrowRight')
+  const firstSel = selIds()
+  await key('ArrowRight')
+  const secondSel = selIds()
+  check('arrow keys step from frame to frame', firstSel.length === 1 && secondSel.length === 1 && firstSel[0] !== secondSel[0], firstSel + ' → ' + secondSel)
+  const zoomBefore = $(wb, '#zoom-val').textContent
+  await key('@', { code: 'Digit2', shiftKey: true })
+  check('Shift+2 zooms to the selection', $(wb, '#zoom-val').textContent !== zoomBefore, zoomBefore + ' → ' + $(wb, '#zoom-val').textContent)
+  await key('?')
+  check('? shows the keyboard shortcuts', !$(wb, '#shortcuts').classList.contains('hidden') && /Zoom to selection/.test($(wb, '#shortcuts').textContent))
+  await key('Escape')
+  // filters
+  click(wb, '#filter-btn'); await tick(10)
+  click(wb, '#filters [data-fk="channels"][data-fv="Display ads"]'); await tick(20)
+  const tiles = () => [...wb.document.querySelectorAll('#world .fr')]
+  const dimmed = tiles().filter((t) => t.classList.contains('dim'))
+  check('filtering by channel fades the other frames', dimmed.length > 0 && dimmed.every((t) => /EMAILFILE0001/.test(t.dataset.id)) && /Showing \d+ of \d+/.test($(wb, '#filterpill').textContent), $(wb, '#filterpill') && $(wb, '#filterpill').textContent)
+  await key('a', { ctrlKey: true })
+  check('Select all only picks frames that match the filter', selIds().length > 0 && selIds().every((id) => /ADFILE00002/.test(id)), selIds().join(','))
+  click(wb, '#fp-clear'); await tick(20)
+  check('clearing filters brings everything back', !wb.document.querySelector('#world .fr.dim') && !$(wb, '#filterpill'))
+  // present (Esc closes the filter box, then clears the selection)
+  await key('Escape'); await key('Escape')
+  await key('p')
+  check('P starts Present mode at the first frame', wb.document.body.classList.contains('presenting') && /^1 \/ \d+/.test($(wb, '#hud-what').textContent), $(wb, '#hud') && $(wb, '#hud').textContent)
+  await key('ArrowRight')
+  check('arrow keys move through Present mode', /^2 \/ \d+/.test($(wb, '#hud-what').textContent) && wb.document.querySelectorAll('#world .fr.cur').length === 1)
+  await key('Escape')
+  check('Esc leaves Present mode', !wb.document.body.classList.contains('presenting') && !$(wb, '#hud'))
+  // remembered position
+  click(wb, '#zoom-in'); click(wb, '#zoom-in'); await tick(900)
+  const zoomSaved = $(wb, '#zoom-val').textContent
+  const cidNow = bryce.store.get('showroom.data').activeCampaignId || cid
+  check('wall position is saved per campaign', !!((bryce.store.get('showroom.prefs').wallPos || {})[cidNow]))
+  click(wb, '#wall-back'); await tick(30); click(wb, '#open-wall'); await tick(300)
+  check('reopening the wall returns to where you were', $(wb, '#zoom-val').textContent === zoomSaved, zoomSaved + ' vs ' + $(wb, '#zoom-val').textContent)
+  // drag to arrange: move "Homepage hero" after "Desktop" in the Site row
+  const tf = () => { const m = $(wb, '#world').style.transform.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\) scale\(([-\d.]+)\)/); return { tx: +m[1], ty: +m[2], z: +m[3] } }
+  const tileOf = (id) => wb.document.querySelector('.fr[data-id="' + id + '"]')
+  const box = (el) => ({ x: parseFloat(el.style.left), y: parseFloat(el.style.top), w: parseFloat(el.style.width), h: parseFloat(el.style.height) })
+  const home = tileOf('EMAILFILE0001|1:3'), desk = tileOf('EMAILFILE0001|1:5')
+  const T = tf(), hb = box(home), db = box(desk)
+  const at = (b, fx) => ({ clientX: (b.x + b.w * fx) * T.z + T.tx, clientY: (b.y + b.h / 2) * T.z + T.ty })
+  check('Homepage hero starts before Desktop', hb.x < db.x, hb.x + ' / ' + db.x)
+  pointer(wb, 'pointerdown', home, at(hb, 0.5))
+  pointer(wb, 'pointermove', $(wb, '#viewport'), at(db, 0.5))
+  pointer(wb, 'pointermove', $(wb, '#viewport'), at(db, 0.9))
+  check('dragging shows where the frame will land', !!wb.document.querySelector('#world .drop-line') && tileOf('EMAILFILE0001|1:3').classList.contains('dragging'))
+  pointer(wb, 'pointerup', $(wb, '#viewport'), at(db, 0.9)); await tick(120)
+  check('dropping moves the frame within its row', box(tileOf('EMAILFILE0001|1:3')).x > box(tileOf('EMAILFILE0001|1:5')).x)
+  const layoutSaved = (JSON.parse(bryce.root._d['showroom/manifest']).layouts || {})[cidNow]
+  check('the new order is saved in the file for the team', layoutSaved && layoutSaved.order.indexOf('EMAILFILE0001|1:3') > layoutSaved.order.indexOf('EMAILFILE0001|1:5'), JSON.stringify(layoutSaved))
+  const emptyAt = { clientX: 5, clientY: 700 }
+  const before2 = $(wb, '#world').style.transform
+  pointer(wb, 'pointerdown', $(wb, '#viewport'), emptyAt); pointer(wb, 'pointermove', $(wb, '#viewport'), { clientX: 60, clientY: 720 }); pointer(wb, 'pointerup', $(wb, '#viewport'), { clientX: 60, clientY: 720 }); await tick(10)
+  check('dragging empty space still pans', $(wb, '#world').style.transform !== before2)
+  }
   click(wb, '#wall-back'); await tick(30)
 
   // ===== carry-over from the Campaign Wall test builds =====

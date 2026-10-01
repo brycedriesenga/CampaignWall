@@ -148,6 +148,41 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 .hist-row .nm { display: block; font-weight: 500; }
 .hist-row .mt { display: block; font-size: 10.5px; color: var(--muted); }
 #history { position: absolute; right: 12px; top: 60px; bottom: 12px; width: 340px; z-index: 5; padding: 12px; overflow: auto; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
+#world.glide { transition: transform .35s cubic-bezier(.2,.7,.2,1); }
+@media (prefers-reduced-motion: reduce) { #world.glide { transition: none; } }
+.fr { cursor: default; }
+.fr.dim { opacity: .12; }
+.fr.dragging { z-index: 5; opacity: .85; pointer-events: none; box-shadow: 0 calc(12px * var(--inv)) calc(40px * var(--inv)) rgba(0,0,0,.3); }
+.drop-line { position: absolute; z-index: 4; width: calc(4px * var(--inv)); margin-left: calc(-2px * var(--inv)); border-radius: 99px; background: var(--brand); pointer-events: none; }
+#viewport.spacepan, #viewport.spacepan .fr { cursor: grab; }
+#viewport.panning, #viewport.panning .fr, #viewport.arranging, #viewport.arranging .fr { cursor: grabbing; }
+.badge-dot { position: absolute; top: 3px; right: 3px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 99px; background: var(--brand); color: var(--onbrand); font-size: 9px; font-weight: 700; line-height: 14px; text-align: center; }
+.icon { position: relative; }
+#filters { position: absolute; right: 12px; top: 56px; width: 280px; max-height: calc(100% - 80px); overflow: auto; z-index: 6; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { height: 26px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--border); background: transparent; color: var(--text); font: inherit; font-size: 11.5px; cursor: pointer; }
+.chips button em { font-style: normal; color: var(--muted); margin-left: 4px; }
+.chips button.on { background: var(--brand); border-color: var(--brand); color: var(--onbrand); }
+.chips button.on em { color: inherit; opacity: .8; }
+#filterpill { position: absolute; left: 12px; top: 12px; z-index: 3; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px 0 12px; border-radius: 99px;
+  background: var(--bg); color: var(--text); font-size: 11.5px; box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+#filterpill button { height: 22px; border: 0; border-radius: 99px; padding: 0 8px; background: var(--bg2); color: var(--text); font: inherit; font-size: 11px; cursor: pointer; }
+#shortcuts { position: absolute; right: 12px; top: 56px; width: 280px; z-index: 7; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); font-size: 12px; }
+#shortcuts .row { justify-content: space-between; padding: 3px 0; }
+kbd { font: inherit; font-size: 10.5px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg2); color: var(--text); white-space: nowrap; }
+/* Present mode: no chrome, the current frame in focus, the rest dimmed. */
+body.presenting .wallbar, body.presenting #inspector, body.presenting #history, body.presenting #viewopts, body.presenting #filters,
+body.presenting #shortcuts, body.presenting #filterpill, body.presenting #grip, body.presenting .lbl, body.presenting .ch { display: none !important; }
+body.presenting #viewport { background-image: none; cursor: default; }
+body.presenting .fr:not(.cur) { opacity: .08; }
+body.presenting .fr { box-shadow: none; }
+#hud { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 8; display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 12px;
+  background: rgba(20,20,20,.86); color: #fff; font-size: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.35); transition: opacity .3s; max-width: calc(100% - 32px); }
+#hud.idle { opacity: 0; }
+#hud button { height: 30px; min-width: 30px; border: 0; border-radius: 8px; background: transparent; color: #fff; font: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+#hud button:hover { background: rgba(255,255,255,.14); }
+#hud .what { padding: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#hud .what em { font-style: normal; opacity: .6; margin-left: 6px; }
 .marquee { position: absolute; z-index: 2; border: 1px solid var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); pointer-events: none; }
 #viewopts { position: absolute; right: 12px; top: 56px; width: 264px; z-index: 6; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 12px; }
 #viewopts .vo-title { font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
@@ -206,7 +241,8 @@ const S = {
   search: { busy: false, status: '', error: '' }, history: null,
   index: { files: {}, vars: {}, colId: '', modeId: '', readAt: 0, error: '', writeError: '', canWrite: null, pauseUntil: 0 },
   wall: { zoom: 1, tx: 40, ty: 80, selected: [], busy: false, status: '', banner: null, fitted: false,
-    phase: {}, tried: {}, retried: {}, loaded: {}, pending: false, synced: false },
+    phase: {}, tried: {}, retried: {}, loaded: {}, pending: false, synced: false,
+    filter: { campaignId: '', channels: [], people: [], updated: false }, present: null },
 }
 
 // ---------- plumbing ----------
@@ -243,6 +279,8 @@ function icon(name, size) {
     pointer: '<path d="M3.5 2.5l9 4-4 1.5-1.5 4z"/>', fit: '<path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/>',
     minus: '<path d="M3.5 8h9"/>', check: '<path d="M3.5 8.5l3 3 6-6.5"/>',
     clock: '<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.3"/>',
+    filter: '<path d="M2.5 3.5h11L9.3 8.6v3.9l-2.6 1.2V8.6z"/>', play: '<path d="M5 3.3v9.4L12.5 8z"/>', right: '<path d="M6.5 4.5L10 8l-3.5 3.5"/>',
+    keys: '<rect x="1.5" y="4" width="13" height="8" rx="1.5"/><path d="M4 6.5h.01M6.5 6.5h.01M9 6.5h.01M11.5 6.5h.01M5 9.5h6"/>',
   }
   return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths[name] + '</svg>'
 }
@@ -382,6 +420,8 @@ function teamInfo() {
   return TEAM.teamId ? { id: String(TEAM.teamId), name: '', builtIn: true } : null
 }
 function hasCampaigns(m) { return !!(m && m.campaigns && Object.keys(m.campaigns).length) }
+// Campaign frames or a saved frame order: either is worth sharing through Team sync.
+function hasShared(m) { return hasCampaigns(m) || !!(m && m.layouts && Object.keys(m.layouts).length) }
 
 // Folders to search: the built-in ones, your own, and any found from the team's ID.
 function teamFolders() {
@@ -435,9 +475,9 @@ function rememberThisFile() {
   if (!S.file.key || !S.scan.files) return
   const m = S.file.manifest
   const prev = S.scan.files[S.file.key]
-  if (!hasCampaigns(m) && !(prev && prev.manifest)) return
+  if (!hasShared(m) && !(prev && prev.manifest)) return
   if (prev && prev.manifest && m && (prev.manifest.updatedAt || 0) === (m.updatedAt || 0)) return
-  S.scan.files[S.file.key] = Object.assign({}, prev || {}, { name: S.file.name, manifest: hasCampaigns(m) ? m : null, scannedAt: Date.now(), error: '' })
+  S.scan.files[S.file.key] = Object.assign({}, prev || {}, { name: S.file.name, manifest: hasShared(m) ? m : null, scannedAt: Date.now(), error: '' })
   if (!S.search.busy) { S.scan.savedAt = Date.now(); send('save-scan', { scan: S.scan }) }
 }
 
@@ -812,14 +852,14 @@ function indexChanges() {
   const out = []
   const ix = S.index.files
   const m = S.file.manifest
-  if (S.file.key && m && (hasCampaigns(m) || ix[S.file.key]) && (!ix[S.file.key] || (m.updatedAt || 0) > (ix[S.file.key].updatedAt || 0))) out.push({ key: S.file.key, manifest: m })
+  if (S.file.key && m && (hasShared(m) || ix[S.file.key]) && (!ix[S.file.key] || (m.updatedAt || 0) > (ix[S.file.key].updatedAt || 0))) out.push({ key: S.file.key, manifest: m })
   const files = S.scan.files || {}
   for (const key of Object.keys(files)) {
     if (key === S.file.key) continue
     const f = files[key], entry = ix[key]
-    if (f.gone && entry && hasCampaigns(entry)) { out.push({ key: key, manifest: { v: 1, fileKey: key, fileName: entry.fileName, updatedAt: Date.now(), campaigns: {} } }); continue }
+    if (f.gone && entry && hasShared(entry)) { out.push({ key: key, manifest: { v: 1, fileKey: key, fileName: entry.fileName, updatedAt: Date.now(), campaigns: {} } }); continue }
     if (!f.manifest) continue
-    if (entry ? (f.manifest.updatedAt || 0) > (entry.updatedAt || 0) : hasCampaigns(f.manifest)) out.push({ key: key, manifest: f.manifest })
+    if (entry ? (f.manifest.updatedAt || 0) > (entry.updatedAt || 0) : hasShared(f.manifest)) out.push({ key: key, manifest: f.manifest })
   }
   return out
 }
@@ -1084,11 +1124,343 @@ function renderViewOptions() {
   html += '<div><div class="vo-title">Group rows by</div>' + seg('group', [['channel', 'Channel'], ['file', 'File'], ['none', 'Nothing']]) + '</div>'
   html += '<div><div class="vo-title">Spacing</div>' + seg('spacing', [['tight', 'Tight'], ['normal', 'Normal'], ['roomy', 'Roomy']]) + '</div>'
   html += '<div>' + toggle('grid', 'Dot grid') + toggle('names', 'Frame names') + toggle('meta', 'File and edit info') + toggle('headings', 'Row headings') + toggle('edges', 'Frame edge (overflowing content)') + '</div>'
-  html += '<button class="btn ghost" id="vo-reset" style="align-self:flex-start;height:26px;padding:0 6px">Reset to defaults</button>'
+  html += '<div class="row" style="justify-content:space-between"><button class="btn ghost" id="vo-reset" style="height:26px;padding:0 6px">Reset to defaults</button>' +
+    '<button class="btn ghost" id="vo-keys" style="height:26px;padding:0 6px">' + icon('keys', 14) + 'Shortcuts</button></div>'
   box.innerHTML = html
   box.querySelectorAll('[data-vo]').forEach((el) => el.addEventListener('click', () => setWallView({ [el.dataset.vo]: el.dataset.val })))
   box.querySelectorAll('[data-vo-toggle]').forEach((el) => el.addEventListener('change', () => setWallView({ [el.dataset.voToggle]: el.checked })))
   $('vo-reset').addEventListener('click', () => setWallView(Object.assign({}, WALL_VIEW_DEFAULTS)))
+  $('vo-keys').addEventListener('click', () => { toggleViewOptions(false); toggleShortcuts(true) })
+}
+
+// ---------- moving around: zoom to frames, arrow keys, shortcuts ----------
+// Frames in reading order (row by row, as laid out), skipping ones the filter hides.
+function orderedPlacements() {
+  const out = []
+  for (const g of (S.wall.bounds || { groups: [] }).groups) for (const p of g.items) if (matchesFilter(p.it)) out.push(p)
+  return out
+}
+function placementOf(id) {
+  for (const g of (S.wall.bounds || { groups: [] }).groups) for (const p of g.items) if (p.it.id === id) return p
+  return null
+}
+function reducedMotion() { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) }
+function glide() {
+  const world = $('world'); if (!world || reducedMotion()) return
+  world.classList.add('glide')
+  clearTimeout(S.wall.glideTimer)
+  S.wall.glideTimer = setTimeout(() => world.classList.remove('glide'), 400)
+}
+// Zooms so a box (in wall units) fills the view, never past maxZoom.
+function zoomToRect(x, y, w, h, opts) {
+  const vp = $('viewport'); if (!vp || !w || !h) return
+  opts = opts || {}
+  const pad = opts.pad != null ? opts.pad : 64
+  const bottom = opts.bottom || 0
+  const z = Math.max(0.02, Math.min(opts.maxZoom || 1, (vp.clientWidth - pad * 2) / w, (vp.clientHeight - pad * 2 - bottom) / h))
+  S.wall.zoom = z
+  S.wall.tx = Math.round((vp.clientWidth - w * z) / 2 - x * z)
+  S.wall.ty = Math.round((vp.clientHeight - bottom - h * z) / 2 - y * z)
+  S.wall.touched = true
+  if (opts.animate !== false) glide()
+  applyTransform()
+}
+function zoomToSelection() {
+  const ps = S.wall.selected.map(placementOf).filter(Boolean)
+  if (!ps.length) { glide(); fit(); return }
+  const x1 = Math.min.apply(null, ps.map((p) => p.x)), y1 = Math.min.apply(null, ps.map((p) => p.y))
+  const x2 = Math.max.apply(null, ps.map((p) => p.x + p.w)), y2 = Math.max.apply(null, ps.map((p) => p.y + p.h))
+  zoomToRect(x1, y1, x2 - x1, y2 - y1, { maxZoom: 2 })
+}
+// Brings a frame into view: pans if it fits at this zoom, otherwise zooms out to fit it.
+function reveal(p) {
+  const vp = $('viewport'); if (!vp || !p) return
+  const z = S.wall.zoom, m = 40
+  const sx = p.x * z + S.wall.tx, sy = p.y * z + S.wall.ty, sw = p.w * z, sh = p.h * z
+  if (sx >= m && sy >= m && sx + sw <= vp.clientWidth - m && sy + sh <= vp.clientHeight - m) return
+  if (sw <= vp.clientWidth - m * 2 && sh <= vp.clientHeight - m * 2) {
+    S.wall.tx = Math.round((vp.clientWidth - sw) / 2 - p.x * z); S.wall.ty = Math.round((vp.clientHeight - sh) / 2 - p.y * z)
+    S.wall.touched = true; glide(); applyTransform()
+  } else zoomToRect(p.x, p.y, p.w, p.h, { maxZoom: z })
+}
+// Arrow keys: ← → previous/next frame; ↑ ↓ the nearest frame in the row above/below.
+function stepSelection(dir) {
+  const list = orderedPlacements(); if (!list.length) return
+  const cur = placementOf(S.wall.selected[S.wall.selected.length - 1])
+  let next
+  if (!cur || !matchesFilter(cur.it)) next = list[0]
+  else if (dir === 'left' || dir === 'right') {
+    const i = list.indexOf(list.find((p) => p.it.id === cur.it.id))
+    next = list[Math.max(0, Math.min(list.length - 1, i + (dir === 'right' ? 1 : -1)))]
+  } else {
+    const rows = Array.from(new Set(list.map((p) => p.y))).sort((a, b) => a - b)
+    const r = rows.indexOf(cur.y) + (dir === 'down' ? 1 : -1)
+    if (r < 0 || r >= rows.length) return
+    const mid = cur.x + cur.w / 2
+    next = list.filter((p) => p.y === rows[r]).sort((a, b) => Math.abs(a.x + a.w / 2 - mid) - Math.abs(b.x + b.w / 2 - mid))[0]
+  }
+  if (!next) return
+  setSelection([next.it.id])
+  reveal(next)
+}
+// Returns true if the key was handled.
+function wallKey(e) {
+  const k = e.key, code = e.code
+  if (S.wall.present) {
+    if (k === 'Escape') { stopPresent(); return true }
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === ' ' || k === 'PageDown' || k === 'Enter') { presentStep(1); return true }
+    if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp' || k === 'Backspace') { presentStep(-1); return true }
+    if (k === 'Home') { presentGo(0); return true }
+    if (k === 'End') { presentGo(S.wall.present.list.length - 1); return true }
+    return false
+  }
+  const open = (id) => $(id) && !$(id).classList.contains('hidden')
+  if (k === 'Escape') {
+    if (open('shortcuts')) { toggleShortcuts(false); return true }
+    if (open('viewopts')) { toggleViewOptions(false); return true }
+    if (open('filters')) { toggleFilters(false); return true }
+    setSelection([]); return true
+  }
+  if ((e.metaKey || e.ctrlKey) && k.toLowerCase() === 'a') { setSelection(orderedPlacements().map((p) => p.it.id)); return true }
+  if (e.metaKey || e.ctrlKey || e.altKey) return false
+  if (e.shiftKey && code === 'Digit1') { glide(); fit(); S.wall.touched = true; return true }
+  if (e.shiftKey && code === 'Digit2') { zoomToSelection(); return true }
+  if (e.shiftKey && code === 'Digit0') { const vp = $('viewport'); glide(); zoomAt(1 / S.wall.zoom, vp.clientWidth / 2, vp.clientHeight / 2); return true }
+  if (k === '+' || k === '=') { const vp = $('viewport'); zoomAt(1.25, vp.clientWidth / 2, vp.clientHeight / 2); return true }
+  if (k === '-' || k === '_') { const vp = $('viewport'); zoomAt(0.8, vp.clientWidth / 2, vp.clientHeight / 2); return true }
+  if (k === 'ArrowRight') { stepSelection('right'); return true }
+  if (k === 'ArrowLeft') { stepSelection('left'); return true }
+  if (k === 'ArrowDown') { stepSelection('down'); return true }
+  if (k === 'ArrowUp') { stepSelection('up'); return true }
+  if (k === 'p' || k === 'P') { startPresent(); return true }
+  if (k === '?') { toggleShortcuts(); return true }
+  if (code === 'Space') { if (!S.wall.spaceDown) { S.wall.spaceDown = true; $('viewport').classList.add('spacepan') } return true }
+  return false
+}
+const SHORTCUTS = [
+  ['Fit everything', 'Shift 1'], ['Zoom to selection', 'Shift 2'], ['Zoom to 100%', 'Shift 0'], ['Zoom in / out', '+ / −'],
+  ['Next / previous frame', '→ / ←'], ['Row below / above', '↓ / ↑'], ['Select all', 'Ctrl A'], ['Pan', 'Space + drag'],
+  ['Move a frame in its row', 'Drag it'], ['Open frame in its file', 'Double-click'], ['Present', 'P'], ['Clear / close', 'Esc'],
+]
+function toggleShortcuts(open) {
+  const box = $('shortcuts'); if (!box) return
+  const show = open === undefined ? box.classList.contains('hidden') : open
+  box.classList.toggle('hidden', !show)
+  if (show) box.innerHTML = '<div class="vo-title">Keyboard shortcuts</div>' + SHORTCUTS.map((s) => '<div class="row"><span>' + esc(s[0]) + '</span><kbd>' + esc(s[1]) + '</kbd></div>').join('')
+}
+
+// ---------- remembering where you were, per campaign ----------
+function restorePosition(campaignId) {
+  const pos = (S.prefs.wallPos || {})[campaignId]
+  if (!pos || !pos.zoom) return false
+  S.wall.zoom = pos.zoom; S.wall.tx = pos.tx; S.wall.ty = pos.ty; S.wall.touched = true
+  applyTransform()
+  return true
+}
+function rememberPosition() {
+  if (S.view !== 'wall' || !S.wall.touched || S.wall.present) return
+  const c = campaign(); if (!c) return
+  clearTimeout(S.wall.posTimer)
+  S.wall.posTimer = setTimeout(() => {
+    const all = Object.assign({}, S.prefs.wallPos || {})
+    all[c.id] = { zoom: +S.wall.zoom.toFixed(4), tx: Math.round(S.wall.tx), ty: Math.round(S.wall.ty), at: Date.now() }
+    // Keep the 30 most recent campaigns.
+    const keys = Object.keys(all).sort((a, b) => (all[b].at || 0) - (all[a].at || 0))
+    keys.slice(30).forEach((k) => delete all[k])
+    S.prefs.wallPos = all
+    send('save-prefs', { prefs: { wallPos: all } })
+  }, 700)
+}
+
+// ---------- filters (just for you, while the wall is open) ----------
+function wallFilter() {
+  const c = campaign()
+  if (!c || S.wall.filter.campaignId !== c.id) S.wall.filter = { campaignId: c ? c.id : '', channels: [], people: [], updated: false }
+  return S.wall.filter
+}
+function filterActive() { const f = wallFilter(); return !!(f.channels.length || f.people.length || f.updated) }
+function matchesFilter(it) {
+  const f = wallFilter()
+  if (f.channels.length && f.channels.indexOf(it.channel) < 0) return false
+  if (f.people.length && f.people.indexOf(it.addedBy || 'Unknown') < 0) return false
+  if (f.updated && !isUpdated(it)) return false
+  return true
+}
+function toggleFilters(open) {
+  const box = $('filters'); if (!box) return
+  const show = open === undefined ? box.classList.contains('hidden') : open
+  box.classList.toggle('hidden', !show)
+  $('filter-btn').classList.toggle('on', show)
+  $('filter-btn').setAttribute('aria-expanded', String(show))
+  if (show) { toggleViewOptions(false); renderFilters() }
+}
+function renderFilters() {
+  const box = $('filters'); const c = campaign(); if (!box || !c) return
+  const f = wallFilter()
+  const count = (key) => c.items.reduce((m, it) => { const v = key === 'people' ? (it.addedBy || 'Unknown') : it.channel; m[v] = (m[v] || 0) + 1; return m }, {})
+  const chips = (key) => {
+    const counts = count(key)
+    return '<div class="chips">' + Object.keys(counts).sort().map((v) => '<button class="' + (f[key].indexOf(v) >= 0 ? 'on' : '') + '" data-fk="' + key + '" data-fv="' + esc(v) + '">' + esc(v) + '<em>' + counts[v] + '</em></button>').join('') + '</div>'
+  }
+  const updated = c.items.filter(isUpdated).length
+  let html = '<div><div class="vo-title">Channel</div>' + chips('channels') + '</div>'
+  html += '<div><div class="vo-title">Added by</div>' + chips('people') + '</div>'
+  html += '<label class="vo-toggle"><span>Only frames updated since you looked <em class="muted" style="font-style:normal">(' + updated + ')</em></span><input type="checkbox" id="f-updated"' + (f.updated ? ' checked' : '') + '></label>'
+  html += '<div class="muted small">Other frames fade out. Arrow keys, Select all and Present skip them.</div>'
+  if (filterActive()) html += '<button class="btn ghost" id="f-clear" style="align-self:flex-start;height:26px;padding:0 6px">Clear filters</button>'
+  box.innerHTML = html
+  box.querySelectorAll('[data-fk]').forEach((el) => el.addEventListener('click', () => {
+    const list = f[el.dataset.fk]; const v = el.dataset.fv; const i = list.indexOf(v)
+    if (i >= 0) list.splice(i, 1); else list.push(v)
+    applyFilter()
+  }))
+  $('f-updated').addEventListener('change', (e) => { f.updated = e.target.checked; applyFilter() })
+  const clear = $('f-clear'); if (clear) clear.addEventListener('click', () => clearFilters())
+}
+function clearFilters() { const f = wallFilter(); f.channels = []; f.people = []; f.updated = false; applyFilter() }
+function applyFilter() {
+  S.wall.selected = S.wall.selected.filter((id) => { const p = placementOf(id); return p && matchesFilter(p.it) })
+  renderWall()
+  renderFilters()
+}
+function renderFilterPill(c) {
+  const btn = $('filter-btn')
+  if (btn) { const old = btn.querySelector('.badge-dot'); if (old) old.remove() }
+  let pill = $('filterpill')
+  if (!filterActive()) { if (pill) pill.remove(); return }
+  const f = wallFilter()
+  if (btn) btn.insertAdjacentHTML('beforeend', '<span class="badge-dot">' + (f.channels.length + f.people.length + (f.updated ? 1 : 0)) + '</span>')
+  const shown = c.items.filter(matchesFilter).length
+  if (!pill) { pill = document.createElement('div'); pill.id = 'filterpill'; $('viewport').appendChild(pill) }
+  pill.innerHTML = '<span>Showing ' + shown + ' of ' + c.items.length + '</span><button id="fp-edit">Edit</button><button id="fp-clear">Clear</button>'
+  $('fp-edit').addEventListener('click', () => toggleFilters(true))
+  $('fp-clear').addEventListener('click', () => clearFilters())
+}
+
+// ---------- Present mode ----------
+function startPresent() {
+  if (S.view !== 'wall' || S.wall.present) return
+  const list = orderedPlacements().map((p) => p.it.id)
+  if (!list.length) { toast('No frames to present.', true); return }
+  const startId = S.wall.selected.find((id) => list.indexOf(id) >= 0)
+  toggleViewOptions(false); toggleFilters(false); toggleShortcuts(false)
+  S.wall.present = { list: list, index: Math.max(0, list.indexOf(startId)), id: '', back: { zoom: S.wall.zoom, tx: S.wall.tx, ty: S.wall.ty } }
+  document.body.classList.add('presenting')
+  const hud = document.createElement('div')
+  hud.id = 'hud'
+  hud.innerHTML = '<button id="hud-prev" aria-label="Previous">' + icon('left') + '</button><div class="what" id="hud-what"></div>' +
+    '<button id="hud-next" aria-label="Next">' + icon('right') + '</button><button id="hud-exit" aria-label="Exit Present" title="Exit (Esc)">' + icon('x', 14) + '</button>'
+  $('viewport').appendChild(hud)
+  $('hud-prev').addEventListener('click', () => presentStep(-1))
+  $('hud-next').addEventListener('click', () => presentStep(1))
+  $('hud-exit').addEventListener('click', () => stopPresent())
+  // The toolbar is hidden now, so the view is taller: wait a frame before zooming.
+  requestAnimationFrame(() => presentGo(S.wall.present ? S.wall.present.index : 0))
+}
+function presentGo(i) {
+  const pr = S.wall.present; if (!pr) return
+  pr.index = Math.max(0, Math.min(pr.list.length - 1, i))
+  pr.id = pr.list[pr.index]
+  const p = placementOf(pr.id)
+  document.querySelectorAll('#world .fr').forEach((el) => el.classList.toggle('cur', el.dataset.id === pr.id))
+  if (p) zoomToRect(p.x, p.y, p.w, p.h, { maxZoom: 2, pad: 40, bottom: 56 })
+  const what = $('hud-what')
+  if (what && p) what.innerHTML = (pr.index + 1) + ' / ' + pr.list.length + '<em>' + esc((nodeInfo(p.it) || {}).name || p.it.name) + ' · ' + esc(p.it.channel) + '</em>'
+  wakeHud()
+}
+function presentStep(d) { if (S.wall.present) presentGo(S.wall.present.index + d) }
+function wakeHud() {
+  const hud = $('hud'); if (!hud) return
+  hud.classList.remove('idle')
+  clearTimeout(S.wall.hudTimer)
+  S.wall.hudTimer = setTimeout(() => { const h = $('hud'); if (h) h.classList.add('idle') }, 2500)
+}
+function stopPresent() {
+  const pr = S.wall.present; if (!pr) return
+  S.wall.present = null
+  document.body.classList.remove('presenting')
+  const hud = $('hud'); if (hud) hud.remove()
+  document.querySelectorAll('#world .fr.cur').forEach((el) => el.classList.remove('cur'))
+  setSelection([pr.id])
+  S.wall.zoom = pr.back.zoom; S.wall.tx = pr.back.tx; S.wall.ty = pr.back.ty
+  requestAnimationFrame(() => { const p = placementOf(pr.id); applyTransform(); if (p) reveal(p) })
+}
+
+// ---------- arranging: drag frames within their row (order shared with the team) ----------
+// The order is a list of frame IDs per campaign. It's saved in this file's manifest ("layouts"),
+// so it reaches everyone like campaign lists do, plus a local copy in case this file can't be edited.
+function campaignOrder(campaignId) {
+  let best = (S.prefs.layouts || {})[campaignId] || null
+  for (const src of manifests()) {
+    const l = src.m.layouts && src.m.layouts[campaignId]
+    if (l && Array.isArray(l.order) && (!best || (l.at || 0) > (best.at || 0))) best = l
+  }
+  return best ? best.order : []
+}
+function orderItems(c) {
+  const order = campaignOrder(c.id)
+  if (!order.length) return c.items.slice()
+  const rank = {}
+  order.forEach((id, i) => { rank[id] = i })
+  return c.items.map((it, i) => ({ it: it, r: it.id in rank ? rank[it.id] : order.length + i })).sort((a, b) => a.r - b.r).map((x) => x.it)
+}
+function startArrange(d) {
+  const p = placementOf(d.target.dataset.id)
+  const g = (S.wall.bounds.groups || []).find((grp) => grp.items.indexOf(p) >= 0)
+  if (!p || !g) { d.arrange = false; return }
+  d.place = p; d.group = g
+  d.el = d.target
+  d.el.classList.add('dragging')
+  $('viewport').classList.add('arranging')
+  d.line = document.createElement('div'); d.line.className = 'drop-line'; $('world').appendChild(d.line)
+  if (S.wall.selected.indexOf(p.it.id) < 0) setSelection([p.it.id])
+}
+function arrangeSlot(d, e) {
+  const vp = $('viewport'); const r = vp.getBoundingClientRect(); const z = S.wall.zoom
+  const wx = (e.clientX - r.left - S.wall.tx) / z, wy = (e.clientY - r.top - S.wall.ty) / z
+  const others = d.group.items.filter((q) => q !== d.place)
+  const rowH = {}
+  others.forEach((q) => { rowH[q.y] = Math.max(rowH[q.y] || 0, q.h) })
+  const after = (q) => wy >= q.y + rowH[q.y] ? true : wy < q.y ? false : wx > q.x + q.w / 2
+  const index = others.filter(after).length
+  return { others: others, index: index }
+}
+function moveArrange(d, e) {
+  const z = S.wall.zoom
+  d.el.style.transform = 'translate(' + ((e.clientX - d.x) / z) + 'px,' + ((e.clientY - d.y) / z) + 'px)'
+  const slot = arrangeSlot(d, e)
+  const ref = slot.others[slot.index] || slot.others[slot.others.length - 1]
+  if (!ref) { d.line.style.display = 'none'; return }
+  const before = !!slot.others[slot.index]
+  const gap = (SPACING[wallView().spacing] || SPACING.normal)[0]
+  d.line.style.cssText = 'display:block;left:' + (before ? ref.x - gap / 2 : ref.x + ref.w + gap / 2) + 'px;top:' + ref.y + 'px;height:' + ref.h + 'px'
+}
+function endArrange(d, e) {
+  d.el.classList.remove('dragging'); d.el.style.transform = ''
+  $('viewport').classList.remove('arranging')
+  if (d.line) d.line.remove()
+  const slot = arrangeSlot(d, e)
+  const ids = slot.others.map((q) => q.it.id)
+  ids.splice(slot.index, 0, d.place.it.id)
+  const before = d.group.items.map((q) => q.it.id)
+  if (ids.join('|') === before.join('|')) return
+  // New full order: every frame as laid out now, with this row's frames in their new order.
+  const groupIds = {}
+  before.forEach((id) => { groupIds[id] = true })
+  const full = []
+  let placed = false
+  for (const g of S.wall.bounds.groups) for (const q of g.items) {
+    if (groupIds[q.it.id]) { if (!placed) { full.push.apply(full, ids); placed = true } } else full.push(q.it.id)
+  }
+  saveOrder(full)
+}
+function saveOrder(order) {
+  const c = campaign(); if (!c) return
+  const entry = { order: order, at: Date.now(), by: (S.prefs.me && S.prefs.me.handle) || '' }
+  S.prefs.layouts = Object.assign({}, S.prefs.layouts || {}, { [c.id]: entry })
+  send('save-prefs', { prefs: { layouts: S.prefs.layouts } })
+  send('save-layout', { campaignId: c.id, layout: entry })
+  renderWall()
 }
 
 // ---------- loading states on the wall ----------
@@ -1433,7 +1805,7 @@ function renderSetup() {
 // ---------- wall ----------
 function openWall() {
   S.view = 'wall'; S.wall.fitted = false; S.wall.selected = []; S.wall.touched = false
-  S.wall.synced = false; S.wall.tried = {}; S.wall.retried = {}
+  S.wall.synced = false; S.wall.tried = {}; S.wall.retried = {}; S.wall.present = null
   const size = S.prefs.wallSize || { width: 1200, height: 800 }
   send('resize', size)
   render()
@@ -1456,6 +1828,7 @@ function closeWall() {
 
 // Groups for the wall's rows: by channel (in the channel list's order), by file, or one group.
 function wallGroups(c, by) {
+  c = Object.assign({}, c, { items: orderItems(c) })
   if (by === 'none') return [{ label: '', items: c.items.slice() }]
   if (by === 'file') {
     const order = []
@@ -1508,9 +1881,13 @@ function renderWallShell() {
   html += '<button class="icon" id="zoom-out" aria-label="Zoom out">' + icon('minus') + '</button><button class="zoomval" id="zoom-val" title="Zoom to 100%">100%</button><button class="icon" id="zoom-in" aria-label="Zoom in">' + icon('plus') + '</button>'
   html += '<button class="icon" id="zoom-fit" title="Fit everything" aria-label="Fit everything">' + icon('fit') + '</button>'
   html += '<div class="sep" style="width:1px;height:20px"></div>'
-  html += '<button class="icon" id="view-opts" title="View options" aria-label="View options" aria-expanded="false">' + icon('gear') + '</button></div>'
+  html += '<button class="icon" id="filter-btn" title="Filter frames" aria-label="Filter frames" aria-expanded="false">' + icon('filter') + '</button>'
+  html += '<button class="icon" id="view-opts" title="View options" aria-label="View options" aria-expanded="false">' + icon('gear') + '</button>'
+  html += '<button class="btn ghost" id="present-btn" title="Present (P)" style="padding:0 8px">' + icon('play', 14) + 'Present</button></div>'
   html += '<div id="viewport"><div id="world"></div><div id="banner"></div></div>'
   html += '<div id="viewopts" class="card hidden" role="dialog" aria-label="View options"></div>'
+  html += '<div id="filters" class="card hidden" role="dialog" aria-label="Filter frames"></div>'
+  html += '<div id="shortcuts" class="card hidden" role="dialog" aria-label="Keyboard shortcuts"></div>'
   html += '<div id="inspector" class="card hidden"></div><div id="history" class="card hidden" role="dialog" aria-label="Version history"></div><div id="grip" title="Drag to resize"></div></div>'
   $('app').innerHTML = html
   applyWallView()
@@ -1558,13 +1935,14 @@ function renderWall() {
         ? '<div class="edge" style="left:' + n.offX + 'px;top:' + n.offY + 'px;width:' + n.width + 'px;height:' + n.height + 'px"></div>' : ''
       // Round the tile like the frame, unless content spills past the frame's edges (then the tile is bigger than the frame).
       const radius = n && n.radius && !edge ? ';border-radius:' + n.radius : ''
-      html += '<div class="fr' + (S.wall.selected.indexOf(it.id) >= 0 ? ' sel' : '') + (n && n.missing ? ' missing' : '') + '" data-id="' + esc(it.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px;width:' + p.w + 'px;height:' + p.h + 'px;--w:' + p.w + radius + '">'
+      html += '<div class="fr' + (S.wall.selected.indexOf(it.id) >= 0 ? ' sel' : '') + (n && n.missing ? ' missing' : '') + (matchesFilter(it) ? '' : ' dim') + (S.wall.present && S.wall.present.id === it.id ? ' cur' : '') + '" data-id="' + esc(it.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px;width:' + p.w + 'px;height:' + p.h + 'px;--w:' + p.w + radius + '">'
       html += '<div class="lbl"><div class="nm">' + (isUpdated(it) ? '<span class="upd">Updated</span>' : '') + esc(name) + '</div><div class="mt">' + esc(meta) + '</div></div>' + body + edge + '</div>'
     }
   }
   world.innerHTML = html
   bindImageEvents(world)
-  if (!S.wall.fitted) { fit(); S.wall.fitted = true } else applyTransform()
+  renderFilterPill(c)
+  if (!S.wall.fitted) { if (!restorePosition(c.id)) fit(); S.wall.fitted = true } else applyTransform()
   renderInspector()
   renderWallBar()
   // Frames added since the last check (by you in another window, or a teammate) load on their own.
@@ -1607,6 +1985,7 @@ function applyTransform() {
   world.style.setProperty('--z', String(z))
   world.classList.toggle('far', z < 0.18)
   const zv = $('zoom-val'); if (zv) zv.textContent = Math.round(z * 100) + '%'
+  rememberPosition()
 }
 
 function fit() {
@@ -1752,6 +2131,8 @@ function bindWall() {
   $('zoom-val').addEventListener('click', () => { const vp = $('viewport'); zoomAt(1 / S.wall.zoom, vp.clientWidth / 2, vp.clientHeight / 2) })
   $('zoom-fit').addEventListener('click', fit)
   $('view-opts').addEventListener('click', () => toggleViewOptions())
+  $('filter-btn').addEventListener('click', () => toggleFilters())
+  $('present-btn').addEventListener('click', () => startPresent())
   $('mark-seen').addEventListener('click', () => {
     const c = campaign(); const seen = {}
     c.items.forEach((it) => { const n = nodeInfo(it); if (n && n.hash) seen[it.id] = n.hash })
@@ -1775,16 +2156,24 @@ function bindWall() {
     if (e.button !== 0 && e.button !== 1) return
     const r = vp.getBoundingClientRect()
     const target = e.target.closest('.fr')
+    // Dragging a frame moves it within its row; dragging empty space (or with Space held, or the
+    // middle mouse button) pans. In Present mode everything pans.
+    const pan = !target || e.button === 1 || S.wall.spaceDown || !!S.wall.present || target.classList.contains('dim')
     drag = { x: e.clientX, y: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, tx: S.wall.tx, ty: S.wall.ty, moved: false,
       target: target, heading: e.target.closest('.ch'), additive: e.shiftKey || e.metaKey || e.ctrlKey,
-      box: e.shiftKey && !target }
+      box: e.shiftKey && !target && !S.wall.present, arrange: !pan && !(e.shiftKey || e.metaKey || e.ctrlKey) }
     vp.setPointerCapture(e.pointerId)
   })
   vp.addEventListener('pointermove', (e) => {
     if (!drag) return
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y
-    if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 3) { drag.moved = true; if (!drag.box) vp.classList.add('panning') }
+    if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 3) {
+      drag.moved = true
+      if (drag.arrange) startArrange(drag)
+      else if (!drag.box) vp.classList.add('panning')
+    }
     if (!drag.moved) return
+    if (drag.arrange) { moveArrange(drag, e); return }
     if (drag.box) {
       const x = Math.min(drag.ox, drag.ox + dx), y = Math.min(drag.oy, drag.oy + dy)
       marquee.style.cssText = 'left:' + x + 'px;top:' + y + 'px;width:' + Math.abs(dx) + 'px;height:' + Math.abs(dy) + 'px'
@@ -1798,6 +2187,7 @@ function bindWall() {
     vp.classList.remove('panning')
     const d = drag
     drag = null
+    if (d.arrange && d.moved) { endArrange(d, e); return }
     if (d.box && d.moved) {
       marquee.classList.add('hidden')
       const z = S.wall.zoom
@@ -1805,7 +2195,7 @@ function bindWall() {
       const y1 = (Math.min(d.oy, d.oy + e.clientY - d.y) - S.wall.ty) / z, y2 = (Math.max(d.oy, d.oy + e.clientY - d.y) - S.wall.ty) / z
       const hit = []
       for (const g of (S.wall.bounds || { groups: [] }).groups) for (const p of g.items) {
-        if (p.x < x2 && p.x + p.w > x1 && p.y < y2 && p.y + p.h > y1) hit.push(p.it.id)
+        if (p.x < x2 && p.x + p.w > x1 && p.y < y2 && p.y + p.h > y1 && matchesFilter(p.it)) hit.push(p.it.id)
       }
       setSelection(Array.from(new Set(S.wall.selected.concat(hit))))
       return
@@ -1814,7 +2204,7 @@ function bindWall() {
     if (d.heading) {
       const c = campaign()
       const group = (S.wall.bounds && S.wall.bounds.groups[Number(d.heading.dataset.group)]) || { items: [] }
-      const ids = group.items.map((p) => p.it.id)
+      const ids = group.items.filter((p) => matchesFilter(p.it)).map((p) => p.it.id)
       setSelection(d.additive ? Array.from(new Set(S.wall.selected.concat(ids))) : ids)
       return
     }
@@ -1847,16 +2237,23 @@ function bindWall() {
     if (S.view !== 'wall' || /INPUT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return
     const sel = window.getSelection(); if (sel && sel.rangeCount && !sel.isCollapsed) sel.removeAllRanges()
   })
-  // Clicking anywhere outside the View options box closes it.
+  // Clicking anywhere outside a popover closes it.
   document.addEventListener('pointerdown', (e) => {
-    const box = $('viewopts')
-    if (S.view === 'wall' && box && !box.classList.contains('hidden') && !e.target.closest('#viewopts, #view-opts')) toggleViewOptions(false)
+    if (S.view !== 'wall') return
+    const open = (id) => $(id) && !$(id).classList.contains('hidden')
+    if (open('viewopts') && !e.target.closest('#viewopts, #view-opts')) toggleViewOptions(false)
+    if (open('filters') && !e.target.closest('#filters, #filter-btn, #filterpill')) toggleFilters(false)
+    if (open('shortcuts') && !e.target.closest('#shortcuts, #vo-keys')) toggleShortcuts(false)
   }, true)
   document.addEventListener('keydown', (e) => {
     if (S.view !== 'wall' || /INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || '')) return
-    if (e.key === 'Escape') { if (!$('viewopts').classList.contains('hidden')) { toggleViewOptions(false); return } setSelection([]) }
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); const c = campaign(); setSelection(c ? c.items.map((it) => it.id) : []) }
+    if (wallKey(e)) e.preventDefault()
   })
+  document.addEventListener('keyup', (e) => {
+    if (e.code === 'Space' && S.wall.spaceDown) { S.wall.spaceDown = false; const vp = $('viewport'); if (vp) vp.classList.remove('spacepan') }
+  })
+  // Present mode: show the controls again when the mouse moves, hide them after a moment.
+  document.addEventListener('pointermove', () => { if (S.wall.present) wakeHud() })
 }
 
 // Another open copy of the plugin may have checked files more recently; keep whichever is newer.
