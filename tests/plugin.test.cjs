@@ -326,6 +326,13 @@ function pointer(w, type, target, extra) {
   ownItem.click(); await tick(80)
   check('removing a frame in this file removes it for everyone', !JSON.parse(bryce.root._d['showroom/manifest']).campaigns[cid].items['1:4'] && !c._d['showroom/campaigns'].includes(cid))
 
+  // ===== campaign home =====
+  click(wb, '#home'); await tick(20)
+  const cards = [...wb.document.querySelectorAll('.ccard')]
+  check('home shows each campaign as a card with frames, people and progress', cards.length >= 1 && /Holiday 2026/.test(cards[0].textContent) && /frames/.test(cards[0].textContent) && cards[0].querySelector('.avatars span') && cards[0].querySelector('.progress') && cards.some((c) => c.classList.contains('active')), cards.map((c) => c.textContent).join(' | '))
+  cards.find((c) => /Holiday 2026/.test(c.textContent)).click(); await tick(30)
+  check('picking a card opens that campaign', $(wb, '#campaign') && /Holiday 2026/.test($(wb, '#campaign').selectedOptions[0].textContent))
+
   // ===== links between campaign files =====
   const bryceLinks = JSON.parse(bryce.root._d['showroom/manifest']).links || {}
   check('Bryce’s file now links to Sam’s file', !!bryceLinks.ADFILE00002 && !bryceLinks.EMAILFILE0001, JSON.stringify(bryceLinks))
