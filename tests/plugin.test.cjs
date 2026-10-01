@@ -534,6 +534,26 @@ function pointer(w, type, target, extra) {
   const before2 = $(wb, '#world').style.transform
   pointer(wb, 'pointerdown', $(wb, '#viewport'), emptyAt); pointer(wb, 'pointermove', $(wb, '#viewport'), { clientX: 60, clientY: 720 }); pointer(wb, 'pointerup', $(wb, '#viewport'), { clientX: 60, clientY: 720 }); await tick(10)
   check('dragging empty space still pans', $(wb, '#world').style.transform !== before2)
+  // review statuses
+  const tapTile = (w, id) => { const el = w.document.querySelector('.fr[data-id="' + id + '"]'); pointer(w, 'pointerdown', el); pointer(w, 'pointerup', el) }
+  await key('Escape'); await key('Escape')
+  tapTile(wb, 'EMAILFILE0001|1:2'); await tick(20)
+  click(wb, '#inspector [data-status="review"]'); await tick(80)
+  check('status can be set from the wall and shows on the frame', !!wb.document.querySelector('.fr[data-id="EMAILFILE0001|1:2"] .st-review'))
+  const savedSt = ((JSON.parse(bryce.root._d['showroom/manifest']).statuses || {})[cidNow] || {})['EMAILFILE0001|1:2']
+  check('status is saved in the file for the team', savedSt && savedSt.s === 'review', JSON.stringify(savedSt))
+  click(wb, '#filter-btn'); await tick(10)
+  click(wb, '#filters [data-fk="statuses"][data-fv="In review"]'); await tick(20)
+  const undimmed = [...wb.document.querySelectorAll('#world .fr:not(.dim)')].map((t) => t.dataset.id)
+  check('filter by status', undimmed.length === 1 && undimmed[0] === 'EMAILFILE0001|1:2', undimmed.join(','))
+  click(wb, '#fp-clear'); await tick(20); await key('Escape')
+  // Sam approves his own frame from his wall; it reaches Bryce through Team sync.
+  click(ws, '#open-wall'); await tick(400)
+  tapTile(ws, 'ADFILE00002|7:1'); await tick(20)
+  click(ws, '#inspector [data-status="approved"]'); await tick(1600)
+  click(ws, '#wall-back'); await tick(30)
+  await wb.showroomTest.pollIndex(); await tick(50)
+  check('a teammate’s status change shows up', !!wb.document.querySelector('.fr[data-id="ADFILE00002|7:1"] .st-approved'))
   }
   click(wb, '#wall-back'); await tick(30)
 

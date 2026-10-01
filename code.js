@@ -429,6 +429,18 @@ async function handle(msg) {
       try { writeManifest(manifest); } catch (e) { return; }   // e.g. a file you can only view
       return sendState({ external: true });
     }
+    case 'save-status': {
+      // Review statuses for frames in a campaign (from any file). Saved in this file's manifest;
+      // the newest change per frame wins across files. Keeps the 50 most recent campaigns.
+      const manifest = readManifest();
+      const statuses = Object.assign({}, manifest.statuses || {});
+      statuses[msg.campaignId] = Object.assign({}, statuses[msg.campaignId] || {}, msg.changes || {});
+      const newest = (cid) => Math.max.apply(null, [0].concat(Object.values(statuses[cid] || {}).map((e) => (e && e.at) || 0)));
+      Object.keys(statuses).sort((a, b) => newest(b) - newest(a)).slice(50).forEach((k) => { delete statuses[k]; });
+      manifest.statuses = statuses;
+      try { writeManifest(manifest); } catch (e) { return sendState({ message: 'Status saved for you only: this file can’t be edited.' }); }
+      return sendState({ external: true });
+    }
     case 'save-layout': {
       // A campaign's frame order (from dragging frames on the wall). Saved in this file's
       // manifest so it travels to the team; newest wins. Keeps the 50 most recent campaigns.

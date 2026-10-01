@@ -183,6 +183,21 @@ body.presenting .fr { box-shadow: none; }
 #hud button:hover { background: rgba(255,255,255,.14); }
 #hud .what { padding: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 #hud .what em { font-style: normal; opacity: .6; margin-left: 6px; }
+/* Review statuses */
+.st { display: inline-flex; align-items: center; gap: 4px; height: 16px; padding: 0 6px; border-radius: 99px; font-size: 9.5px; font-weight: 600; vertical-align: 1px; margin-right: 5px; white-space: nowrap; }
+.st::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.st-draft { background: color-mix(in srgb, #8a8a8a 20%, transparent); color: #8a8a8a; }
+.st-review { background: color-mix(in srgb, #e5a000 20%, transparent); color: #c98a00; }
+.st-approved { background: color-mix(in srgb, #14ae5c 20%, transparent); color: #14ae5c; }
+.lbl .st { height: 15px; }
+.progress { display: flex; height: 6px; border-radius: 99px; overflow: hidden; background: var(--bg3); gap: 2px; }
+.progress span { display: block; height: 100%; transition: width .4s ease; }
+.progress .p-approved { background: #14ae5c; } .progress .p-review { background: #e5a000; } .progress .p-draft { background: #a0a0a0; }
+.progress-label { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted); margin-top: 5px; }
+.statusseg { display: flex; gap: 2px; padding: 2px; border-radius: 7px; background: var(--bg2); }
+.statusseg button { flex: 1; height: 26px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font: inherit; font-size: 10.5px; cursor: pointer; white-space: nowrap; padding: 0 4px; }
+.statusseg button.on { background: var(--bg); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.statusseg button.on.s-approved { color: #14ae5c; } .statusseg button.on.s-review { color: #c98a00; }
 .marquee { position: absolute; z-index: 2; border: 1px solid var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); pointer-events: none; }
 #viewopts { position: absolute; right: 12px; top: 56px; width: 264px; z-index: 6; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 12px; }
 #viewopts .vo-title { font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
@@ -312,7 +327,8 @@ function allCampaigns() {
       for (const nodeId of Object.keys(mc.items || {})) {
         const it = mc.items[nodeId]
         c.items.push({ id: src.key + '|' + nodeId, fileKey: src.key, fileName: src.fileName, nodeId: nodeId, name: it.name,
-          width: it.w, height: it.h, pageName: it.pageName, channel: it.channel || 'Other', addedBy: it.addedBy, shared: true })
+          width: it.w, height: it.h, pageName: it.pageName, channel: it.channel || 'Other', addedBy: it.addedBy,
+          addedAt: it.addedAt || 0, updatedAt: it.updatedAt || it.addedAt || 0, shared: true })
       }
     }
   }
@@ -327,6 +343,8 @@ function allCampaigns() {
     c.hiddenCount = c.items.filter((it) => skip.indexOf(it.id) >= 0).length
     c.items = c.items.filter((it) => skip.indexOf(it.id) < 0)
     c.items.forEach((it) => { it.seenHash = seen[it.id] || '' })
+    const sm = statusMap(c.id)
+    c.items.forEach((it) => { const st = sm[it.id]; it.status = st ? st.s || '' : ''; it.statusBy = st ? st.by || '' : ''; it.statusAt = st ? st.at || 0 : 0 })
     return c
   }).sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -421,7 +439,7 @@ function teamInfo() {
 }
 function hasCampaigns(m) { return !!(m && m.campaigns && Object.keys(m.campaigns).length) }
 // Campaign frames or a saved frame order: either is worth sharing through Team sync.
-function hasShared(m) { return hasCampaigns(m) || !!(m && m.layouts && Object.keys(m.layouts).length) }
+function hasShared(m) { return hasCampaigns(m) || !!(m && ((m.layouts && Object.keys(m.layouts).length) || (m.statuses && Object.keys(m.statuses).length))) }
 
 // Folders to search: the built-in ones, your own, and any found from the team's ID.
 function teamFolders() {
@@ -1275,14 +1293,15 @@ function rememberPosition() {
 // ---------- filters (just for you, while the wall is open) ----------
 function wallFilter() {
   const c = campaign()
-  if (!c || S.wall.filter.campaignId !== c.id) S.wall.filter = { campaignId: c ? c.id : '', channels: [], people: [], updated: false }
+  if (!c || S.wall.filter.campaignId !== c.id) S.wall.filter = { campaignId: c ? c.id : '', channels: [], people: [], statuses: [], updated: false }
   return S.wall.filter
 }
-function filterActive() { const f = wallFilter(); return !!(f.channels.length || f.people.length || f.updated) }
+function filterActive() { const f = wallFilter(); return !!(f.channels.length || f.people.length || f.statuses.length || f.updated) }
 function matchesFilter(it) {
   const f = wallFilter()
   if (f.channels.length && f.channels.indexOf(it.channel) < 0) return false
   if (f.people.length && f.people.indexOf(it.addedBy || 'Unknown') < 0) return false
+  if (f.statuses.length && f.statuses.indexOf(statusName(it.status)) < 0) return false
   if (f.updated && !isUpdated(it)) return false
   return true
 }
@@ -1297,13 +1316,16 @@ function toggleFilters(open) {
 function renderFilters() {
   const box = $('filters'); const c = campaign(); if (!box || !c) return
   const f = wallFilter()
-  const count = (key) => c.items.reduce((m, it) => { const v = key === 'people' ? (it.addedBy || 'Unknown') : it.channel; m[v] = (m[v] || 0) + 1; return m }, {})
+  const valueOf = (key, it) => key === 'people' ? (it.addedBy || 'Unknown') : key === 'statuses' ? statusName(it.status) : it.channel
+  const count = (key) => c.items.reduce((m, it) => { const v = valueOf(key, it); m[v] = (m[v] || 0) + 1; return m }, {})
   const chips = (key) => {
     const counts = count(key)
-    return '<div class="chips">' + Object.keys(counts).sort().map((v) => '<button class="' + (f[key].indexOf(v) >= 0 ? 'on' : '') + '" data-fk="' + key + '" data-fv="' + esc(v) + '">' + esc(v) + '<em>' + counts[v] + '</em></button>').join('') + '</div>'
+    const keys = key === 'statuses' ? STATUSES.map((x) => x[1]).filter((v) => counts[v]) : Object.keys(counts).sort()
+    return '<div class="chips">' + keys.map((v) => '<button class="' + (f[key].indexOf(v) >= 0 ? 'on' : '') + '" data-fk="' + key + '" data-fv="' + esc(v) + '">' + esc(v) + '<em>' + counts[v] + '</em></button>').join('') + '</div>'
   }
   const updated = c.items.filter(isUpdated).length
-  let html = '<div><div class="vo-title">Channel</div>' + chips('channels') + '</div>'
+  let html = '<div><div class="vo-title">Status</div>' + chips('statuses') + '</div>'
+  html += '<div><div class="vo-title">Channel</div>' + chips('channels') + '</div>'
   html += '<div><div class="vo-title">Added by</div>' + chips('people') + '</div>'
   html += '<label class="vo-toggle"><span>Only frames updated since you looked <em class="muted" style="font-style:normal">(' + updated + ')</em></span><input type="checkbox" id="f-updated"' + (f.updated ? ' checked' : '') + '></label>'
   html += '<div class="muted small">Other frames fade out. Arrow keys, Select all and Present skip them.</div>'
@@ -1317,7 +1339,7 @@ function renderFilters() {
   $('f-updated').addEventListener('change', (e) => { f.updated = e.target.checked; applyFilter() })
   const clear = $('f-clear'); if (clear) clear.addEventListener('click', () => clearFilters())
 }
-function clearFilters() { const f = wallFilter(); f.channels = []; f.people = []; f.updated = false; applyFilter() }
+function clearFilters() { const f = wallFilter(); f.channels = []; f.people = []; f.statuses = []; f.updated = false; applyFilter() }
 function applyFilter() {
   S.wall.selected = S.wall.selected.filter((id) => { const p = placementOf(id); return p && matchesFilter(p.it) })
   renderWall()
@@ -1329,7 +1351,7 @@ function renderFilterPill(c) {
   let pill = $('filterpill')
   if (!filterActive()) { if (pill) pill.remove(); return }
   const f = wallFilter()
-  if (btn) btn.insertAdjacentHTML('beforeend', '<span class="badge-dot">' + (f.channels.length + f.people.length + (f.updated ? 1 : 0)) + '</span>')
+  if (btn) btn.insertAdjacentHTML('beforeend', '<span class="badge-dot">' + (f.channels.length + f.people.length + f.statuses.length + (f.updated ? 1 : 0)) + '</span>')
   const shown = c.items.filter(matchesFilter).length
   if (!pill) { pill = document.createElement('div'); pill.id = 'filterpill'; $('viewport').appendChild(pill) }
   pill.innerHTML = '<span>Showing ' + shown + ' of ' + c.items.length + '</span><button id="fp-edit">Edit</button><button id="fp-clear">Clear</button>'
@@ -1365,7 +1387,7 @@ function presentGo(i) {
   document.querySelectorAll('#world .fr').forEach((el) => el.classList.toggle('cur', el.dataset.id === pr.id))
   if (p) zoomToRect(p.x, p.y, p.w, p.h, { maxZoom: 2, pad: 40, bottom: 56 })
   const what = $('hud-what')
-  if (what && p) what.innerHTML = (pr.index + 1) + ' / ' + pr.list.length + '<em>' + esc((nodeInfo(p.it) || {}).name || p.it.name) + ' · ' + esc(p.it.channel) + '</em>'
+  if (what && p) what.innerHTML = (pr.index + 1) + ' / ' + pr.list.length + '<em>' + esc((nodeInfo(p.it) || {}).name || p.it.name) + ' · ' + esc(p.it.channel) + (p.it.status ? ' · ' + statusName(p.it.status) : '') + '</em>'
   wakeHud()
 }
 function presentStep(d) { if (S.wall.present) presentGo(S.wall.present.index + d) }
@@ -1384,6 +1406,52 @@ function stopPresent() {
   setSelection([pr.id])
   S.wall.zoom = pr.back.zoom; S.wall.tx = pr.back.tx; S.wall.ty = pr.back.ty
   requestAnimationFrame(() => { const p = placementOf(pr.id); applyTransform(); if (p) reveal(p) })
+}
+
+// ---------- review statuses (shared with the team) ----------
+// Anyone can set a frame's status from any file. Each change is saved in the manifest of the file
+// you're in ("statuses"), and the newest change for each frame wins across all files.
+const STATUSES = [['', 'No status'], ['draft', 'Draft'], ['review', 'In review'], ['approved', 'Approved']]
+function statusName(s) { const f = STATUSES.find((x) => x[0] === (s || '')); return f ? f[1] : 'No status' }
+function statusBadge(s) { return s ? '<span class="st st-' + esc(s) + '">' + esc(statusName(s)) + '</span>' : '' }
+function statusMap(campaignId) {
+  const out = {}
+  const take = (map) => { for (const id of Object.keys(map || {})) { const e = map[id]; if (e && (!out[id] || (e.at || 0) > (out[id].at || 0))) out[id] = e } }
+  take(((S.prefs && S.prefs.statuses) || {})[campaignId])
+  for (const src of manifests()) take(src.m.statuses && src.m.statuses[campaignId])
+  return out
+}
+function statusControl(items) {
+  const cur = Array.from(new Set(items.map((it) => it.status || '')))
+  const one = cur.length === 1 ? cur[0] : null
+  let html = '<div style="margin-top:10px"><div class="label">Status' + (items.length > 1 ? ' (' + items.length + ' frames)' : '') + '</div><div class="statusseg" role="radiogroup">'
+  html += STATUSES.map((st) => '<button role="radio" aria-checked="' + (one === st[0]) + '" class="' + (one === st[0] ? 'on s-' + (st[0] || 'none') : '') + '" data-status="' + st[0] + '">' + (st[0] ? st[1] : 'None') + '</button>').join('')
+  html += '</div>'
+  if (items.length === 1 && items[0].statusBy) html += '<div class="muted small" style="margin-top:4px">Set by ' + esc(items[0].statusBy) + ' · ' + esc(ago(items[0].statusAt)) + '</div>'
+  return html + '</div>'
+}
+function setStatus(ids, s) {
+  const c = campaign(); if (!c || !ids.length) return
+  const changes = {}
+  const at = Date.now(), by = (S.prefs.me && S.prefs.me.handle) || ''
+  ids.forEach((id) => { changes[id] = { s: s, by: by, at: at } })
+  const all = Object.assign({}, S.prefs.statuses || {})
+  all[c.id] = Object.assign({}, all[c.id] || {}, changes)
+  S.prefs.statuses = all
+  send('save-prefs', { prefs: { statuses: all } })
+  send('save-status', { campaignId: c.id, changes: changes })
+  if (S.view === 'wall') renderWall(); else render()
+}
+// A thin bar: approved, in review, draft, then the rest.
+function progressBar(items) {
+  const n = items.length || 1
+  const count = (s) => items.filter((it) => it.status === s).length
+  const a = count('approved'), r = count('review'), d = count('draft')
+  const seg = (k, v) => v ? '<span class="p-' + k + '" style="width:' + (v / n * 100) + '%" title="' + statusName(k) + ': ' + v + '"></span>' : ''
+  const parts = []
+  if (r) parts.push(r + ' in review'); if (d) parts.push(d + ' draft')
+  return '<div><div class="progress">' + seg('approved', a) + seg('review', r) + seg('draft', d) + '</div>' +
+    '<div class="progress-label"><span><b style="color:var(--text)">' + a + '</b> of ' + items.length + ' approved</span><span>' + esc(parts.join(' · ')) + '</span></div></div>'
 }
 
 // ---------- arranging: drag frames within their row (order shared with the team) ----------
@@ -1576,6 +1644,7 @@ function renderPanel() {
   html += '<div class="card stack" style="padding:14px;gap:10px">'
   html += '<div class="row" style="align-items:baseline"><span style="font-size:22px;font-weight:600;letter-spacing:-0.02em">' + c.items.length + '</span><span class="muted">frame' + (c.items.length === 1 ? '' : 's') + ' from ' + files + ' file' + (files === 1 ? '' : 's') + '</span>' + (updated ? '<span class="pill warn" style="margin-left:auto">' + updated + ' updated</span>' : '') + '</div>'
   if (c.items.length) html += '<div class="chips">' + channelOrder.filter((ch) => byChannel[ch]).map((ch) => '<span class="pill">' + esc(ch) + ' ' + byChannel[ch] + '</span>').join('') + '</div>'
+  if (c.items.length) html += progressBar(c.items)
   html += '<button class="btn primary block" id="open-wall"' + (c.items.length ? '' : ' disabled') + '>' + icon('wall') + (S.token ? 'Open wall' : 'Connect Figma to open the wall') + '</button>'
   html += '</div>'
 
@@ -1590,7 +1659,7 @@ function renderPanel() {
       const name = n && n.name ? n.name : it.name
       const here = it.fileKey === S.file.key
       const where = here ? 'this file' : esc((S.cache.files[it.fileKey] || {}).name || it.fileName)
-      html += '<div class="item"><button class="open" data-open="' + esc(it.id) + '" title="' + (here ? 'Select in this file' : 'Open in its file') + '"><div class="nm">' + esc(name) + (isUpdated(it) ? ' <span class="upd">Updated</span>' : '') + '</div><div class="mt">' + esc(it.channel) + ' · ' + where + (it.addedBy ? ' · added by ' + esc(it.addedBy) : '') + '</div></button>'
+      html += '<div class="item"><button class="open" data-open="' + esc(it.id) + '" title="' + (here ? 'Select in this file' : 'Open in its file') + '"><div class="nm">' + statusBadge(it.status) + esc(name) + (isUpdated(it) ? ' <span class="upd">Updated</span>' : '') + '</div><div class="mt">' + esc(it.channel) + ' · ' + where + (it.addedBy ? ' · added by ' + esc(it.addedBy) : '') + '</div></button>'
       html += '<button class="icon" data-remove="' + esc(it.id) + '" aria-label="Remove ' + esc(name) + ' from campaign" title="' + (here ? 'Remove from campaign' : 'Hide on my wall (it lives in another file)') + '">' + icon('x', 14) + '</button></div>'
     })
     html += '</div></div>'
@@ -1936,7 +2005,7 @@ function renderWall() {
       // Round the tile like the frame, unless content spills past the frame's edges (then the tile is bigger than the frame).
       const radius = n && n.radius && !edge ? ';border-radius:' + n.radius : ''
       html += '<div class="fr' + (S.wall.selected.indexOf(it.id) >= 0 ? ' sel' : '') + (n && n.missing ? ' missing' : '') + (matchesFilter(it) ? '' : ' dim') + (S.wall.present && S.wall.present.id === it.id ? ' cur' : '') + '" data-id="' + esc(it.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px;width:' + p.w + 'px;height:' + p.h + 'px;--w:' + p.w + radius + '">'
-      html += '<div class="lbl"><div class="nm">' + (isUpdated(it) ? '<span class="upd">Updated</span>' : '') + esc(name) + '</div><div class="mt">' + esc(meta) + '</div></div>' + body + edge + '</div>'
+      html += '<div class="lbl"><div class="nm">' + statusBadge(it.status) + (isUpdated(it) ? '<span class="upd">Updated</span>' : '') + esc(name) + '</div><div class="mt">' + esc(meta) + '</div></div>' + body + edge + '</div>'
     }
   }
   world.innerHTML = html
@@ -2041,9 +2110,10 @@ function renderInspector() {
     if (n.viewW && (Math.abs(n.viewW - n.width) > 1 || Math.abs(n.viewH - n.height) > 1)) html += '<div class="muted small" style="margin-top:2px">Content extends outside the frame; the dashed line is the frame’s edge.</div>'
     if (isUpdated(it)) html += '<div style="margin-top:6px"><span class="upd">Updated since you last marked it seen</span></div>'
     const editable = it.fileKey === S.file.key
-    if (it.addedBy) html += '<div class="muted small" style="margin-top:2px">Added by ' + esc(it.addedBy) + '</div>'
+    if (it.addedBy) html += '<div class="muted small" style="margin-top:2px">Added by ' + esc(it.addedBy) + (it.addedAt ? ' · ' + esc(ago(it.addedAt)) : '') + '</div>'
     if (editable) html += '<div style="margin-top:10px"><label class="label" for="insp-channel">Channel</label>' + channelSelect(it.channel) + '</div>'
     else html += '<div class="muted small" style="margin-top:8px">Channel: <b>' + esc(it.channel) + '</b>. Change it from its own file.</div>'
+    html += statusControl(items)
     html += '<div class="row" style="margin-top:10px"><button class="btn primary grow" id="insp-open">' + icon('ext', 14) + 'Open in Figma</button><button class="btn" id="insp-refresh" title="Reload this frame from its file now"' + busy + '>' + icon('refresh', 14) + 'Refresh</button></div>'
     html += '<div class="row" style="margin-top:4px"><button class="btn ghost" id="insp-history" style="padding:0 4px">' + icon('clock', 14) + 'History</button><span class="grow"></span><button class="btn ghost danger" id="insp-remove" style="padding:0 4px">' + (editable ? 'Remove from campaign' : 'Hide on my wall') + '</button></div>'
   } else {
@@ -2053,6 +2123,7 @@ function renderInspector() {
     html += '<button class="icon" id="insp-close" aria-label="Clear selection">' + icon('x', 14) + '</button></div>'
     const channels = Array.from(new Set(items.map((it) => it.channel)))
     html += '<div style="margin-top:10px"><label class="label" for="insp-channel">Channel</label>' + channelSelect(channels.length === 1 ? channels[0] : '') + '</div>'
+    html += statusControl(items)
     html += '<div class="row" style="margin-top:10px"><button class="btn primary grow" id="insp-refresh" title="Reload these frames from their files now"' + busy + '>' + icon('refresh', 14) + 'Refresh ' + items.length + ' frames</button></div>'
     html += '<button class="btn ghost danger" id="insp-remove" style="margin-top:4px;padding:0 4px">Remove ' + items.length + ' from campaign</button>'
   }
@@ -2064,6 +2135,7 @@ function renderInspector() {
   $('insp-refresh').addEventListener('click', () => refreshSelected())
   const chSel = $('insp-channel'); if (chSel) chSel.addEventListener('change', (e) => { if (e.target.value) send('set-channel', { campaignId: c.id, itemIds: ids, channel: e.target.value }) })
   const hist = $('insp-history'); if (hist) hist.addEventListener('click', () => openHistory(items[0]))
+  box.querySelectorAll('[data-status]').forEach((el) => el.addEventListener('click', () => setStatus(ids, el.dataset.status)))
   $('insp-remove').addEventListener('click', (e) => {
     const b = e.currentTarget
     if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again to confirm'; return }
