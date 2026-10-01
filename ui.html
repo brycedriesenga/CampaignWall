@@ -99,7 +99,9 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 #viewport.no-names .lbl, #viewport.no-headings .ch, #viewport.no-edges .edge, #viewport.no-meta .lbl .mt { display: none; }
 #viewport.panning { cursor: grabbing; }
 #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
-.fr { position: absolute; background: var(--bg); box-shadow: 0 0 0 calc(1px * var(--inv)) var(--cv-line); }
+/* No background: frames with rounded corners or see-through areas show the canvas, like in Figma. */
+.fr { position: absolute; box-shadow: 0 0 0 calc(1px * var(--inv)) var(--cv-line); }
+.fr img, .fr .sk, .fr .ph { border-radius: inherit; }
 .fr.sel { outline: calc(2px * var(--inv)) solid var(--brand); outline-offset: calc(2px * var(--inv)); }
 .fr img { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; pointer-events: none; }
 .fr img { position: relative; z-index: 1; transition: opacity .3s ease; }
@@ -935,7 +937,14 @@ function frameGeometry(doc) {
     width: Math.round(bb.width || 0), height: Math.round(bb.height || 0),
     viewW: Math.round(rb.width || bb.width || 0), viewH: Math.round(rb.height || bb.height || 0),
     offX: Math.round((bb.x || 0) - (rb.x || bb.x || 0)), offY: Math.round((bb.y || 0) - (rb.y || bb.y || 0)),
+    radius: cornerRadius(doc),
   }
+}
+// The frame's corner radius as CSS (e.g. "12px" or "12px 12px 0px 0px"), so borders and shadows follow it.
+function cornerRadius(doc) {
+  const r = doc.rectangleCornerRadii
+  if (Array.isArray(r) && r.length === 4 && r.some((x) => x > 0)) return r.map((x) => Math.round(x) + 'px').join(' ')
+  return doc.cornerRadius > 0 ? Math.round(doc.cornerRadius) + 'px' : ''
 }
 
 async function syncItems(list, opts) {
@@ -1547,7 +1556,9 @@ function renderWall() {
       const meta = (fc.name || it.fileName) + (fc.lastTouchedAt ? ' · file edited ' + ago(fc.lastTouchedAt) + (fc.lastTouchedBy ? ' by ' + fc.lastTouchedBy : '') : '')
       const edge = n && n.url && n.viewW && (Math.abs(n.viewW - n.width) > 1 || Math.abs(n.viewH - n.height) > 1)
         ? '<div class="edge" style="left:' + n.offX + 'px;top:' + n.offY + 'px;width:' + n.width + 'px;height:' + n.height + 'px"></div>' : ''
-      html += '<div class="fr' + (S.wall.selected.indexOf(it.id) >= 0 ? ' sel' : '') + (n && n.missing ? ' missing' : '') + '" data-id="' + esc(it.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px;width:' + p.w + 'px;height:' + p.h + 'px;--w:' + p.w + '">'
+      // Round the tile like the frame, unless content spills past the frame's edges (then the tile is bigger than the frame).
+      const radius = n && n.radius && !edge ? ';border-radius:' + n.radius : ''
+      html += '<div class="fr' + (S.wall.selected.indexOf(it.id) >= 0 ? ' sel' : '') + (n && n.missing ? ' missing' : '') + '" data-id="' + esc(it.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px;width:' + p.w + 'px;height:' + p.h + 'px;--w:' + p.w + radius + '">'
       html += '<div class="lbl"><div class="nm">' + (isUpdated(it) ? '<span class="upd">Updated</span>' : '') + esc(name) + '</div><div class="mt">' + esc(meta) + '</div></div>' + body + edge + '</div>'
     }
   }

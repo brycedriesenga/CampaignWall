@@ -172,7 +172,7 @@ function pointer(w, type, target, extra) {
     nodes: {
       '1:2': { id: '1:2', name: 'Email hero', absoluteBoundingBox: { x: 0, y: 0, width: 600, height: 1800 } },
       '1:3': { id: '1:3', name: 'Homepage hero', absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 720 } },
-      '1:4': { id: '1:4', name: 'IG square', absoluteBoundingBox: { x: 0, y: 0, width: 1080, height: 1080 } },
+      '1:4': { id: '1:4', name: 'IG square', cornerRadius: 24, absoluteBoundingBox: { x: 0, y: 0, width: 1080, height: 1080 } },
       '1:5': { id: '1:5', name: 'Desktop', absoluteBoundingBox: { x: 0, y: 0, width: 1536, height: 864 }, absoluteRenderBounds: { x: 0, y: 0, width: 1536, height: 1600 } },
     },
     versions: [{ id: 'v200', created_at: new Date(Date.now() - 3600e3).toISOString(), label: 'Before copy edits', user: { handle: 'Sam' } },
@@ -209,6 +209,8 @@ function pointer(w, type, target, extra) {
   click(wb, '#open-wall'); await tick(300)
   check('wall: meta + nodes + images', api.calls.filter((x) => /\/meta$/.test(x)).length === 1 && api.calls.some((x) => /nodes/.test(x)) && api.calls.some((x) => /images/.test(x)), api.calls.join(' | '))
   check('3 images on the wall', wb.document.querySelectorAll('#world img').length === 3)
+  const igTile = wb.document.querySelector('.fr[data-id="EMAILFILE0001|1:4"]')
+  check('rounded frame: tile follows its corner radius, no background behind it', igTile && igTile.style.borderRadius === '24px', igTile && igTile.style.cssText)
   const tiles = () => [...wb.document.querySelectorAll('#world .fr')]
   const hero = tiles().find((f) => /Email hero/.test(f.textContent))
   check('frames at real size', hero && hero.style.width === '600px' && hero.style.height === '1800px')
