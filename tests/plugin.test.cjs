@@ -331,6 +331,7 @@ function pointer(w, type, target, extra) {
   const cards = [...wb.document.querySelectorAll('.ccard')]
   check('home shows each campaign as a card with frames, people and progress', cards.length >= 1 && /Holiday 2026/.test(cards[0].textContent) && /frames/.test(cards[0].textContent) && cards[0].querySelector('.avatars span') && cards[0].querySelector('.progress') && cards.some((c) => c.classList.contains('active')), cards.map((c) => c.textContent).join(' | '))
   cards.find((c) => /Holiday 2026/.test(c.textContent)).click(); await tick(30)
+  check('panel shows recent activity', /Activity/.test(text(wb)) && /Sam\s*added/.test(text(wb)), text(wb).slice(0, 600))
   check('picking a card opens that campaign', $(wb, '#campaign') && /Holiday 2026/.test($(wb, '#campaign').selectedOptions[0].textContent))
 
   // ===== links between campaign files =====
@@ -423,6 +424,7 @@ function pointer(w, type, target, extra) {
   click(ws, '#add'); await tick(1600)
   await wk.showroomTest.pollIndex(); await tick(50)
   check('a frame Sam adds reaches Kim through the index', /frames from 2 files/.test(text(wk)) && entries['f/ADFILE00002'] && Object.keys(indexEntries()['f/ADFILE00002'].campaigns[cid].items).length === 2, text(wk).slice(0, 300))
+  check('Kim gets a note when a teammate’s frame arrives', /Sam added/.test(wk.document.getElementById('toast').textContent), wk.document.getElementById('toast').textContent)
   const kimCount = (text(wk).match(/(\d+)\s*frames from 2 files/) || [])[1]
   check('Kim’s frame count went up by one', kimCount === '5', kimCount)
   // Someone whose token can only read: still sees the team's changes, and is told why theirs don't sync.
@@ -447,6 +449,7 @@ function pointer(w, type, target, extra) {
   mark = api.calls.length
   await wb.showroomTest.pollIndex(); await tick(1)
   const skyTile = () => wb.document.querySelector('.fr[data-id="ADFILE00002|7:3"]')
+  check('new frame glides in with a glow and a “Sam added …” notice', skyTile() && skyTile().classList.contains('arrive') && /Sam added (Skyscraper|\d+ frames)/.test(($(wb, '#arrivals') || {}).textContent || ''), ($(wb, '#arrivals') || {}).textContent)
   check('new frame appears at once with a loading skeleton', skyTile() && skyTile().querySelector('.sk .spin') && /Waiting|Reading|Rendering/.test(skyTile().textContent), skyTile() && skyTile().innerHTML)
   await tick(300)
   check('…then loads by itself, without re-checking the other files', skyTile() && skyTile().querySelector('img') && since().some((x) => /ADFILE00002\/nodes\?ids=.*7%3A3/.test(x)) && !since().some((x) => /EMAILFILE0001\/(nodes|meta)/.test(x)), since().join(' | '))

@@ -223,6 +223,38 @@ body.presenting .fr { box-shadow: none; }
 .avatars { display: flex; }
 .avatars span { width: 20px; height: 20px; border-radius: 50%; color: #fff; font-size: 8.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid var(--bg); margin-left: -6px; }
 .avatars span:first-child { margin-left: 0; }
+/* Motion: frames glide to new spots, new frames arrive with a glow, popovers and views ease in. */
+.fr { transition: opacity .25s ease; }
+.fr.flip { transition: transform .45s cubic-bezier(.2,.8,.2,1), opacity .25s ease; }
+.fr.arrive { --ad: 0ms; animation: fr-in .6s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--ad); }
+.fr.arrive::after { content: ''; position: absolute; inset: calc(-6px * var(--inv)); border-radius: inherit; pointer-events: none;
+  border: calc(3px * var(--inv)) solid var(--brand); box-shadow: 0 0 calc(28px * var(--inv)) color-mix(in srgb, var(--brand) 55%, transparent);
+  animation: fr-glow 4s ease-out both; animation-delay: var(--ad); }
+@keyframes fr-in { from { opacity: 0; transform: scale(.94); } }
+@keyframes fr-glow { 0% { opacity: 0; } 12% { opacity: 1; } 70% { opacity: .8; } 100% { opacity: 0; } }
+#arrivals { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 4; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; max-width: calc(100% - 24px); }
+.arrival { pointer-events: auto; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 6px 0 8px; border-radius: 99px; background: var(--bg); color: var(--text);
+  box-shadow: 0 6px 24px rgba(0,0,0,.2); font-size: 12px; white-space: nowrap; animation: arrival-in .35s cubic-bezier(.2,.8,.2,1) both; transition: opacity .4s, transform .4s; max-width: 100%; }
+.arrival.out { opacity: 0; transform: translateY(-6px); }
+.arrival .txt { overflow: hidden; text-overflow: ellipsis; }
+.arrival .avatars span { width: 22px; height: 22px; border: 0; }
+.arrival button { height: 24px; border: 0; border-radius: 99px; padding: 0 10px; background: var(--brand); color: var(--onbrand); font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0; }
+@keyframes arrival-in { from { opacity: 0; transform: translateY(-10px) scale(.96); } }
+#viewopts:not(.hidden), #filters:not(.hidden), #shortcuts:not(.hidden), #inspector:not(.hidden), #history:not(.hidden) { animation: pop .16s ease-out; }
+@keyframes pop { from { opacity: 0; transform: translateY(-4px) scale(.985); } }
+.view.enter { animation: view-in .22s ease-out; }
+@keyframes view-in { from { opacity: 0; transform: translateY(4px); } }
+.activity { display: flex; flex-direction: column; gap: 2px; }
+.activity .ev { display: flex; align-items: center; gap: 8px; padding: 5px 4px; font-size: 11.5px; }
+.activity .ev .avatars span { width: 20px; height: 20px; border: 0; }
+.activity .ev .txt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.activity .ev .when { color: var(--muted); font-size: 10.5px; flex-shrink: 0; }
+.item.new { animation: row-new 2.4s ease-out; }
+@keyframes row-new { 0%, 30% { background: color-mix(in srgb, var(--brand) 16%, transparent); } }
+@media (prefers-reduced-motion: reduce) {
+  .fr.flip { transition: none; } .fr.arrive, .fr.arrive::after, .arrival, .view.enter, .item.new { animation: none; }
+  #viewopts:not(.hidden), #filters:not(.hidden), #shortcuts:not(.hidden), #inspector:not(.hidden), #history:not(.hidden) { animation: none; }
+}
 .marquee { position: absolute; z-index: 2; border: 1px solid var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); pointer-events: none; }
 #viewopts { position: absolute; right: 12px; top: 56px; width: 264px; z-index: 6; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 12px; }
 #viewopts .vo-title { font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
@@ -1369,7 +1401,13 @@ function renderFilters() {
 function clearFilters() { const f = wallFilter(); f.channels = []; f.people = []; f.statuses = []; f.updated = false; applyFilter() }
 function applyFilter() {
   S.wall.selected = S.wall.selected.filter((id) => { const p = placementOf(id); return p && matchesFilter(p.it) })
-  renderWall()
+  // Toggle classes in place (rather than redrawing) so frames fade in and out smoothly.
+  for (const g of (S.wall.bounds || { groups: [] }).groups) for (const p of g.items) {
+    const el = document.querySelector('.fr[data-id="' + cssEsc(p.it.id) + '"]')
+    if (el) { el.classList.toggle('dim', !matchesFilter(p.it)); el.classList.toggle('sel', S.wall.selected.indexOf(p.it.id) >= 0) }
+  }
+  renderFilterPill(campaign())
+  renderInspector()
   renderFilters()
 }
 function renderFilterPill(c) {
@@ -1539,6 +1577,9 @@ function endArrange(d, e) {
   ids.splice(slot.index, 0, d.place.it.id)
   const before = d.group.items.map((q) => q.it.id)
   if (ids.join('|') === before.join('|')) return
+  // Let the dropped frame glide from where it was let go, not from its old slot.
+  const z = S.wall.zoom
+  if (S.wall.lastPos) S.wall.lastPos[d.place.it.id] = { x: d.place.x + (e.clientX - d.x) / z, y: d.place.y + (e.clientY - d.y) / z }
   // New full order: every frame as laid out now, with this row's frames in their new order.
   const groupIds = {}
   before.forEach((id) => { groupIds[id] = true })
@@ -1556,6 +1597,84 @@ function saveOrder(order) {
   send('save-prefs', { prefs: { layouts: S.prefs.layouts } })
   send('save-layout', { campaignId: c.id, layout: entry })
   renderWall()
+}
+
+// ---------- live: frames arriving, activity ----------
+// Glides frames that moved since the last draw to their new spot, and greets frames that are new
+// since the wall opened (a teammate's, or yours from another file) with a glow and a notice.
+function animateWall(L, c) {
+  const now = Date.now()
+  const pos = {}
+  for (const g of L.groups) for (const p of g.items) pos[p.it.id] = { x: p.x, y: p.y }
+  const prev = S.wall.lastPos
+  const known = S.wall.known
+  const fresh = known ? c.items.filter((it) => !known[it.id]) : []
+  fresh.forEach((it) => { S.wall.arriving[it.id] = now })
+  const motion = !reducedMotion() && !S.wall.present
+  for (const id of Object.keys(pos)) {
+    const el = document.querySelector('.fr[data-id="' + cssEsc(id) + '"]'); if (!el) continue
+    const since = S.wall.arriving[id]
+    if (since && now - since < 4000) { el.classList.add('arrive'); el.style.setProperty('--ad', -(now - since) + 'ms') }
+    else if (since) delete S.wall.arriving[id]
+    const was = prev && prev[id]
+    if (motion && was && (Math.abs(was.x - pos[id].x) > 0.5 || Math.abs(was.y - pos[id].y) > 0.5)) {
+      el.style.transform = 'translate(' + (was.x - pos[id].x) + 'px,' + (was.y - pos[id].y) + 'px)'
+      el.getBoundingClientRect()   // commit the starting point before animating back to 0
+      el.classList.add('flip'); el.style.transform = ''
+      setTimeout(() => el.classList.remove('flip'), 500)
+    }
+  }
+  S.wall.lastPos = pos
+  S.wall.known = {}
+  c.items.forEach((it) => { S.wall.known[it.id] = true })
+  if (fresh.length) announceArrivals(fresh)
+}
+function announceArrivals(items) {
+  const vp = $('viewport'); if (!vp) return
+  let box = $('arrivals')
+  if (!box) { box = document.createElement('div'); box.id = 'arrivals'; vp.appendChild(box) }
+  const byPerson = {}
+  items.forEach((it) => { const who = it.addedBy || 'Someone'; (byPerson[who] = byPerson[who] || []).push(it) })
+  for (const who of Object.keys(byPerson)) {
+    const list = byPerson[who]
+    const name = (nodeInfo(list[0]) || {}).name || list[0].name
+    const el = document.createElement('div')
+    el.className = 'arrival'
+    el.innerHTML = '<div class="avatars">' + avatar(who) + '</div><span class="txt"><b>' + esc(who) + '</b> added ' + (list.length === 1 ? '<b>' + esc(name) + '</b> · ' + esc(list[0].channel) : list.length + ' frames') + '</span><button>Show</button>'
+    el.querySelector('button').addEventListener('click', () => { setSelection(list.map((it) => it.id)); zoomToSelection(); dismiss() })
+    const dismiss = () => { el.classList.add('out'); setTimeout(() => el.remove(), 400) }
+    box.appendChild(el)
+    setTimeout(dismiss, 7000)
+  }
+}
+// In the panel and on the home screen: a short note when a teammate's frames arrive.
+function noticeArrivals() {
+  const c = campaign(); if (!c) return
+  S.lastIds = S.lastIds || {}
+  const before = S.lastIds[c.id]
+  const ids = c.items.map((it) => it.id)
+  S.lastIds[c.id] = ids
+  if (!before) return
+  const fresh = c.items.filter((it) => before.indexOf(it.id) < 0 && it.fileKey !== S.file.key)
+  if (!fresh.length) return
+  S.freshIds = S.freshIds || {}
+  fresh.forEach((it) => { S.freshIds[it.id] = Date.now() })
+  const who = Array.from(new Set(fresh.map((it) => it.addedBy || 'A teammate')))
+  toast(who.join(' and ') + ' added ' + (fresh.length === 1 ? '“' + ((nodeInfo(fresh[0]) || {}).name || fresh[0].name) + '”' : fresh.length + ' frames') + ' to ' + c.name)
+  if (S.view === 'panel') setTimeout(() => { if (S.view === 'panel') renderPanel() }, 0)
+}
+// Recent additions and status changes in a campaign, newest first.
+function activityFeed(c) {
+  const events = []
+  c.items.forEach((it) => {
+    const name = (nodeInfo(it) || {}).name || it.name
+    if (it.addedAt) events.push({ at: it.addedAt, who: it.addedBy || 'Someone', text: 'added <b>' + esc(name) + '</b>' })
+    if (it.statusAt) events.push({ at: it.statusAt, who: it.statusBy || 'Someone', text: (it.status ? 'marked <b>' + esc(name) + '</b> ' + esc(statusName(it.status).toLowerCase()) : 'cleared the status of <b>' + esc(name) + '</b>') })
+  })
+  if (!events.length) return ''
+  events.sort((a, b) => b.at - a.at)
+  return '<div><div class="label">Activity</div><div class="activity">' + events.slice(0, 5).map((e) =>
+    '<div class="ev"><div class="avatars">' + avatar(e.who) + '</div><div class="txt"><b>' + esc(e.who) + '</b> ' + e.text + '</div><div class="when">' + esc(ago(e.at)) + '</div></div>').join('') + '</div></div>'
 }
 
 // ---------- loading states on the wall ----------
@@ -1603,10 +1722,14 @@ function render() {
   const app = $('app')
   document.body.classList.toggle('walling', S.view === 'wall')
   if (S.view === 'loading') { app.innerHTML = '<div class="empty-wall">Loading…</div>'; return }
-  if (S.view === 'wall') return renderWallShell()
-  if (S.view === 'setup') return renderSetup()
-  if (S.view === 'home') return renderHome()
-  return renderPanel()
+  if (S.view === 'wall') renderWallShell()
+  else if (S.view === 'setup') renderSetup()
+  else if (S.view === 'home') renderHome()
+  else if (S.view === 'welcome') renderWelcome()
+  else renderPanel()
+  // Ease in when switching screens (not on every refresh of the same screen).
+  if (S.lastView !== S.view) { const v = app.querySelector('.view'); if (v) v.classList.add('enter'); S.lastView = S.view }
+  if (S.view === 'panel' || S.view === 'home') noticeArrivals()
 }
 
 // ---------- panel ----------
@@ -1677,6 +1800,8 @@ function renderPanel() {
   html += '<button class="btn primary block" id="open-wall"' + (c.items.length ? '' : ' disabled') + '>' + icon('wall') + (S.token ? 'Open wall' : 'Connect Figma to open the wall') + '</button>'
   html += '</div>'
 
+  html += activityFeed(c)
+
   if (c.hiddenCount) html += '<div class="notice small row" style="gap:8px"><span class="grow">' + c.hiddenCount + ' frame' + (c.hiddenCount === 1 ? ' is' : 's are') + ' hidden on your wall.</span><button class="btn ghost" id="unhide-items" style="height:26px">Show</button></div>'
 
   // Items
@@ -1688,7 +1813,7 @@ function renderPanel() {
       const name = n && n.name ? n.name : it.name
       const here = it.fileKey === S.file.key
       const where = here ? 'this file' : esc((S.cache.files[it.fileKey] || {}).name || it.fileName)
-      html += '<div class="item"><button class="open" data-open="' + esc(it.id) + '" title="' + (here ? 'Select in this file' : 'Open in its file') + '"><div class="nm">' + statusBadge(it.status) + esc(name) + (isUpdated(it) ? ' <span class="upd">Updated</span>' : '') + '</div><div class="mt">' + esc(it.channel) + ' · ' + where + (it.addedBy ? ' · added by ' + esc(it.addedBy) : '') + '</div></button>'
+      html += '<div class="item' + (S.freshIds && S.freshIds[it.id] && Date.now() - S.freshIds[it.id] < 2500 ? ' new' : '') + '"><button class="open" data-open="' + esc(it.id) + '" title="' + (here ? 'Select in this file' : 'Open in its file') + '"><div class="nm">' + statusBadge(it.status) + esc(name) + (isUpdated(it) ? ' <span class="upd">Updated</span>' : '') + '</div><div class="mt">' + esc(it.channel) + ' · ' + where + (it.addedBy ? ' · added by ' + esc(it.addedBy) : '') + '</div></button>'
       html += '<button class="icon" data-remove="' + esc(it.id) + '" aria-label="Remove ' + esc(name) + ' from campaign" title="' + (here ? 'Remove from campaign' : 'Hide on my wall (it lives in another file)') + '">' + icon('x', 14) + '</button></div>'
     })
     html += '</div></div>'
@@ -1962,6 +2087,7 @@ function renderSetup() {
 function openWall() {
   S.view = 'wall'; S.wall.fitted = false; S.wall.selected = []; S.wall.touched = false
   S.wall.synced = false; S.wall.tried = {}; S.wall.retried = {}; S.wall.present = null
+  S.wall.known = null; S.wall.lastPos = null; S.wall.arriving = {}
   const size = S.prefs.wallSize || { width: 1200, height: 800 }
   send('resize', size)
   render()
@@ -2098,6 +2224,7 @@ function renderWall() {
   world.innerHTML = html
   bindImageEvents(world)
   renderFilterPill(c)
+  animateWall(L, c)
   if (!S.wall.fitted) { if (!restorePosition(c.id)) fit(); S.wall.fitted = true } else applyTransform()
   renderInspector()
   renderWallBar()
@@ -2314,7 +2441,7 @@ function bindWall() {
   vp.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 && e.button !== 1) return
     // Controls floating over the canvas handle their own clicks (capturing the pointer would swallow them).
-    if (e.target.closest('#filterpill, #hud, #banner')) return
+    if (e.target.closest('#filterpill, #hud, #banner, #arrivals')) return
     const r = vp.getBoundingClientRect()
     const target = e.target.closest('.fr')
     // Dragging a frame moves it within its row; dragging empty space (or with Space held, or the
