@@ -40,6 +40,15 @@ The wall reads frames straight from their files through Figma's API, so it's alw
 - **Open the wall:** click **Open wall**, and drag the bottom-right corner to resize the window.
   - Pan by dragging or scrolling. Zoom by pinching, or hold ⌘/Ctrl and scroll.
   - Click a frame for details. Double-click it to jump to the real frame.
+- **Keyboard:**
+  - Shift+1 fits everything, Shift+2 zooms to the selection, and Shift+0 goes to 100%.
+  - Arrow keys step from frame to frame.
+  - Space+drag pans.
+  - Press ? on the wall for the full list.
+- **Arrange:** drag a frame to move it within its row. The new order is saved in the file and synced to the team. Dragging empty space still pans.
+- **Filter:** the funnel button shows only certain channels, people, or frames updated since you last looked. The other frames fade out.
+- **Present:** press P or click **Present**. Use the arrow keys to step through frames full-size, and Esc to go back.
+- **Position:** each campaign reopens at the zoom and position you left it.
 - **View options:** the sliders button at the top right of the wall changes how it looks, just for you: background colour (light, mid grey, dark, black, or match Figma), dot grid, frame borders or shadows, frame names, file info, row headings, spacing, and grouping rows by channel, by file or not at all.
 - **Select several frames:** Shift-click, or Shift-drag a box on empty space. Clicking a channel name selects that row, ⌘/Ctrl+A selects all, and Esc clears.
 - **Refresh:**

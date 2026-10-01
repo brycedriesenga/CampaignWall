@@ -494,6 +494,7 @@ function pointer(w, type, target, extra) {
   check('filtering by channel fades the other frames', dimmed.length > 0 && dimmed.every((t) => /EMAILFILE0001/.test(t.dataset.id)) && /Showing \d+ of \d+/.test($(wb, '#filterpill').textContent), $(wb, '#filterpill') && $(wb, '#filterpill').textContent)
   await key('a', { ctrlKey: true })
   check('Select all only picks frames that match the filter', selIds().length > 0 && selIds().every((id) => /ADFILE00002/.test(id)), selIds().join(','))
+  pointer(wb, 'pointerdown', $(wb, '#fp-clear')); pointer(wb, 'pointerup', $(wb, '#fp-clear'))
   click(wb, '#fp-clear'); await tick(20)
   check('clearing filters brings everything back', !wb.document.querySelector('#world .fr.dim') && !$(wb, '#filterpill'))
   // present (Esc closes the filter box, then clears the selection)
@@ -502,6 +503,8 @@ function pointer(w, type, target, extra) {
   check('P starts Present mode at the first frame', wb.document.body.classList.contains('presenting') && /^1 \/ \d+/.test($(wb, '#hud-what').textContent), $(wb, '#hud') && $(wb, '#hud').textContent)
   await key('ArrowRight')
   check('arrow keys move through Present mode', /^2 \/ \d+/.test($(wb, '#hud-what').textContent) && wb.document.querySelectorAll('#world .fr.cur').length === 1)
+  pointer(wb, 'pointerdown', $(wb, '#hud-next')); pointer(wb, 'pointerup', $(wb, '#hud-next')); click(wb, '#hud-next'); await tick(20)
+  check('Present controls respond to clicks', /^3 \/ \d+/.test($(wb, '#hud-what').textContent), $(wb, '#hud-what').textContent)
   await key('Escape')
   check('Esc leaves Present mode', !wb.document.body.classList.contains('presenting') && !$(wb, '#hud'))
   // remembered position

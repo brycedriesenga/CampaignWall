@@ -2154,6 +2154,8 @@ function bindWall() {
   vp.appendChild(marquee)
   vp.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 && e.button !== 1) return
+    // Controls floating over the canvas handle their own clicks (capturing the pointer would swallow them).
+    if (e.target.closest('#filterpill, #hud, #banner')) return
     const r = vp.getBoundingClientRect()
     const target = e.target.closest('.fr')
     // Dragging a frame moves it within its row; dragging empty space (or with Space held, or the
