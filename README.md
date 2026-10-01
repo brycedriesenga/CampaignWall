@@ -40,6 +40,10 @@ The wall reads frames straight from their files through Figma's API, so it's alw
 - **Open the wall:** click **Open wall**, and drag the bottom-right corner to resize the window.
   - Pan by dragging or scrolling. Zoom by pinching, or hold ⌘/Ctrl and scroll.
   - Click a frame for details. Double-click it to jump to the real frame.
+- **Campaign home:** the grid button at the top left shows every campaign as a card, with a preview collage, who's contributed, when it was last active, and review progress.
+- **Review statuses:** select frames on the wall and set them to Draft, In review or Approved. Statuses are shared with the team, show on each frame, and add up to a progress bar per campaign. You can filter by them too.
+- **Live:** when a teammate adds frames while your wall is open, they glide in with a glow and a "Sam added …" note. Click **Show** to jump to them. The panel lists recent activity.
+- **Setup guide:** the first time someone opens Showroom, it walks them through connecting their token (each permission is checked, with a plain fix if one's missing), adding the team, and turning on Team sync. Reopen it from Settings › Setup guide.
 - **Keyboard:**
   - Shift+1 fits everything, Shift+2 zooms to the selection, and Shift+0 goes to 100%.
   - Arrow keys step from frame to frame.

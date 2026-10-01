@@ -30,7 +30,7 @@ Campaign membership lives **inside each design file**, so it's shared with no se
 - **Where it's stored:** shared plugin data `showroom/manifest` on the document root, with an identical backup copy on the first page.
   - The backup exists because it's unverified whether `GET /v1/files/:key?plugin_data=shared` returns plugin data on the DOCUMENT node.
   - Readers take whichever copy has the newest `updatedAt`.
-- **Manifest shape:** `{ v:1, fileKey, fileName, updatedAt, campaigns: { [campaignId]: { name, updatedAt, items: { [nodeId]: { name, w, h, pageName, channel, addedBy, addedAt, updatedAt } } } }, links: { [fileKey]: fileName }, layouts: { [campaignId]: { order: [itemId], at, by } } }`. Size limit about 95 kB; empty campaigns are dropped. `links` (up to 300) is dropped first if the manifest gets too big.
+- **Manifest shape:** `{ v:1, fileKey, fileName, updatedAt, campaigns: { [campaignId]: { name, updatedAt, items: { [nodeId]: { name, w, h, pageName, channel, addedBy, addedAt, updatedAt } } } }, links: { [fileKey]: fileName }, layouts: { [campaignId]: { order: [itemId], at, by } }, statuses: { [campaignId]: { [itemId]: { s, by, at } } } }`. Size limit about 95 kB; empty campaigns are dropped. `links` (up to 300) is dropped first if the manifest gets too big.
 - **Links (v0.3):** each campaign file's manifest lists the other campaign files known to whoever last opened the plugin there.
   - `campaignFiles()` = scanned files with campaigns, plus keys from any manifest's `links` (unless this computer read that file after the link was written and found no manifest).
   - `syncLinks()` sends `save-links` when that set differs from this file's `links`; code.js writes only if the file has campaigns and the key set changed (read-only files are skipped silently). `S.linksSent` stops repeat sends.
@@ -72,7 +72,7 @@ Campaign membership lives **inside each design file**, so it's shared with no se
 - `showroom.token`: the personal access token.
 - `showroom.cache`: `{ savedAt, files: { [fileKey]: { name, version, stamp, lastTouchedAt, lastTouchedBy, checkedAt, error, nodes: { [nodeId]: { name, width, height, viewW, viewH, offX, offY, hash, url, urlAt, changedAt, missing, renderFailed } } } } }`
 - `showroom.scan`: `{ savedAt, checkedAt, team: { id, name, checkedAt, folders: [{ id, name }], error }, folders: { id: { name, checkedAt, listedAt, count, error } }, files: { key: { name, lastModified, touched, scannedAt, indexAt, manifest|null, error, gone } } }`
-- `showroom.prefs`: `{ me, wallSize, folders: [{ id, name }], team: { id, name }, index: { key, name }, lookBackDays, wallView, wallPos: { [cid]: {zoom, tx, ty, at} }, layouts: { [cid]: {order, at, by} } }`
+- `showroom.prefs`: `{ me, wallSize, folders: [{ id, name }], team: { id, name }, index: { key, name }, lookBackDays, onboarded, wallView, wallPos: { [cid]: {zoom, tx, ty, at} }, layouts: { [cid]: {order, at, by} }, statuses: { [cid]: { [itemId]: {s, by, at} } } }`
 - On frames: `showroom/campaigns` holds a JSON array of campaign IDs. It's used for relaunch buttons.
 - On the file root: `showroom/fileKey` holds a pasted file key when `figma.fileKey` is unavailable.
 
@@ -144,6 +144,42 @@ Tiles are sized to `absoluteRenderBounds`, because `/images` renders content tha
 - `campaignOrder()` takes the newest `at` across all manifests and the local copy. `orderItems()` sorts before grouping, and unknown items go last.
 - `hasShared(m)` (campaigns or layouts) decides publishing to Team sync and `rememberThisFile`. `writeManifest` drops `layouts` after `links` if the manifest is too big.
 
+**Review statuses (v0.7):** `STATUSES` are `''`, draft, review and approved.
+- Saved via `save-status {campaignId, changes}` → manifest `statuses[cid][itemId] = {s, by, at}` in the current file. Any file can set any frame's status, and there's a local copy in `prefs.statuses`.
+- `statusMap(cid)` merges all manifests plus the local copy, newest `at` per frame. `allCampaigns()` adds `it.status`, `statusBy` and `statusAt`.
+- **UI:** `statusBadge` on tiles and the panel list, `statusControl` in the inspector (one or many frames), `progressBar(items)` in the panel summary and home cards, a status chip group in Filters, and the status in the Present HUD.
+- `hasShared` counts statuses, and code.js keeps the 50 most recent campaigns.
+
+**Campaign home (v0.7):** the `home` view (`renderHome`) opens from the grid button in the panel header. It also opens on load when there's no active campaign and more than one campaign exists.
+- Cards come from `campaignStats(c)`: up to 4 cached render URLs as a collage, contributors (`avatar(name)`, colour hashed from the name), last activity, channels and progress.
+- Hovering a card shows a Wall button that opens the wall directly. A search field appears when there are more than 4 campaigns.
+
+**Live and motion (v0.7):**
+- `animateWall(L, c)` runs after each wall render.
+  - **FLIP:** frames whose position changed since `S.wall.lastPos` glide to their new spot (`.flip`). A dropped frame glides from the drop point.
+  - **Arrivals:** frames not in `S.wall.known` get `.arrive`, a scale-in plus brand glow. `--ad` (a negative animation delay) keeps the animation going smoothly across re-renders.
+  - `announceArrivals` shows "Name added X · Channel [Show]" pills in `#arrivals`, grouped per person, which auto-dismiss after 7 s.
+- **Panel:** `noticeArrivals()` (called from `render()` for panel and home) toasts teammates' new frames, ignoring frames from the current file, and briefly highlights their rows (`.item.new`). `activityFeed(c)` lists the last 5 additions and status changes.
+- **Other motion:** filters toggle `.dim` in place, so frames fade. Popovers animate with `pop`, and screens ease in when the view changes (`S.lastView`). Everything respects `prefers-reduced-motion`.
+
+**First-run setup (v0.7):** the `welcome` view (`renderWelcome`) shows on load until `prefs.onboarded`, and can be reopened from Settings › Setup guide. It has three steps:
+1. **Token:** shown when not connected, with the scope list.
+2. **Team:** paste the team link, or "Set up for you" if `TEAM.teamId` or folders are built in.
+3. **Team sync:** paste the index link, or built in through `TEAM.indexFile`.
+
+`checkAccess()` tests each scope separately and stores the results in `S.ob.checks`:
+
+| Scope | Request |
+|---|---|
+| `current_user` | `/v1/me` |
+| `file_metadata` | `/files/:key/meta` |
+| `file_content` | `/files/:key?depth=1` |
+| `file_versions` | `/versions?page_size=1` |
+| `folders` | team folders, or the first folder |
+| `file_variables` | `/variables/local` on the index file |
+
+Steps that can't be checked yet show "–" with a note. Tests skip the screen through `boot(..., {welcome: true})`.
+
 Wall selection is `S.wall.selected` (an array):
 - Shift, Ctrl or ⌘-click toggles a frame.
 - Shift-drag on the background draws a selection box.
@@ -157,7 +193,7 @@ Rate limits: tier 1 is about 15 requests/min on an Organization plan with a Full
 
 ## Messages (UI → code)
 
-`init`, `save-token`, `create-campaign`, `rename-campaign`, `hide-campaign {shared}`, `unhide-campaign`, `unhide-items`, `set-active {campaignId, campaignName}`, `add-selection {campaignId, campaignName, channel|'auto'}`, `remove-item {itemIds}`, `set-channel {itemIds, channel}`, `mark-seen {seen}`, `set-file-key {url}`, `save-links {links}`, `save-layout {campaignId, layout}`, `save-cache`, `save-scan`, `save-prefs`, `resize`, `open-item {fileKey, nodeId, versionId?}`, `notify`.
+`init`, `save-token`, `create-campaign`, `rename-campaign`, `hide-campaign {shared}`, `unhide-campaign`, `unhide-items`, `set-active {campaignId, campaignName}`, `add-selection {campaignId, campaignName, channel|'auto'}`, `remove-item {itemIds}`, `set-channel {itemIds, channel}`, `mark-seen {seen}`, `set-file-key {url}`, `save-links {links}`, `save-layout {campaignId, layout}`, `save-status {campaignId, changes}`, `save-cache`, `save-scan`, `save-prefs`, `resize`, `open-item {fileKey, nodeId, versionId?}`, `notify`.
 
 Code → UI: `state` (full), `selection`, `error`.
 
@@ -169,7 +205,7 @@ Code → UI: `state` (full), `selection`, `error`.
   - that the v2 folders endpoint's response fields match what the code parses;
   - that the image render for a version works for old versions.
 - v0.3 adds links between campaign files, the daily re-check, Look back and team folder discovery. `npm test` has 59 checks. Also to confirm in real Figma: the team folders response and folder `meta` `updated_at` behaviour.
-- v0.4 adds Team sync (the variables index). `npm test` has 95 checks. First real test on 2026-09-30 worked: team link found 21 folders, a folder listed 4 files, the index filled with 2 files, and the wall showed both. Personal tokens offer these scopes: current_user, file_content, file_metadata, file_versions, file_variables read/write, folders:read (no projects or folder_metadata).
+- v0.4 adds Team sync (the variables index). `npm test` has 110 checks. First real test on 2026-09-30 worked: team link found 21 folders, a folder listed 4 files, the index filled with 2 files, and the wall showed both. Personal tokens offer these scopes: current_user, file_content, file_metadata, file_versions, file_variables read/write, folders:read (no projects or folder_metadata).
 
 ## Next steps (not built)
 
