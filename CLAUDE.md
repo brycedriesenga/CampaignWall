@@ -101,6 +101,14 @@ For each file in the campaign:
 
 Tiles are sized to `absoluteRenderBounds`, because `/images` renders content that spills outside non-clipping frames. The frame's own box (`absoluteBoundingBox`) is drawn as a dashed `.edge` inside the tile. The cache stores `width/height` (the frame) and `viewW/viewH/offX/offY` (the render).
 
+**Loading states (v0.4.1):** tiles without an image show a skeleton (`.sk`: sweep, spinner, step text) instead of a striped box.
+- `setPhase(fileKey, nodeIds, phase)` updates the step text in place (queued → "Waiting…", reading, rendering) without redrawing the wall.
+- Once a render URL exists, the `<img>` starts with class `ld` (transparent) over the skeleton; a capture-phase `load` listener on `#world` (`bindImageEvents`) fades it in, removes the skeleton and records the URL in `S.wall.loaded` so redraws don't fade again.
+- On image `error` (usually an expired URL), the URL is cleared and the frame re-rendered once per wall visit (`S.wall.retried`).
+- `loadMissing()` loads only frames that have no image yet (`needsImage`), once per frame per visit (`S.wall.tried`), and `renderWall()` calls it after the first sync (`S.wall.synced`). So frames arriving from Team sync, another window or a teammate load by themselves. The index poll no longer runs a full `refreshWall`.
+- `syncItems` called while busy sets `S.wall.pending`, and `loadMissing` runs when the current round ends (it used to be silently dropped).
+- `tier1Gate` shows "Pausing for Figma's rate limit (N s)…" in the wall bar while it waits.
+
 Wall selection is `S.wall.selected` (an array):
 - Shift, Ctrl or ⌘-click toggles a frame.
 - Shift-drag on the background draws a selection box.
@@ -126,7 +134,7 @@ Code → UI: `state` (full), `selection`, `error`.
   - that the v2 folders endpoint's response fields match what the code parses;
   - that the image render for a version works for old versions.
 - v0.3 adds links between campaign files, the daily re-check, Look back and team folder discovery. `npm test` has 59 checks. Also to confirm in real Figma: the team folders response and folder `meta` `updated_at` behaviour.
-- v0.4 adds Team sync (the variables index). `npm test` has 66 checks. First real test on 2026-09-30 worked: team link found 21 folders, a folder listed 4 files, the index filled with 2 files, and the wall showed both. Personal tokens offer these scopes: current_user, file_content, file_metadata, file_versions, file_variables read/write, folders:read (no projects or folder_metadata).
+- v0.4 adds Team sync (the variables index). `npm test` has 69 checks. First real test on 2026-09-30 worked: team link found 21 folders, a folder listed 4 files, the index filled with 2 files, and the wall showed both. Personal tokens offer these scopes: current_user, file_content, file_metadata, file_versions, file_variables read/write, folders:read (no projects or folder_metadata).
 
 ## Next steps (not built)
 

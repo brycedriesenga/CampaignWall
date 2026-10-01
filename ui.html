@@ -92,6 +92,20 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 .fr { position: absolute; background: var(--bg); box-shadow: 0 0 0 calc(1px * var(--inv)) color-mix(in srgb, var(--text) 16%, transparent); }
 .fr.sel { outline: calc(2px * var(--inv)) solid var(--brand); outline-offset: calc(2px * var(--inv)); }
 .fr img { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; pointer-events: none; }
+.fr img { position: relative; z-index: 1; transition: opacity .3s ease; }
+.fr img.ld { opacity: 0; }
+/* Loading skeleton: a soft sweep plus a small spinner and what's happening, kept screen-sized at any zoom. */
+.fr .sk { position: absolute; inset: 0; overflow: hidden; background: var(--bg2); display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: calc(8px * var(--inv)); color: var(--muted); font-size: calc(12px * var(--inv)); text-align: center; }
+.fr .sk::before { content: ''; position: absolute; inset: 0; transform: translateX(-100%); animation: sk-sweep 1.6s ease-in-out infinite;
+  background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--text) 7%, transparent) 50%, transparent 80%); }
+.fr .sk .spin { width: calc(18px * var(--inv)); height: calc(18px * var(--inv)); border-radius: 50%; animation: sk-spin .8s linear infinite;
+  border: calc(2px * var(--inv)) solid color-mix(in srgb, var(--text) 16%, transparent); border-top-color: var(--brand); }
+.fr .sk .tx { position: relative; }
+@keyframes sk-sweep { to { transform: translateX(100%); } }
+@keyframes sk-spin { to { transform: rotate(360deg); } }
+.far .fr .sk .tx { display: none; }
+@media (prefers-reduced-motion: reduce) { .fr .sk::before, .fr .sk .spin { animation: none; } .fr img { transition: none; } }
 .fr .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px;
   background: repeating-linear-gradient(45deg, var(--bg2) 0 12px, var(--bg3) 12px 24px); color: var(--muted);
   font-size: calc(12px * var(--inv)); }
@@ -164,7 +178,8 @@ const S = {
   file: { key: '', name: '', keyFromApi: false, manifest: { campaigns: {} } }, channelChoice: 'auto', creating: false,
   search: { busy: false, status: '', error: '' }, history: null,
   index: { files: {}, vars: {}, colId: '', modeId: '', readAt: 0, error: '', writeError: '', canWrite: null, pauseUntil: 0 },
-  wall: { zoom: 1, tx: 40, ty: 80, selected: [], busy: false, status: '', banner: null, fitted: false },
+  wall: { zoom: 1, tx: 40, ty: 80, selected: [], busy: false, status: '', banner: null, fitted: false,
+    phase: {}, tried: {}, retried: {}, loaded: {}, pending: false, synced: false },
 }
 
 // ---------- plumbing ----------
@@ -276,6 +291,8 @@ async function tier1Gate() {
     const now = Date.now()
     while (tier1Log.length && now - tier1Log[0] > 60000) tier1Log.shift()
     if (tier1Log.length < (window.CW_TIER1_PER_MIN || 12)) { tier1Log.push(now); return }
+    const wait = Math.ceil((60000 - (now - tier1Log[0])) / 1000)
+    if (S.view === 'wall' && S.wall.busy) { S.wall.status = 'Pausing for Figma’s rate limit (' + wait + ' s)…'; renderWallBar() }
     await new Promise((r) => setTimeout(r, 60000 - (now - tier1Log[0]) + 50))
   }
 }
@@ -812,7 +829,7 @@ async function pollIndex() {
     if (changed) { S.scan.savedAt = Date.now(); send('save-scan', { scan: S.scan }) }
     if (!changed) { if (S.view === 'setup') renderSetupIfIdle(); else renderSearchStatus(); return }
     const after = (campaign() || { items: [] }).items.map((it) => it.id).join(',')
-    if (S.view === 'wall') { renderWall(); if (after !== before) refreshWall('auto') }
+    if (S.view === 'wall') renderWall()   // renderWall loads any frames it hasn't seen yet
     else if (S.view === 'setup') renderSetupIfIdle()
     else rerenderData()
   })
@@ -898,12 +915,15 @@ function frameGeometry(doc) {
 
 async function syncItems(list, opts) {
   const c = campaign()
-  if (!c || S.wall.busy) return
+  if (!c) return
+  // Already loading: note it, and pick up anything still missing as soon as this round ends.
+  if (S.wall.busy) { S.wall.pending = true; return }
   if (!S.token) { S.wall.banner = { kind: 'warn', text: 'Add your Figma token in Settings to load previews.' }; renderWall(); return }
   S.wall.busy = true; S.wall.banner = null
   const byFile = {}
   for (const item of list) (byFile[item.fileKey] = byFile[item.fileKey] || []).push(item)
   const keys = Object.keys(byFile)
+  for (const key of keys) setPhase(key, byFile[key].map((it) => it.nodeId), 'queued')
   let problems = 0
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i]
@@ -922,6 +942,7 @@ async function syncItems(list, opts) {
       const stamp = String(meta.version || '') + '|' + String(meta.last_touched_at || '')
       const read = opts.readFrames === 'always' || fc.stamp !== stamp || ids.some((id) => !fc.nodes[id] || !fc.nodes[id].viewW)
       if (read) {
+        setPhase(key, ids, 'reading')
         S.wall.status = 'Reading ' + (ids.length === 1 ? 'frame' : ids.length + ' frames') + ' in “' + (fc.name || 'file') + '”…'; renderWallBar()
         const res = await api('/files/' + key + '/nodes?ids=' + encodeURIComponent(ids.join(',')))
         for (const id of ids) {
@@ -946,6 +967,7 @@ async function syncItems(list, opts) {
         return opts.forceRender.indexOf(id) >= 0 || !n.url || Date.now() - (n.urlAt || 0) > IMAGE_MAX_AGE
       })
       if (toRender.length) {
+        setPhase(key, toRender, 'rendering')
         S.wall.status = 'Rendering ' + toRender.length + ' frame' + (toRender.length === 1 ? '' : 's') + '…'; renderWallBar()
         await renderImages(key, toRender, fc, 1)
         const failed = toRender.filter((id) => !fc.nodes[id].url || fc.nodes[id].renderFailed)
@@ -963,9 +985,12 @@ async function syncItems(list, opts) {
       if (e.kind === 'notfound') fc.error = 'File not found, or you don’t have access to it.'
     }
     S.cache.files[key] = fc
+    for (const it of items) delete S.wall.phase[it.id]
     renderWall()
   }
   S.wall.busy = false
+  S.wall.synced = true
+  S.wall.phase = {}
   S.wall.status = problems ? problems + ' file' + (problems === 1 ? '' : 's') + ' had problems' : 'Checked ' + ago(Date.now())
   S.wall.checkedAt = Date.now()
   S.cache.savedAt = Date.now()
@@ -975,6 +1000,38 @@ async function syncItems(list, opts) {
   for (const item of c.items) { const n = nodeInfo(item); if (n && n.hash && !item.seenHash) seen[item.id] = n.hash }
   if (Object.keys(seen).length) send('mark-seen', { campaignId: c.id, seen: seen })
   renderWall()
+  if (S.wall.pending) { S.wall.pending = false; setTimeout(loadMissing, 0) }
+}
+
+// ---------- loading states on the wall ----------
+const PHASE_TEXT = { queued: 'Waiting…', reading: 'Reading from Figma…', rendering: 'Rendering image…', image: 'Loading image…' }
+function skeleton(text) { return '<div class="sk"><div class="spin"></div><div class="tx">' + esc(text) + '</div></div>' }
+// Updates the text on tiles that are still loading, without redrawing the wall.
+function setPhase(key, nodeIds, phase) {
+  for (const id of nodeIds) {
+    const itemId = key + '|' + id
+    S.wall.phase[itemId] = phase
+    const tx = document.querySelector('.fr[data-id="' + cssEsc(itemId) + '"] .sk .tx')
+    if (tx) tx.textContent = PHASE_TEXT[phase]
+  }
+}
+function cssEsc(v) { return String(v).replace(/["\\]/g, '\\$&') }
+// A frame still needs its image if nothing went wrong and nothing's been loaded yet.
+function needsImage(it) {
+  const fc = S.cache.files[it.fileKey]
+  const n = nodeInfo(it)
+  return !(fc && fc.error) && !(n && (n.url || n.missing || n.renderFailed))
+}
+// Loads just the frames that have no image yet (e.g. one a teammate just added). Each frame is
+// tried once per wall visit automatically; the refresh button always tries everything again.
+function loadMissing() {
+  const c = campaign()
+  if (S.view !== 'wall' || !c || !S.token) return
+  if (S.wall.busy) { S.wall.pending = true; return }
+  const list = c.items.filter((it) => needsImage(it) && !S.wall.tried[it.id])
+  if (!list.length) return
+  list.forEach((it) => { S.wall.tried[it.id] = true })
+  syncItems(list, { readFrames: 'if-changed', forceRender: [], fullFile: false })
 }
 
 async function renderImages(key, ids, fc, scale) {
@@ -1288,6 +1345,7 @@ function renderSetup() {
 // ---------- wall ----------
 function openWall() {
   S.view = 'wall'; S.wall.fitted = false; S.wall.selected = []; S.wall.touched = false
+  S.wall.synced = false; S.wall.tried = {}; S.wall.retried = {}
   const size = S.prefs.wallSize || { width: 1200, height: 800 }
   send('resize', size)
   render()
@@ -1383,7 +1441,9 @@ function renderWall() {
       else if (n && n.url) body = '<img src="' + esc(n.url) + '" alt="' + esc(name) + '" draggable="false">'
       else if (fc.error) body = '<div class="ph">' + esc(fc.error) + '</div>'
       else if (n && n.renderFailed) body = '<div class="ph">Figma couldn’t render this frame.</div>'
-      else body = '<div class="ph">' + (S.token ? 'Loading…' : 'Connect Figma to see this') + '</div>'
+      else body = S.token ? skeleton(PHASE_TEXT[S.wall.phase[it.id]] || PHASE_TEXT.queued) : '<div class="ph">Connect Figma to see this</div>'
+      // While the rendered image downloads, keep the skeleton underneath and fade the image in.
+      if (n && n.url && !n.missing && !S.wall.loaded[n.url]) body = skeleton(PHASE_TEXT.image) + body.replace('<img ', '<img class="ld" ')
       const meta = (fc.name || it.fileName) + (fc.lastTouchedAt ? ' · file edited ' + ago(fc.lastTouchedAt) + (fc.lastTouchedBy ? ' by ' + fc.lastTouchedBy : '') : '')
       const edge = n && n.url && n.viewW && (Math.abs(n.viewW - n.width) > 1 || Math.abs(n.viewH - n.height) > 1)
         ? '<div class="edge" style="left:' + n.offX + 'px;top:' + n.offY + 'px;width:' + n.width + 'px;height:' + n.height + 'px"></div>' : ''
@@ -1392,9 +1452,38 @@ function renderWall() {
     }
   }
   world.innerHTML = html
+  bindImageEvents(world)
   if (!S.wall.fitted) { fit(); S.wall.fitted = true } else applyTransform()
   renderInspector()
   renderWallBar()
+  // Frames added since the last check (by you in another window, or a teammate) load on their own.
+  if (S.wall.synced && c.items.some((it) => needsImage(it) && !S.wall.tried[it.id])) setTimeout(loadMissing, 50)
+}
+
+// Image load/error events don't bubble, so listen on the world in the capture phase (once).
+function bindImageEvents(world) {
+  if (world.dataset.imgEvents) return
+  world.dataset.imgEvents = '1'
+  world.addEventListener('load', (e) => {
+    const img = e.target
+    if (!img || img.tagName !== 'IMG') return
+    S.wall.loaded[img.getAttribute('src')] = true
+    img.classList.remove('ld')
+    const sk = img.parentNode && img.parentNode.querySelector('.sk')
+    if (sk) setTimeout(() => sk.remove(), 320)
+  }, true)
+  world.addEventListener('error', (e) => {
+    const img = e.target
+    if (!img || img.tagName !== 'IMG') return
+    // Usually an expired image link. Ask Figma for a fresh render, once per frame per visit.
+    const tile = img.closest('.fr'); const id = tile && tile.dataset.id
+    const c = campaign(); const it = c && c.items.find((x) => x.id === id); const n = it && nodeInfo(it)
+    if (!it || !n || S.wall.retried[id]) { const sk = tile && tile.querySelector('.sk .tx'); if (sk) sk.textContent = 'Image didn’t load. Try Refresh.'; return }
+    S.wall.retried[id] = true
+    delete S.wall.tried[id]
+    n.url = ''; n.urlAt = 0
+    renderWall()
+  }, true)
 }
 
 window.addEventListener('resize', () => { if (S.view === 'wall' && !S.wall.touched) fit() })

@@ -427,6 +427,28 @@ function pointer(w, type, target, extra) {
   click(wb, '#back'); await tick(10)
   api.varsReadOnly = false
 
+  // ===== loading states: frames added while the wall is open load by themselves =====
+  click(wb, '#open-wall'); await tick(400)
+  const addOnSam = async (id, name, w, h) => {
+    api.files.ADFILE00002.nodes[id] = { id, name, absoluteBoundingBox: { x: 0, y: 0, width: w, height: h } }
+    sam.setSel([sam.mk(id, name, 'FRAME', w, h)]); await tick(150)
+    click(ws, '#add'); await tick(1600)
+  }
+  await addOnSam('7:3', 'Skyscraper', 160, 600)
+  mark = api.calls.length
+  await wb.showroomTest.pollIndex(); await tick(1)
+  const skyTile = () => wb.document.querySelector('.fr[data-id="ADFILE00002|7:3"]')
+  check('new frame appears at once with a loading skeleton', skyTile() && skyTile().querySelector('.sk .spin') && /Waiting|Reading|Rendering/.test(skyTile().textContent), skyTile() && skyTile().innerHTML)
+  await tick(300)
+  check('…then loads by itself, without re-checking the other files', skyTile() && skyTile().querySelector('img') && since().some((x) => /ADFILE00002\/nodes\?ids=.*7%3A3/.test(x)) && !since().some((x) => /EMAILFILE0001\/(nodes|meta)/.test(x)), since().join(' | '))
+  check('image waits to fade in until it has downloaded', skyTile() && skyTile().querySelector('img.ld') && skyTile().querySelector('.sk'))
+  // A frame that arrives while the wall is busy refreshing still gets loaded afterwards.
+  await addOnSam('7:4', 'Half page', 300, 600)
+  click(wb, '#wall-refresh'); await tick(1)
+  await wb.showroomTest.pollIndex(); await tick(500)
+  check('frame added mid-refresh loads once the refresh finishes', !!wb.document.querySelector('.fr[data-id="ADFILE00002|7:4"] img'), (wb.document.querySelector('.fr[data-id="ADFILE00002|7:4"]') || {}).innerHTML)
+  click(wb, '#wall-back'); await tick(30)
+
   // ===== carry-over from the Campaign Wall test builds =====
   const oldStore = new Map()
   oldStore.set('cw.token', 'figd_old')
