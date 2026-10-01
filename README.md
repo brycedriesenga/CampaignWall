@@ -66,7 +66,7 @@ The wall reads frames straight from their files through Figma's API, so it's alw
 - **Removing frames:**
   - Removing a frame from the file you're in removes it for everyone.
   - Frames that live in other files can only be removed from their own file. On your wall you can hide them for yourself.
-- **Frames with content outside their edges:** the wall shows everything that's visible, like Figma does. A dashed line marks the frame's actual edge.
+- **Frames with content outside their edges:** the wall shows everything that's visible, like Figma does. By default the content outside fades and a dashed line marks the frame's actual edge. **View options** has fade only, line only, or show all.
 
 ## Rolling it out to the team
 

@@ -96,7 +96,7 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 #viewport.no-grid { background-image: none; }
 #viewport[data-frame="none"] .fr { box-shadow: none; }
 #viewport[data-frame="shadow"] .fr { box-shadow: 0 calc(2px * var(--inv)) calc(6px * var(--inv)) rgba(0,0,0,.12), 0 calc(10px * var(--inv)) calc(30px * var(--inv)) rgba(0,0,0,.16); }
-#viewport.no-names .lbl, #viewport.no-headings .ch, #viewport.no-edges .edge, #viewport.no-meta .lbl .mt { display: none; }
+#viewport.no-names .lbl, #viewport.no-headings .ch, #viewport.no-meta .lbl .mt { display: none; }
 #viewport.panning { cursor: grabbing; }
 #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
 /* No background: frames with rounded corners or see-through areas show the canvas, like in Figma. */
@@ -132,7 +132,12 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
   font-size: 15px; font-weight: 700; white-space: nowrap; }
 .ch em { display: block; font-style: normal; font-size: 11px; color: var(--cv-sub); font-weight: 500; }
 .far .lbl .mt { display: none; }
-.fr .edge { position: absolute; pointer-events: none; outline: calc(1px * var(--inv)) dashed color-mix(in srgb, var(--brand) 70%, transparent); }
+.fr .edgewrap { position: absolute; inset: 0; overflow: hidden; z-index: 2; pointer-events: none; }   /* above the image */
+.fr .edge { position: absolute; pointer-events: none; }
+#viewport[data-edge="line"] .edge, #viewport[data-edge="both"] .edge { outline: calc(1px * var(--inv)) dashed color-mix(in srgb, var(--brand) 70%, transparent); }
+/* Fade: everything outside the frame's own edge sinks into the canvas colour. */
+#viewport[data-edge="fade"] .edge, #viewport[data-edge="both"] .edge { box-shadow: 0 0 0 100000px color-mix(in srgb, var(--cv-bg) 72%, transparent); }
+#viewport[data-edge="none"] .edgewrap { display: none; }
 .ch { pointer-events: auto; cursor: pointer; }
 .ch:hover { color: var(--brand); }
 .hist-preview { margin-top: 10px; border-radius: 8px; background: var(--bg2); min-height: 140px; height: 42vh; padding: 8px; display: flex; align-items: center; justify-content: center; }
@@ -223,6 +228,8 @@ body.presenting .fr { box-shadow: none; }
 .avatars { display: flex; }
 .avatars span { width: 22px; height: 22px; border-radius: 50%; color: #fff; font-size: 8px; font-weight: 700; letter-spacing: -0.02em; display: flex; align-items: center; justify-content: center; border: 2px solid var(--bg); margin-left: -5px; flex-shrink: 0; }
 .avatars span:first-child { margin-left: 0; }
+.avatars span { position: relative; overflow: hidden; }
+.avatars span img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 /* Motion: frames glide to new spots, new frames arrive with a glow, popovers and views ease in. */
 .fr { transition: opacity .25s ease; }
 .fr.flip { transition: transform .45s cubic-bezier(.2,.8,.2,1), opacity .25s ease; }
@@ -411,6 +418,7 @@ function allCampaigns() {
         c.items.push({ id: src.key + '|' + nodeId, fileKey: src.key, fileName: src.fileName, nodeId: nodeId, name: it.name,
           width: it.w, height: it.h, pageName: it.pageName, channel: it.channel || 'Other', addedBy: it.addedBy,
           addedAt: it.addedAt || 0, updatedAt: it.updatedAt || it.addedAt || 0, shared: true })
+        if (it.addedBy && it.addedByPhoto) PHOTOS[it.addedBy] = it.addedByPhoto
       }
     }
   }
@@ -1189,8 +1197,12 @@ async function syncItems(list, opts) {
 }
 
 // ---------- wall view options (saved per person in prefs.wallView) ----------
-const WALL_VIEW_DEFAULTS = { bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, edges: true, spacing: 'normal', group: 'channel' }
-function wallView() { return Object.assign({}, WALL_VIEW_DEFAULTS, S.prefs.wallView || {}) }
+const WALL_VIEW_DEFAULTS = { bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, edge: 'both', spacing: 'normal', group: 'channel' }
+function wallView() {
+  const v = Object.assign({}, WALL_VIEW_DEFAULTS, S.prefs.wallView || {})
+  if (S.prefs.wallView && S.prefs.wallView.edges === false && !S.prefs.wallView.edge) v.edge = 'none'   // older on/off setting
+  return v
+}
 function applyWallView() {
   const vp = $('viewport'); if (!vp) return
   const v = wallView()
@@ -1200,7 +1212,7 @@ function applyWallView() {
   vp.classList.toggle('no-names', !v.names)
   vp.classList.toggle('no-meta', !v.meta)
   vp.classList.toggle('no-headings', !v.headings)
-  vp.classList.toggle('no-edges', !v.edges)
+  vp.dataset.edge = v.edge
 }
 function setWallView(change) {
   const before = wallView()
@@ -1234,7 +1246,8 @@ function renderViewOptions() {
   html += '<div><div class="vo-title">Frames</div>' + seg('frame', [['border', 'Border'], ['shadow', 'Shadow'], ['none', 'None']]) + '</div>'
   html += '<div><div class="vo-title">Group rows by</div>' + seg('group', [['channel', 'Channel'], ['file', 'File'], ['none', 'Nothing']]) + '</div>'
   html += '<div><div class="vo-title">Spacing</div>' + seg('spacing', [['tight', 'Tight'], ['normal', 'Normal'], ['roomy', 'Roomy']]) + '</div>'
-  html += '<div>' + toggle('grid', 'Dot grid') + toggle('names', 'Frame names') + toggle('meta', 'File and edit info') + toggle('headings', 'Row headings') + toggle('edges', 'Frame edge (overflowing content)') + '</div>'
+  html += '<div><div class="vo-title">Content outside a frame’s edge</div>' + seg('edge', [['both', 'Fade + line'], ['fade', 'Fade'], ['line', 'Line'], ['none', 'Show all']]) + '</div>'
+  html += '<div>' + toggle('grid', 'Dot grid') + toggle('names', 'Frame names') + toggle('meta', 'File and edit info') + toggle('headings', 'Row headings') + '</div>'
   html += '<div class="row" style="justify-content:space-between"><button class="btn ghost" id="vo-reset" style="height:26px;padding:0 6px">Reset to defaults</button>' +
     '<button class="btn ghost" id="vo-keys" style="height:26px;padding:0 6px">' + icon('keys', 14) + 'Shortcuts</button></div>'
   box.innerHTML = html
@@ -1515,7 +1528,7 @@ function statusName(s) { const f = STATUSES.find((x) => x[0] === (s || '')); ret
 function statusBadge(s) { return s ? '<span class="st st-' + esc(s) + '">' + esc(statusName(s)) + '</span>' : '' }
 function statusMap(campaignId) {
   const out = {}
-  const take = (map) => { for (const id of Object.keys(map || {})) { const e = map[id]; if (e && (!out[id] || (e.at || 0) > (out[id].at || 0))) out[id] = e } }
+  const take = (map) => { for (const id of Object.keys(map || {})) { const e = map[id]; if (e && e.by && e.ph) PHOTOS[e.by] = e.ph; if (e && (!out[id] || (e.at || 0) > (out[id].at || 0))) out[id] = e } }
   take(((S.prefs && S.prefs.statuses) || {})[campaignId])
   for (const src of manifests()) take(src.m.statuses && src.m.statuses[campaignId])
   return out
@@ -1533,7 +1546,8 @@ function setStatus(ids, s) {
   const c = campaign(); if (!c || !ids.length) return
   const changes = {}
   const at = Date.now(), by = (S.prefs.me && S.prefs.me.handle) || ''
-  ids.forEach((id) => { changes[id] = { s: s, by: by, at: at } })
+  const ph = (S.prefs.me && S.prefs.me.img) || ''
+  ids.forEach((id) => { changes[id] = ph ? { s: s, by: by, at: at, ph: ph } : { s: s, by: by, at: at } })
   const all = Object.assign({}, S.prefs.statuses || {})
   all[c.id] = Object.assign({}, all[c.id] || {}, changes)
   S.prefs.statuses = all
@@ -1645,18 +1659,31 @@ function animateWall(L, c) {
   const fresh = known ? c.items.filter((it) => !known[it.id]) : []
   fresh.forEach((it) => { S.wall.arriving[it.id] = now })
   const motion = !reducedMotion() && !S.wall.present
+  const D = 450
+  S.wall.flights = S.wall.flights || {}
   for (const id of Object.keys(pos)) {
     const el = document.querySelector('.fr[data-id="' + cssEsc(id) + '"]'); if (!el) continue
     const since = S.wall.arriving[id]
     if (since && now - since < 4000) { el.classList.add('arrive'); el.style.setProperty('--ad', -(now - since) + 'ms') }
     else if (since) delete S.wall.arriving[id]
     const was = prev && prev[id]
+    // A frame that moved starts a glide; a glide still under way when the wall redraws (e.g. right
+    // after saving) carries on from where it had got to instead of snapping.
+    let dx = 0, dy = 0, dur = D
+    const f = S.wall.flights[id]
+    const p = f ? Math.min(1, (now - f.t0) / D) : 1
+    const left = f && p < 1 ? Math.pow(1 - p, 3) : 0   // how much of the glide is left (ease-out curve)
     if (motion && was && (Math.abs(was.x - pos[id].x) > 0.5 || Math.abs(was.y - pos[id].y) > 0.5)) {
-      el.style.transform = 'translate(' + (was.x - pos[id].x) + 'px,' + (was.y - pos[id].y) + 'px)'
-      el.getBoundingClientRect()   // commit the starting point before animating back to 0
-      el.classList.add('flip'); el.style.transform = ''
-      setTimeout(() => el.classList.remove('flip'), 500)
-    }
+      dx = was.x - pos[id].x + (f ? f.dx * left : 0); dy = was.y - pos[id].y + (f ? f.dy * left : 0)
+      S.wall.flights[id] = { dx: dx, dy: dy, t0: now }
+    } else if (motion && f && p < 1) {
+      dx = f.dx * left; dy = f.dy * left; dur = Math.max(80, D * (1 - p))
+    } else { delete S.wall.flights[id]; continue }
+    el.style.transform = 'translate(' + dx + 'px,' + dy + 'px)'
+    el.getBoundingClientRect()   // commit the starting point before animating back to 0
+    el.style.transitionDuration = dur + 'ms'
+    el.classList.add('flip'); el.style.transform = ''
+    setTimeout(() => { el.classList.remove('flip'); el.style.transitionDuration = '' }, dur + 50)
   }
   S.wall.lastPos = pos
   S.wall.known = {}
@@ -1998,7 +2025,7 @@ function renderWelcome() {
     const btn = $('ob-connect'); btn.disabled = true; btn.textContent = 'Checking…'
     try {
       const me = await testToken(token)
-      S.prefs.me = { handle: me.handle, email: me.email }
+      S.prefs.me = { handle: me.handle, email: me.email, img: me.img_url || '' }
       send('save-prefs', { prefs: { me: S.prefs.me } })
       send('save-token', { token: token })
       S.token = token
@@ -2079,10 +2106,16 @@ async function sendToBoard(mode) {
 }
 
 // ---------- campaign home: every campaign as a card ----------
+// People's Figma profile pictures, learned from frames they added and statuses they set.
+const PHOTOS = {}
 function avatar(name) {
   let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?'
-  return '<span title="' + esc(name) + '" style="background:hsl(' + h + ' 52% 46%)">' + esc(initials) + '</span>'
+  const me = S.prefs && S.prefs.me
+  const photo = PHOTOS[name] || (me && me.img && (me.handle === name) ? me.img : '')
+  // Initials sit underneath; the photo covers them once it loads (and disappears if it can't).
+  return '<span title="' + esc(name) + '" style="background:hsl(' + h + ' 52% 46%)">' + esc(initials) +
+    (photo ? '<img src="' + esc(photo) + '" alt="" onerror="this.remove()">' : '') + '</span>'
 }
 function campaignStats(c) {
   const people = Array.from(new Set(c.items.map((it) => it.addedBy).filter(Boolean)))
@@ -2235,7 +2268,7 @@ function renderSetup() {
     out.innerHTML = '<div class="notice">Checking…</div>'
     try {
       const me = await testToken(token)
-      S.prefs.me = { handle: me.handle, email: me.email }
+      S.prefs.me = { handle: me.handle, email: me.email, img: me.img_url || '' }
       send('save-prefs', { prefs: { me: S.prefs.me } })
       send('save-token', { token: token })
       out.innerHTML = '<div class="notice" style="color:var(--ok)">Connected as ' + esc(me.handle) + (me.email ? ' (' + esc(me.email) + ')' : '') + '.</div>'
@@ -2431,7 +2464,7 @@ function renderWall() {
       if (n && n.url && !n.missing && !S.wall.loaded[n.url]) body = skeleton(PHASE_TEXT.image) + body.replace('<img ', '<img class="ld" ')
       const meta = (fc.name || it.fileName) + (fc.lastTouchedAt ? ' · file edited ' + ago(fc.lastTouchedAt) + (fc.lastTouchedBy ? ' by ' + fc.lastTouchedBy : '') : '')
       const edge = n && n.url && n.viewW && (Math.abs(n.viewW - n.width) > 1 || Math.abs(n.viewH - n.height) > 1)
-        ? '<div class="edge" style="left:' + n.offX + 'px;top:' + n.offY + 'px;width:' + n.width + 'px;height:' + n.height + 'px"></div>' : ''
+        ? '<div class="edgewrap"><div class="edge" style="left:' + n.offX + 'px;top:' + n.offY + 'px;width:' + n.width + 'px;height:' + n.height + 'px"></div></div>' : ''
       // Round the tile like the frame, unless content spills past the frame's edges (then the tile is bigger than the frame).
       const radius = n && n.radius && !edge ? ';border-radius:' + n.radius : ''
       html += '<div class="fr' + (S.wall.selected.indexOf(it.id) >= 0 ? ' sel' : '') + (n && n.missing ? ' missing' : '') + (matchesFilter(it) ? '' : ' dim') + (S.wall.present && S.wall.present.id === it.id ? ' cur' : '') + '" data-id="' + esc(it.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px;width:' + p.w + 'px;height:' + p.h + 'px;--w:' + p.w + radius + '">'

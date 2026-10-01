@@ -93,6 +93,10 @@ function findPage(node) {
 function whoAmI() {
   try { return figma.currentUser ? figma.currentUser.name : ''; } catch (e) { return ''; }
 }
+// Your Figma profile picture, saved with frames you add so teammates see your face, not initials.
+function myPhoto() {
+  try { return figma.currentUser ? figma.currentUser.photoUrl || '' : ''; } catch (e) { return ''; }
+}
 
 // ---------- the manifest stored inside this file ----------
 function parseManifest(raw) {
@@ -231,7 +235,7 @@ async function addSelection(msg) {
       : (existing ? existing.channel : guessChannel(node.width, node.height));
     camp.items[node.id] = {
       name: node.name, w: Math.round(node.width), h: Math.round(node.height), pageName: page.name, channel: channel,
-      addedBy: existing ? existing.addedBy : whoAmI(), addedAt: existing ? existing.addedAt : Date.now(), updatedAt: Date.now(),
+      addedBy: existing ? existing.addedBy : whoAmI(), addedByPhoto: existing ? existing.addedByPhoto || '' : myPhoto(), addedAt: existing ? existing.addedAt : Date.now(), updatedAt: Date.now(),
     };
     if (existing) updated += 1; else added += 1;
     tagNode(node, msg.campaignId, true);
@@ -561,21 +565,32 @@ async function layOut(sec, items, scale, x0, y0) {
 }
 async function addEmbeds(sec, items, mode, x0, y0) {
   if (mode === 'none' || !figma.createLinkPreviewAsync) return 0;
-  const urls = []
-  const seen = {}
+  const urls = [];
+  const seen = {};
   for (const it of items) {
-    const url = mode === 'frame' ? frameLink(it) : fileLink(it)
-    if (!seen[url]) { seen[url] = true; urls.push(url) }
+    const url = mode === 'frame' ? frameLink(it) : fileLink(it);
+    if (!seen[url]) { seen[url] = true; urls.push(url); }
   }
-  let x = x0, h = 0
+  // Embeds report a placeholder size until they've loaded, so make them all, ask for a uniform
+  // size, give them a moment, then measure and space them out in a row.
+  const nodes = [];
   for (const url of urls) {
     try {
-      const node = await figma.createLinkPreviewAsync(url)
-      sec.appendChild(node); node.x = x; node.y = y0
-      x += node.width + 40; h = Math.max(h, node.height)
+      const node = await figma.createLinkPreviewAsync(url);
+      sec.appendChild(node);
+      try { node.resize(960, 540); } catch (e) { /* this embed keeps its own size */ }
+      nodes.push(node);
     } catch (e) { /* Figma couldn't make an embed for this link; the "Open live" links still work */ }
   }
-  return h
+  if (!nodes.length) return 0;
+  await new Promise((r) => setTimeout(r, 1200));
+  let x = x0, h = 0;
+  for (const node of nodes) {
+    const w = node.width >= 300 ? node.width : 1152, nh = node.height >= 150 ? node.height : 648;
+    node.x = x; node.y = y0;
+    x += w + 80; h = Math.max(h, nh);
+  }
+  return h;
 }
 function boardNodes(campaignId) {
   const page = figma.currentPage

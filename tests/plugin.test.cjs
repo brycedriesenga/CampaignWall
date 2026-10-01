@@ -36,7 +36,7 @@ function makeEnv({ fileKey, fileName = 'Holiday Emails', user = 'Bryce', store }
   const mkNode = makeNodeFactory(page)
   const env = { store, nodes, opened, handlers, root, page, fileKey }
   env.figma = {
-    fileKey, root, currentUser: { name: user },
+    fileKey, root, currentUser: { name: user, photoUrl: 'https://s3-alpha.figma.com/profile/' + user },
     currentPage: { get selection() { return sel }, set selection(v) { sel = v }, name: 'Emails', id: '0:1' },
     viewport: { scrollAndZoomIntoView() {} },
     clientStorage: {
@@ -333,6 +333,7 @@ function pointer(w, type, target, extra) {
   const cards = [...wb.document.querySelectorAll('.ccard')]
   check('home shows each campaign as a card with frames, people and progress', cards.length >= 1 && /Holiday 2026/.test(cards[0].textContent) && /frames/.test(cards[0].textContent) && cards[0].querySelector('.avatars span') && cards[0].querySelector('.progress') && cards.some((c) => c.classList.contains('active')), cards.map((c) => c.textContent).join(' | '))
   cards.find((c) => /Holiday 2026/.test(c.textContent)).click(); await tick(30)
+  check('activity shows people’s Figma profile pictures', !!wb.document.querySelector('.activity img[src*="profile/Sam"]'))
   check('panel shows recent activity', /Activity/.test(text(wb)) && /Sam\s*added/.test(text(wb)), text(wb).slice(0, 600))
   check('picking a card opens that campaign', $(wb, '#campaign') && /Holiday 2026/.test($(wb, '#campaign').selectedOptions[0].textContent))
 
@@ -480,6 +481,11 @@ function pointer(w, type, target, extra) {
   wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
   check('Esc closes View options', $(wb, '#viewopts').classList.contains('hidden'))
   click(wb, '#view-opts'); await tick(10); click(wb, '#vo-reset'); await tick(20); click(wb, '#view-opts'); await tick(10)
+  click(wb, '#view-opts'); await tick(10)
+  check('outside-the-edge setting defaults to fade + line', vp().dataset.edge === 'both')
+  click(wb, '#viewopts [data-vo="edge"][data-val="fade"]'); await tick(20)
+  check('content outside a frame can just fade', vp().dataset.edge === 'fade')
+  click(wb, '#vo-reset'); await tick(20); click(wb, '#view-opts'); await tick(10)
   check('reset restores the defaults', vp().dataset.bg === 'auto' && !vp().classList.contains('no-grid') && vp().dataset.frame === 'border')
 
   {
@@ -598,13 +604,15 @@ function pointer(w, type, target, extra) {
     click(wj, '#back'); await tick(20)
     check('on a FigJam board, the panel offers Send to board instead of adding a selection', !!$(wj, '#board-send') && !$(wj, '#add') && /Send Holiday 2026 to this board/.test(text(wj)), text(wj).slice(0, 300))
     const frameCount = Number((text(wj).match(/(\d+)\s*frames from/) || [])[1] || 0)
-    click(wj, '#board-send'); await tick(900)
+    click(wj, '#board-send'); await tick(2200)
     const all = (n, out = []) => { for (const c of n.children || []) { out.push(c); all(c, out) } return out }
     const nodes = all(pg)
     const rects = nodes.filter((n) => n.type === 'RECTANGLE' && n.getSharedPluginData('showroom', 'boardItem'))
     const outer = nodes.find((n) => n.getSharedPluginData('showroom', 'board'))
     check('Send to board places every frame as an image, grouped in channel sections', outer && rects.length === frameCount && frameCount > 0 && rects.every((r) => (r.fills[0] && r.fills[0].type === 'IMAGE') || /7:2"/.test(r.getSharedPluginData('showroom', 'boardItem'))) && nodes.filter((n) => n.type === 'SECTION').length >= 3, rects.length + ' of ' + frameCount + ' fills:' + rects.map((r) => r.fills[0] && r.fills[0].type).join(',') + ' sections:' + nodes.filter((n) => n.type === 'SECTION').length)
     check('each frame gets a label with a live link', nodes.filter((n) => n.type === 'TEXT' && n.hyperlink && /node-id=/.test(n.hyperlink.value)).length === frameCount)
+    const embeds = nodes.filter((n) => n.type === 'EMBED')
+    check('embeds sit side by side without overlapping', embeds.length < 2 || embeds.every((e, i) => i === 0 || e.x >= embeds[i - 1].x + embeds[i - 1].width), embeds.map((e) => e.x + '/' + e.width).join(' '))
     check('one live embed per source file', nodes.filter((n) => n.type === 'EMBED').length === new Set(rects.map((r) => JSON.parse(r.getSharedPluginData('showroom', 'boardItem')).fileKey)).size)
     check('panel now offers Sync board', !!$(wj, '#board-sync') && /is on this board/.test(text(wj)), text(wj).slice(0, 300))
     // Someone rearranges a frame on the board; then that frame changes in its file.

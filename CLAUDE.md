@@ -101,7 +101,7 @@ For each file in the campaign:
 
 **Ctrl+A:** Figma desktop runs "select all" from its app menu, so `preventDefault` isn't enough. `body.walling` disables text selection while the wall is open, and a `selectionchange` guard clears any selection that still appears.
 
-Tiles are sized to `absoluteRenderBounds`, because `/images` renders content that spills outside non-clipping frames. The frame's own box (`absoluteBoundingBox`) is drawn as a dashed `.edge` inside the tile. The cache stores `width/height` (the frame) and `viewW/viewH/offX/offY` (the render).
+Tiles are sized to `absoluteRenderBounds`, because `/images` renders content that spills outside non-clipping frames. The frame's own box (`absoluteBoundingBox`) is the `.edge` inside a clipping `.edgewrap` (z-index 2, above the image). View option `edge`: `both` (default), `fade`, `line` or `none` sets `#viewport[data-edge]`. The fade is a huge box-shadow in the canvas colour, clipped by `.edgewrap`; the old `edges: false` setting maps to `none`. The cache stores `width/height` (the frame) and `viewW/viewH/offX/offY` (the render).
 
 **Loading states (v0.4.1):** tiles without an image show a skeleton (`.sk`: sweep, spinner, step text) instead of a striped box.
 - `setPhase(fileKey, nodeIds, phase)` updates the step text in place (queued → "Waiting…", reading, rendering) without redrawing the wall.
@@ -112,7 +112,7 @@ Tiles are sized to `absoluteRenderBounds`, because `/images` renders content tha
 - `tier1Gate` shows "Pausing for Figma's rate limit (N s)…" in the wall bar while it waits.
 
 **View options (v0.5):** the sliders button at the right of the wall bar opens `#viewopts`. Settings are saved per person in `prefs.wallView` (`wallView()` merges them over `WALL_VIEW_DEFAULTS`).
-- **Settings:** background `bg` (auto, light, gray, dark, black), `frame` (border, shadow, none), `group` (channel, file, none), `spacing` (tight, normal, roomy, mapped through `SPACING`), and the toggles `grid`, `names`, `meta`, `headings` and `edges`.
+- **Settings:** background `bg` (auto, light, gray, dark, black), `frame` (border, shadow, none), `group` (channel, file, none), `spacing` (tight, normal, roomy, mapped through `SPACING`), `edge` (both, fade, line, none), and the toggles `grid`, `names`, `meta` and `headings`.
 - **Canvas colours** are CSS vars on `#viewport`: `--cv-bg`, `--cv-ink`, `--cv-sub` and `--cv-line`, set by `data-bg`. The other settings are `data-frame` and `no-*` classes, applied by `applyWallView()`.
 - **Layout:** spacing, grouping and names change the layout, so they re-render. If you haven't panned or zoomed, the wall also re-fits. `wallGroups()` builds the rows. Headings carry `data-group` (an index into `S.wall.bounds.groups`), and clicking one selects that group.
 - **Closing:** Esc or a click outside closes the box.
@@ -146,6 +146,10 @@ Tiles are sized to `absoluteRenderBounds`, because `/images` renders content tha
 - `campaignOrder()` takes the newest `at` across all manifests and the local copy. `orderItems()` sorts before grouping, and unknown items go last.
 - `hasShared(m)` (campaigns or layouts) decides publishing to Team sync and `rememberThisFile`. `writeManifest` drops `layouts` after `links` if the manifest is too big.
 
+**Avatars:** `avatar(name)` draws initials with the person's Figma photo over them when known (`<img onerror=remove>`).
+- Photos come from `PHOTOS`, filled from manifest items' `addedByPhoto` (code.js `myPhoto()` stores `figma.currentUser.photoUrl` when adding frames) and from status entries' `ph` (`prefs.me.img`, from `/v1/me` `img_url`).
+- `s3-alpha.figma.com` was added to `allowedDomains` for profile pictures.
+
 **Review statuses (v0.7):** `STATUSES` are `''`, draft, review and approved.
 - Saved via `save-status {campaignId, changes}` → manifest `statuses[cid][itemId] = {s, by, at}` in the current file. Any file can set any frame's status, and there's a local copy in `prefs.statuses`.
 - `statusMap(cid)` merges all manifests plus the local copy, newest `at` per frame. `allCampaigns()` adds `it.status`, `statusBy` and `statusAt`.
@@ -158,7 +162,7 @@ Tiles are sized to `absoluteRenderBounds`, because `/images` renders content tha
 
 **Live and motion (v0.7):**
 - `animateWall(L, c)` runs after each wall render.
-  - **FLIP:** frames whose position changed since `S.wall.lastPos` glide to their new spot (`.flip`). A dropped frame glides from the drop point.
+  - **FLIP:** frames whose position changed since `S.wall.lastPos` glide to their new spot (`.flip`). A dropped frame glides from the drop point. Glides in progress are tracked in `S.wall.flights` (`{dx, dy, t0}`), so a redraw mid-glide (e.g. the state message after saving an order) continues from the remaining offset (ease-out estimate) instead of snapping.
   - **Arrivals:** frames not in `S.wall.known` get `.arrive`, a scale-in plus brand glow. `--ad` (a negative animation delay) keeps the animation going smoothly across re-renders.
   - `announceArrivals` shows "Name added X · Channel [Show]" pills in `#arrivals`, grouped per person, which auto-dismiss after 7 s.
 - **Panel:** `noticeArrivals()` (called from `render()` for panel and home) toasts teammates' new frames, ignoring frames from the current file, and briefly highlights their rows (`.item.new`). `activityFeed(c)` lists the last 5 additions and status changes.
@@ -188,7 +192,7 @@ Steps that can't be checked yet show "–" with a note. Tests skip the screen th
 - **`boardPlace`:**
   - An outer section "<campaign> · Showroom" placed right of existing content (`emptySpot`), holding a title, then embeds, then one section per channel.
   - Each frame is a rectangle with an IMAGE fill (`figma.createImageAsync(url)`), at real or half size. A label sits above it: name, "Status · Channel · File" with the status word coloured, and "Open live ↗" hyperlinked to the frame.
-  - Embeds come from `figma.createLinkPreviewAsync` (FigJam only): one per file or per frame, wrapped in try/catch.
+  - Embeds come from `figma.createLinkPreviewAsync` (FigJam only): one per file or per frame, wrapped in try/catch. They report a placeholder size until loaded, so `addEmbeds` asks each for 960×540, waits 1.2 s, then measures and spaces them in a row (falling back to 1152×648 if still unmeasured). Embeds overlapped before this fix.
   - Tags (shared plugin data, ns `showroom`):
     - `board` on the outer section: `{campaignId, name, placedAt, syncedAt, scale}`;
     - `boardItem` on each image: `{campaignId, itemId, fileKey, nodeId, hash, status, scale, syncedAt}`;
@@ -232,7 +236,7 @@ Code → UI: `state` (full), `selection`, `error`.
   - that the v2 folders endpoint's response fields match what the code parses;
   - that the image render for a version works for old versions.
 - v0.3 adds links between campaign files, the daily re-check, Look back and team folder discovery. `npm test` has 59 checks. Also to confirm in real Figma: the team folders response and folder `meta` `updated_at` behaviour.
-- v0.4 adds Team sync (the variables index). `npm test` has 122 checks. First real test on 2026-09-30 worked: team link found 21 folders, a folder listed 4 files, the index filled with 2 files, and the wall showed both. Personal tokens offer these scopes: current_user, file_content, file_metadata, file_versions, file_variables read/write, folders:read (no projects or folder_metadata).
+- v0.4 adds Team sync (the variables index). `npm test` has 126 checks. First real test on 2026-09-30 worked: team link found 21 folders, a folder listed 4 files, the index filled with 2 files, and the wall showed both. Personal tokens offer these scopes: current_user, file_content, file_metadata, file_versions, file_variables read/write, folders:read (no projects or folder_metadata).
 
 ## Next steps (not built)
 

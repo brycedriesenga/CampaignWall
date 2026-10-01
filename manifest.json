@@ -14,9 +14,10 @@
     "allowedDomains": [
       "https://api.figma.com",
       "https://figma-alpha-api.s3.us-west-2.amazonaws.com",
-      "https://s3-alpha-sig.figma.com"
+      "https://s3-alpha-sig.figma.com",
+      "https://s3-alpha.figma.com"
     ],
-    "reasoning": "Reads campaign frames, file versions and team folders through Figma's own REST API, and shows Figma's rendered images."
+    "reasoning": "Reads campaign frames, file versions and team folders through Figma's own REST API, and shows Figma's rendered images and profile pictures."
   },
   "relaunchButtons": [
     {
