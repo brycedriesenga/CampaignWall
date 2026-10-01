@@ -1782,7 +1782,9 @@ function renderPanel() {
     return
   }
 
-  // Selection
+  // On a FigJam board: send the campaign to the board, or sync it. In design files: the selection.
+  if (S.editor === 'figjam') html += boardCard(c)
+  else {
   const sel = S.selection
   html += '<div class="stack"><div class="label" style="margin:0">Selection</div>'
   if (!sel.items.length) {
@@ -1809,6 +1811,7 @@ function renderPanel() {
     html += '<button class="btn primary block" id="add"' + (S.file.key ? '' : ' disabled') + '>' + esc(label) + '</button>'
   }
   html += '</div>'
+  }
 
   // Campaign summary + wall
   const byChannel = {}
@@ -1877,6 +1880,12 @@ function bindPanel() {
   on('channel', 'change', (e) => { S.channelChoice = e.target.value; render() })
   on('add', 'click', () => { const c = campaign(); send('add-selection', { campaignId: c.id, campaignName: c.name, channel: S.channelChoice }) })
   on('save-file-link', 'click', () => send('set-file-key', { url: $('file-link').value }))
+  on('board-send', 'click', () => sendToBoard('place'))
+  on('board-sync', 'click', () => sendToBoard('sync'))
+  document.querySelectorAll('[data-bopt]').forEach((el) => el.addEventListener('click', () => {
+    S.prefs.boardOpts = Object.assign({}, boardOpts(), { [el.dataset.bopt]: el.dataset.bopt === 'scale' ? Number(el.dataset.val) : el.dataset.val })
+    send('save-prefs', { prefs: { boardOpts: S.prefs.boardOpts } }); render()
+  }))
   on('open-wall', 'click', () => { if (!S.token) { S.view = 'setup'; render(); return } openWall() })
   document.querySelectorAll('[data-open]').forEach((el) => el.addEventListener('click', () => openItem(el.dataset.open)))
   document.querySelectorAll('[data-remove]').forEach((el) => el.addEventListener('click', () => send('remove-item', { campaignId: campaign().id, itemIds: [el.dataset.remove] })))
@@ -2010,6 +2019,49 @@ function renderWelcome() {
   }
   on('ob-start', 'click', finish)
   on('ob-skip', 'click', finish)
+}
+
+// ---------- FigJam boards ----------
+// In FigJam the panel offers "Send to board" (places every frame at real or half size, grouped by
+// channel, with live links and optional embeds) and "Sync board" (swaps in new renders in place,
+// updates names and statuses, puts new frames in an Inbox). The placing happens in code.js.
+function boardOpts() { return Object.assign({ embeds: 'file', scale: 1 }, S.prefs.boardOpts || {}) }
+function boardCard(c) {
+  const info = (S.boardInfo || {})[c.id]
+  const o = boardOpts()
+  const job = S.boardJob
+  const seg = (key, options) => '<div class="seg">' + options.map((x) => '<button class="' + (String(o[key]) === String(x[0]) ? 'on' : '') + '" data-bopt="' + key + '" data-val="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>'
+  let html = '<div class="stack"><div class="label" style="margin:0">This board</div>'
+  if (info && info.count) {
+    html += '<div class="card" style="padding:12px"><div style="font-weight:600">' + esc(c.name) + ' is on this board</div>'
+    html += '<div class="muted small" style="margin-top:2px">' + info.count + ' frame' + (info.count === 1 ? '' : 's') + (info.syncedAt ? ' · synced ' + esc(ago(info.syncedAt)) : '') + '</div>'
+    html += '<div class="muted small" style="margin-top:6px">Sync swaps in new versions where they are, updates names and statuses, and puts new frames in an Inbox. Nothing people moved or added is touched.</div></div>'
+    html += '<button class="btn primary block" id="board-sync"' + (job || !S.token ? ' disabled' : '') + '>' + icon('refresh', 14) + (job ? esc(job) : 'Sync board') + '</button>'
+    html += '<button class="btn ghost" id="board-send" style="align-self:flex-start;height:26px;padding:0 6px"' + (job ? ' disabled' : '') + '>Place another copy</button>'
+  } else {
+    html += '<div class="hint"><span class="ico">' + icon('wall') + '</span><div><div style="font-weight:600">Send ' + esc(c.name) + ' to this board</div><div class="muted small">Every frame, grouped by channel, with a live link to each. Arrange, sticky and stamp them like anything else on the board.</div></div></div>'
+    html += '<div><div class="label">Size</div>' + seg('scale', [[1, 'Real size'], [0.5, 'Half size']]) + '</div>'
+    html += '<div><div class="label">Live embeds</div>' + seg('embeds', [['file', 'One per file'], ['frame', 'One per frame'], ['none', 'None']]) + '</div>'
+    html += '<button class="btn primary block" id="board-send"' + (job || !S.token || !c.items.length ? ' disabled' : '') + '>' + (job ? esc(job) : 'Send to board') + '</button>'
+  }
+  return html + '</div>'
+}
+// Makes sure every frame has a fresh render (same checks as the wall), then hands the list to code.js.
+async function sendToBoard(mode) {
+  const c = campaign(); if (!c || S.boardJob) return
+  S.boardJob = 'Checking frames…'; render()
+  await syncItems(c.items, { readFrames: mode === 'sync' ? 'always' : 'if-changed', forceRender: [], fullFile: true })
+  const items = c.items.map((it) => {
+    const n = nodeInfo(it) || {}
+    return { id: it.id, fileKey: it.fileKey, nodeId: it.nodeId, name: n.name || it.name, channel: it.channel, fileName: (S.cache.files[it.fileKey] || {}).name || it.fileName,
+      w: n.viewW || n.width || it.width, h: n.viewH || n.height || it.height, url: n.url || '', hash: n.hash || '', status: it.status || '' }
+  })
+  const missing = items.filter((it) => !it.url).length
+  S.boardJob = mode === 'sync' ? 'Syncing…' : 'Placing ' + items.length + ' frames…'; render()
+  const o = boardOpts()
+  send(mode === 'sync' ? 'board-sync' : 'board-place', { campaignId: c.id, campaignName: c.name, items: items, embeds: o.embeds, scale: o.scale })
+  if (missing) toast(missing + ' frame' + (missing === 1 ? '' : 's') + ' had no image yet and will show as grey boxes until the next sync.', true)
+  setTimeout(() => { if (S.boardJob) { S.boardJob = null; render() } }, 120000)
 }
 
 // ---------- campaign home: every campaign as a card ----------
@@ -2709,6 +2761,8 @@ window.onmessage = (event) => {
   if (msg.type === 'state') {
     const firstLoad = S.view === 'loading'
     S.data = msg.data; S.token = msg.token || ''; S.prefs = msg.prefs || {}; S.selection = msg.selection; S.file = msg.file
+    S.editor = msg.editor || 'figma'; S.boardInfo = msg.board || null
+    if (msg.boardResult) { S.boardJob = null }
     if (firstLoad) S.cache = msg.cache && msg.cache.files ? msg.cache : { files: {} }
     else if (msg.cache && msg.cache.files && !S.wall.busy) mergeCache(msg.cache)
     // Folder search results: take another window's newer results unless this window is searching.
@@ -2736,7 +2790,7 @@ window.onmessage = (event) => {
     if (S.view === 'panel') render()
     return
   }
-  if (msg.type === 'error') toast(msg.message, true)
+  if (msg.type === 'error') { toast(msg.message, true); if (S.boardJob) { S.boardJob = null; render() } }
 }
 
 window.showroomTest = { discover: discover, pollIndex: pollIndex }

@@ -72,7 +72,7 @@ Campaign membership lives **inside each design file**, so it's shared with no se
 - `showroom.token`: the personal access token.
 - `showroom.cache`: `{ savedAt, files: { [fileKey]: { name, version, stamp, lastTouchedAt, lastTouchedBy, checkedAt, error, nodes: { [nodeId]: { name, width, height, viewW, viewH, offX, offY, hash, url, urlAt, changedAt, missing, renderFailed } } } } }`
 - `showroom.scan`: `{ savedAt, checkedAt, team: { id, name, checkedAt, folders: [{ id, name }], error }, folders: { id: { name, checkedAt, listedAt, count, error } }, files: { key: { name, lastModified, touched, scannedAt, indexAt, manifest|null, error, gone } } }`
-- `showroom.prefs`: `{ me, wallSize, folders: [{ id, name }], team: { id, name }, index: { key, name }, lookBackDays, onboarded, wallView, wallPos: { [cid]: {zoom, tx, ty, at} }, layouts: { [cid]: {order, at, by} }, statuses: { [cid]: { [itemId]: {s, by, at} } } }`
+- `showroom.prefs`: `{ me, wallSize, boardOpts: { scale, embeds }, folders: [{ id, name }], team: { id, name }, index: { key, name }, lookBackDays, onboarded, wallView, wallPos: { [cid]: {zoom, tx, ty, at} }, layouts: { [cid]: {order, at, by} }, statuses: { [cid]: { [itemId]: {s, by, at} } } }`
 - On frames: `showroom/campaigns` holds a JSON array of campaign IDs. It's used for relaunch buttons.
 - On the file root: `showroom/fileKey` holds a pasted file key when `figma.fileKey` is unavailable.
 
@@ -180,6 +180,31 @@ Tiles are sized to `absoluteRenderBounds`, because `/images` renders content tha
 
 Steps that can't be checked yet show "–" with a note. Tests skip the screen through `boot(..., {welcome: true})`.
 
+**FigJam boards (v0.8, prototype):** `manifest.json` `editorType` is now `["figma","figjam"]`. code.js sends `editor` (`figma.editorType`) and, in FigJam, `board`: `boardSummary()` per campaign `{count, placedAt, syncedAt}`.
+- In FigJam the panel's Selection area becomes `boardCard(c)`: Send to board (Size: real or half, `prefs.boardOpts.scale`; Live embeds: per file, per frame or none, `prefs.boardOpts.embeds`). Once the campaign is on the board, it offers Sync board. `add-selection` is refused on boards.
+- `sendToBoard(mode)` runs `syncItems` first (Sync forces re-reads), then sends `board-place` or `board-sync` with items `{id, fileKey, nodeId, name, channel, fileName, w, h, url, hash, status}`. `S.boardJob` holds the button label while it runs and clears on the next state or error.
+- **`boardPlace`:**
+  - An outer section "<campaign> · Showroom" placed right of existing content (`emptySpot`), holding a title, then embeds, then one section per channel.
+  - Each frame is a rectangle with an IMAGE fill (`figma.createImageAsync(url)`), at real or half size. A label sits above it: name, "Status · Channel · File" with the status word coloured, and "Open live ↗" hyperlinked to the frame.
+  - Embeds come from `figma.createLinkPreviewAsync` (FigJam only): one per file or per frame, wrapped in try/catch.
+  - Tags (shared plugin data, ns `showroom`):
+    - `board` on the outer section: `{campaignId, name, placedAt, syncedAt, scale}`;
+    - `boardItem` on each image: `{campaignId, itemId, fileKey, nodeId, hash, status, scale, syncedAt}`;
+    - `boardLabel` on each label text: `{itemId, part}`;
+    - `channel` on each channel section.
+  - `makeSection` falls back to a frame if `createSection` fails.
+- **`boardSync`:**
+  - Images whose `hash` changed get a new fill in place. The top-left stays where it is, and the size follows the frame's new size times scale.
+  - Label names and statuses are rewritten. Frames no longer in the campaign fade to 35% opacity.
+  - New frames go into an "Inbox · new frames" section right of the board.
+  - It updates `board.syncedAt` and returns a summary message.
+- **Unverified in real FigJam:**
+  - `createSection` and `hyperlink` on text in FigJam plugins;
+  - `createImageAsync` with the S3 render URLs (they're in `allowedDomains`);
+  - whether `createLinkPreviewAsync` on a Figma design link makes an EmbedNode;
+  - the 4096 px image cap on long frames.
+- Tests build a small mock FigJam canvas inside `plugin.test.cjs`.
+
 Wall selection is `S.wall.selected` (an array):
 - Shift, Ctrl or ⌘-click toggles a frame.
 - Shift-drag on the background draws a selection box.
@@ -193,7 +218,7 @@ Rate limits: tier 1 is about 15 requests/min on an Organization plan with a Full
 
 ## Messages (UI → code)
 
-`init`, `save-token`, `create-campaign`, `rename-campaign`, `hide-campaign {shared}`, `unhide-campaign`, `unhide-items`, `set-active {campaignId, campaignName}`, `add-selection {campaignId, campaignName, channel|'auto'}`, `remove-item {itemIds}`, `set-channel {itemIds, channel}`, `mark-seen {seen}`, `set-file-key {url}`, `save-links {links}`, `save-layout {campaignId, layout}`, `save-status {campaignId, changes}`, `save-cache`, `save-scan`, `save-prefs`, `resize`, `open-item {fileKey, nodeId, versionId?}`, `notify`.
+`init`, `save-token`, `create-campaign`, `rename-campaign`, `hide-campaign {shared}`, `unhide-campaign`, `unhide-items`, `set-active {campaignId, campaignName}`, `add-selection {campaignId, campaignName, channel|'auto'}`, `remove-item {itemIds}`, `set-channel {itemIds, channel}`, `mark-seen {seen}`, `set-file-key {url}`, `save-links {links}`, `save-layout {campaignId, layout}`, `save-status {campaignId, changes}`, `board-place {campaignId, campaignName, items, embeds, scale}`, `board-sync {campaignId, items}`, `save-cache`, `save-scan`, `save-prefs`, `resize`, `open-item {fileKey, nodeId, versionId?}`, `notify`.
 
 Code → UI: `state` (full), `selection`, `error`.
 
@@ -205,7 +230,7 @@ Code → UI: `state` (full), `selection`, `error`.
   - that the v2 folders endpoint's response fields match what the code parses;
   - that the image render for a version works for old versions.
 - v0.3 adds links between campaign files, the daily re-check, Look back and team folder discovery. `npm test` has 59 checks. Also to confirm in real Figma: the team folders response and folder `meta` `updated_at` behaviour.
-- v0.4 adds Team sync (the variables index). `npm test` has 110 checks. First real test on 2026-09-30 worked: team link found 21 folders, a folder listed 4 files, the index filled with 2 files, and the wall showed both. Personal tokens offer these scopes: current_user, file_content, file_metadata, file_versions, file_variables read/write, folders:read (no projects or folder_metadata).
+- v0.4 adds Team sync (the variables index). `npm test` has 118 checks. First real test on 2026-09-30 worked: team link found 21 folders, a folder listed 4 files, the index filled with 2 files, and the wall showed both. Personal tokens offer these scopes: current_user, file_content, file_metadata, file_versions, file_variables read/write, folders:read (no projects or folder_metadata).
 
 ## Next steps (not built)
 

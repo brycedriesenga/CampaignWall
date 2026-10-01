@@ -569,6 +569,63 @@ function pointer(w, type, target, extra) {
   }
   click(wb, '#wall-back'); await tick(30)
 
+  // ===== FigJam board: send a campaign, then sync it =====
+  {
+    const board = makeEnv({ fileKey: 'BOARDFILE001', fileName: 'Holiday review board', user: 'Bryce', store: new Map() })
+    api.files.BOARDFILE001 = { name: 'Holiday review board', version: 1, touched: new Date().toISOString(), nodes: {}, env: board }
+    // A tiny FigJam canvas: sections, rectangles, text, embeds, plugin data.
+    let seq = 0
+    const mkNode = (type, extra) => Object.assign({ id: 'b:' + (++seq), type, x: 0, y: 0, width: 100, height: 100, opacity: 1, name: '', fills: [], children: [], parent: null, _d: {},
+      getSharedPluginData(ns, k) { return this._d[ns + '/' + k] || '' }, setSharedPluginData(ns, k, v) { this._d[ns + '/' + k] = v },
+      resize(w, h) { this.width = w; this.height = h }, resizeWithoutConstraints(w, h) { this.width = w; this.height = h },
+      appendChild(n) { if (n.parent) n.parent.children = n.parent.children.filter((x) => x !== n); n.parent = this; this.children.push(n) },
+      setRangeFills() {} }, extra || {})
+    const pg = board.page
+    Object.assign(pg, { children: [], appendChild(n) { if (n.parent) n.parent.children = n.parent.children.filter((x) => x !== n); n.parent = pg; pg.children.push(n) },
+      findAllWithCriteria({ sharedPluginData: { namespace, keys } }) { const out = []; const walk = (n) => { for (const c of n.children || []) { if (keys.some((k) => c.getSharedPluginData(namespace, k))) out.push(c); walk(c) } }; walk(pg); return out } })
+    const add = (n) => { pg.appendChild(n); return n }
+    Object.assign(board.figma, { editorType: 'figjam', currentPage: Object.assign(pg, { get selection() { return [] }, set selection(v) {} }),
+      createSection: () => add(mkNode('SECTION')), createRectangle: () => add(mkNode('RECTANGLE')), createFrame: () => add(mkNode('FRAME')),
+      createText: () => { const t = add(mkNode('TEXT', { characters: '', fontSize: 12 })); Object.defineProperty(t, 'width', { get() { return (t.characters || '').length * t.fontSize * 0.5 }, set() {} }); return t },
+      loadFontAsync: async () => {}, createImageAsync: async (url) => ({ hash: 'img:' + url }),
+      createLinkPreviewAsync: async (url) => add(mkNode('EMBED', { url, width: 420, height: 300 })) })
+    board.figma.root.children = [pg]
+    const wj = await boot(board, api)
+    await connect(wj)
+    click(wj, '#settings'); await tick(10)
+    $(wj, '#index-link').value = 'https://www.figma.com/design/INDEXFILE0099/Showroom-Index'
+    click(wj, '#add-index'); await tick(300)
+    click(wj, '#back'); await tick(20)
+    check('on a FigJam board, the panel offers Send to board instead of adding a selection', !!$(wj, '#board-send') && !$(wj, '#add') && /Send Holiday 2026 to this board/.test(text(wj)), text(wj).slice(0, 300))
+    const frameCount = Number((text(wj).match(/(\d+)\s*frames from/) || [])[1] || 0)
+    click(wj, '#board-send'); await tick(900)
+    const all = (n, out = []) => { for (const c of n.children || []) { out.push(c); all(c, out) } return out }
+    const nodes = all(pg)
+    const rects = nodes.filter((n) => n.type === 'RECTANGLE' && n.getSharedPluginData('showroom', 'boardItem'))
+    const outer = nodes.find((n) => n.getSharedPluginData('showroom', 'board'))
+    check('Send to board places every frame as an image, grouped in channel sections', outer && rects.length === frameCount && frameCount > 0 && rects.every((r) => (r.fills[0] && r.fills[0].type === 'IMAGE') || /7:2"/.test(r.getSharedPluginData('showroom', 'boardItem'))) && nodes.filter((n) => n.type === 'SECTION').length >= 3, rects.length + ' of ' + frameCount + ' fills:' + rects.map((r) => r.fills[0] && r.fills[0].type).join(',') + ' sections:' + nodes.filter((n) => n.type === 'SECTION').length)
+    check('each frame gets a label with a live link', nodes.filter((n) => n.type === 'TEXT' && n.hyperlink && /node-id=/.test(n.hyperlink.value)).length === frameCount)
+    check('one live embed per source file', nodes.filter((n) => n.type === 'EMBED').length === new Set(rects.map((r) => JSON.parse(r.getSharedPluginData('showroom', 'boardItem')).fileKey)).size)
+    check('panel now offers Sync board', !!$(wj, '#board-sync') && /is on this board/.test(text(wj)), text(wj).slice(0, 300))
+    // Someone rearranges a frame on the board; then that frame changes in its file.
+    const target = rects.find((r) => /EMAILFILE0001\|1:3/.test(r.getSharedPluginData('showroom', 'boardItem')))
+    target.x = 5000; target.y = 7000
+    const oldFill = target.fills[0].imageHash
+    api.files.EMAILFILE0001.nodes['1:3'] = { id: '1:3', name: 'Homepage hero', absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 900 } }
+    api.files.EMAILFILE0001.version += 1
+    api.files.EMAILFILE0001.touched = new Date(Date.now() + 60000).toISOString()
+    // …and Sam adds a new frame to the campaign.
+    api.files.ADFILE00002.nodes['7:9'] = { id: '7:9', name: 'Skyscraper 2', absoluteBoundingBox: { x: 0, y: 0, width: 160, height: 600 } }
+    sam.setSel([sam.mk('7:9', 'Skyscraper 2', 'FRAME', 160, 600)]); await tick(150)
+    click(ws, '#add'); await tick(1600)
+    await wj.showroomTest.pollIndex(); await tick(50)
+    click(wj, '#board-sync'); await tick(900)
+    check('Sync swaps in the new image but leaves the frame where people put it', target.fills[0].imageHash !== oldFill && target.x === 5000 && target.y === 7000 && target.height === 900, target.fills[0].imageHash + ' ' + target.x + ',' + target.y + ' h' + target.height)
+    const inbox = all(pg).find((n) => n.type === 'SECTION' && /Inbox/.test(n.name))
+    check('new frames land in an Inbox section', inbox && inbox.children.some((n) => n.type === 'RECTANGLE' && /7:9/.test(n.getSharedPluginData('showroom', 'boardItem'))))
+    check('Sync reports what changed', /Board synced/.test(wj.document.getElementById('toast').textContent), wj.document.getElementById('toast').textContent)
+  }
+
   // ===== first-run setup =====
   {
     const api2 = makeApi()

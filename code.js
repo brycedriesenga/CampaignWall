@@ -178,6 +178,7 @@ async function sendState(extra) {
     type: 'state', data: data, token: token, cache: cache, scan: scan, prefs: prefs,
     selection: selectionInfo(manifest),
     file: { key: currentFileKey(), name: figma.root.name, keyFromApi: !!figma.fileKey, manifest: manifest },
+    editor: figma.editorType, board: figma.editorType === 'figjam' ? boardSummary() : null,
   }, extra || {}));
 }
 
@@ -209,6 +210,7 @@ async function carryOverOldStorage() {
 
 // ---------- actions ----------
 async function addSelection(msg) {
+  if (figma.editorType === 'figjam') return { message: 'Frames are added from design files. On a board, use Send to board.' };
   const data = await loadData();
   const fileKey = currentFileKey();
   if (!fileKey) return { needFileKey: true };
@@ -429,6 +431,10 @@ async function handle(msg) {
       try { writeManifest(manifest); } catch (e) { return; }   // e.g. a file you can only view
       return sendState({ external: true });
     }
+    case 'board-place':
+      return sendState(await boardPlace(msg));
+    case 'board-sync':
+      return sendState(await boardSync(msg));
     case 'save-status': {
       // Review statuses for frames in a campaign (from any file). Saved in this file's manifest;
       // the newest change per frame wins across files. Keeps the 50 most recent campaigns.
@@ -480,6 +486,230 @@ async function handle(msg) {
     default:
       throw new Error('Unknown action: ' + msg.type);
   }
+}
+
+// ---------- FigJam boards: place a campaign's frames, then keep them in sync ----------
+// Each placed image is a rectangle with an image fill, tagged (shared plugin data "showroom/boardItem")
+// with the frame it shows. Sync swaps in new renders in place, so anything people arranged, drew or
+// stuck around them stays put. New frames land in an "Inbox" section.
+const BOARD = { gap: 120, labelH: 92, pad: 96, rowMax: 12000, titleH: 140 };
+const STATUS_COLORS = { approved: { r: 0.08, g: 0.68, b: 0.36 }, review: { r: 0.79, g: 0.54, b: 0 }, draft: { r: 0.5, g: 0.5, b: 0.5 } };
+const STATUS_NAMES = { approved: 'Approved', review: 'In review', draft: 'Draft' };
+
+function frameLink(item) { return 'https://www.figma.com/design/' + item.fileKey + '/?node-id=' + encodeURIComponent(String(item.nodeId).replace(':', '-')); }
+function fileLink(item) { return 'https://www.figma.com/design/' + item.fileKey + '/'; }
+
+async function boardFonts() {
+  const fonts = [{ family: 'Inter', style: 'Bold' }, { family: 'Inter', style: 'Regular' }];
+  for (const f of fonts) { try { await figma.loadFontAsync(f); } catch (e) { /* fall back to whatever loads */ } }
+}
+function boardText(chars, size, bold, color) {
+  const t = figma.createText();
+  try { t.fontName = { family: 'Inter', style: bold ? 'Bold' : 'Regular' }; } catch (e) {}
+  t.characters = chars;
+  t.fontSize = size;
+  if (color) t.fills = [{ type: 'SOLID', color: color }];
+  return t;
+}
+function makeSection(name) {
+  // Sections group the board neatly; if this editor can't make one, a plain frame does the job.
+  try { const s = figma.createSection(); s.name = name; return s; } catch (e) {
+    const f = figma.createFrame(); f.name = name; f.fills = []; return f;
+  }
+}
+function sizeSection(sec, w, h) {
+  if (sec.resizeWithoutConstraints) sec.resizeWithoutConstraints(Math.max(200, w), Math.max(200, h));
+  else sec.resize(Math.max(200, w), Math.max(200, h));
+}
+// The label above a frame: name, then "Status · Channel · File", then a live link to the frame.
+function itemLabel(item) {
+  const name = boardText(item.name || 'Frame', 28, true);
+  const metaText = (item.status ? STATUS_NAMES[item.status] + ' · ' : '') + item.channel + ' · ' + (item.fileName || 'File');
+  const meta = boardText(metaText, 18, false, { r: 0.42, g: 0.42, b: 0.42 });
+  if (item.status && STATUS_COLORS[item.status]) meta.setRangeFills(0, STATUS_NAMES[item.status].length, [{ type: 'SOLID', color: STATUS_COLORS[item.status] }]);
+  const link = boardText('Open live ↗', 18, false, { r: 0.05, g: 0.6, b: 1 });
+  try { link.hyperlink = { type: 'URL', value: frameLink(item) }; } catch (e) {}
+  return [name, meta, link];
+}
+async function placeImage(item, scale) {
+  const rect = figma.createRectangle();
+  rect.name = item.name || 'Frame';
+  const w = Math.max(40, Math.round((item.w || 400) * scale)), h = Math.max(40, Math.round((item.h || 300) * scale));
+  rect.resize(w, h);
+  rect.fills = [{ type: 'SOLID', color: { r: 0.93, g: 0.93, b: 0.93 } }];
+  if (item.url) {
+    try { const img = await figma.createImageAsync(item.url); rect.fills = [{ type: 'IMAGE', imageHash: img.hash, scaleMode: 'FILL' }]; } catch (e) { rect.name += ' (image didn’t load)'; }
+  }
+  rect.setSharedPluginData(NS, 'boardItem', JSON.stringify({ campaignId: item.campaignId, itemId: item.id, fileKey: item.fileKey, nodeId: item.nodeId, hash: item.hash || '', status: item.status || '', scale: scale, syncedAt: Date.now() }));
+  return rect;
+}
+// Places a list of frames in rows inside a section, each with its label. Returns the content size.
+async function layOut(sec, items, scale, x0, y0) {
+  let x = x0, y = y0, rowH = 0, maxX = x0, placed = 0;
+  for (const item of items) {
+    const w = Math.max(40, Math.round((item.w || 400) * scale)), h = Math.max(40, Math.round((item.h || 300) * scale));
+    if (x > x0 && x + w > x0 + BOARD.rowMax) { x = x0; y += rowH + BOARD.labelH + BOARD.gap; rowH = 0; }
+    const [name, meta, link] = itemLabel(item)
+    const rect = await placeImage(item, scale)
+    sec.appendChild(name); sec.appendChild(meta); sec.appendChild(link); sec.appendChild(rect)
+    name.x = x; name.y = y; meta.x = x; meta.y = y + 36; link.x = x + Math.max(meta.width + 16, 0); link.y = y + 36
+    rect.x = x; rect.y = y + BOARD.labelH
+    for (const t of [name, meta, link]) t.setSharedPluginData(NS, 'boardLabel', JSON.stringify({ itemId: item.id, part: t === name ? 'name' : t === meta ? 'meta' : 'link' }))
+    x += w + BOARD.gap; rowH = Math.max(rowH, h); maxX = Math.max(maxX, x - BOARD.gap); placed += 1
+  }
+  return { w: maxX - x0, h: (y - y0) + BOARD.labelH + rowH, placed: placed }
+}
+async function addEmbeds(sec, items, mode, x0, y0) {
+  if (mode === 'none' || !figma.createLinkPreviewAsync) return 0;
+  const urls = []
+  const seen = {}
+  for (const it of items) {
+    const url = mode === 'frame' ? frameLink(it) : fileLink(it)
+    if (!seen[url]) { seen[url] = true; urls.push(url) }
+  }
+  let x = x0, h = 0
+  for (const url of urls) {
+    try {
+      const node = await figma.createLinkPreviewAsync(url)
+      sec.appendChild(node); node.x = x; node.y = y0
+      x += node.width + 40; h = Math.max(h, node.height)
+    } catch (e) { /* Figma couldn't make an embed for this link; the "Open live" links still work */ }
+  }
+  return h
+}
+function boardNodes(campaignId) {
+  const page = figma.currentPage
+  const find = (key) => page.findAllWithCriteria ? page.findAllWithCriteria({ sharedPluginData: { namespace: NS, keys: [key] } }) : page.findAll((n) => !!n.getSharedPluginData(NS, key))
+  const items = find('boardItem').map((n) => { let d = {}; try { d = JSON.parse(n.getSharedPluginData(NS, 'boardItem')) } catch (e) {} return { node: n, data: d } }).filter((x) => !campaignId || x.data.campaignId === campaignId)
+  const boards = find('board').map((n) => { let d = {}; try { d = JSON.parse(n.getSharedPluginData(NS, 'board')) } catch (e) {} return { node: n, data: d } }).filter((x) => !campaignId || x.data.campaignId === campaignId)
+  return { items: items, boards: boards }
+}
+// What's on this board, per campaign: shown in the panel.
+function boardSummary() {
+  try {
+    const found = boardNodes('')
+    const out = {}
+    for (const b of found.boards) out[b.data.campaignId] = { campaignId: b.data.campaignId, name: b.data.name, placedAt: b.data.placedAt, syncedAt: b.data.syncedAt || b.data.placedAt, count: 0 }
+    for (const it of found.items) { const o = out[it.data.campaignId] || (out[it.data.campaignId] = { campaignId: it.data.campaignId, count: 0 }); o.count += 1 }
+    return out
+  } catch (e) { return {} }
+}
+function emptySpot() {
+  const kids = figma.currentPage.children
+  if (!kids.length) return { x: 0, y: 0 }
+  let maxX = -Infinity, minY = Infinity
+  for (const n of kids) { maxX = Math.max(maxX, n.x + n.width); minY = Math.min(minY, n.y) }
+  return { x: Math.round(maxX + 600), y: Math.round(minY) }
+}
+
+async function boardPlace(msg) {
+  if (figma.editorType !== 'figjam') return { message: 'Open a FigJam board to send a campaign to it.' }
+  await boardFonts()
+  const scale = msg.scale === 0.5 ? 0.5 : 1
+  const items = (msg.items || []).map((it) => Object.assign({ campaignId: msg.campaignId }, it))
+  const spot = emptySpot()
+  const outer = makeSection(msg.campaignName + ' · Showroom')
+  figma.currentPage.appendChild(outer)
+  outer.x = spot.x; outer.y = spot.y
+  const title = boardText(msg.campaignName, 64, true)
+  const sub = boardText(items.length + ' frames · placed by ' + whoAmI() + ' · ' + new Date().toLocaleDateString(), 22, false, { r: 0.42, g: 0.42, b: 0.42 })
+  outer.appendChild(title); outer.appendChild(sub)
+  title.x = BOARD.pad; title.y = BOARD.pad; sub.x = BOARD.pad; sub.y = BOARD.pad + 82
+  let y = BOARD.pad + BOARD.titleH
+  const embedH = await addEmbeds(outer, items, msg.embeds || 'file', BOARD.pad, y)
+  if (embedH) y += embedH + BOARD.gap
+  // One section per channel, in the campaign's channel order.
+  const channels = []
+  items.forEach((it) => { if (channels.indexOf(it.channel) < 0) channels.push(it.channel) })
+  let maxW = 1200
+  for (const ch of channels) {
+    const list = items.filter((it) => it.channel === ch)
+    const sec = makeSection(ch)
+    outer.appendChild(sec)
+    sec.x = BOARD.pad; sec.y = y
+    const size = await layOut(sec, list, scale, BOARD.pad, BOARD.pad)
+    sizeSection(sec, size.w + BOARD.pad * 2, size.h + BOARD.pad * 2)
+    sec.setSharedPluginData(NS, 'channel', JSON.stringify({ campaignId: msg.campaignId, channel: ch }))
+    y += sec.height + BOARD.gap
+    maxW = Math.max(maxW, sec.width)
+  }
+  sizeSection(outer, maxW + BOARD.pad * 2, y + BOARD.pad - BOARD.gap)
+  outer.setSharedPluginData(NS, 'board', JSON.stringify({ campaignId: msg.campaignId, name: msg.campaignName, placedAt: Date.now(), syncedAt: Date.now(), scale: scale }))
+  figma.viewport.scrollAndZoomIntoView([outer])
+  return { message: 'Placed ' + items.length + ' frame' + (items.length === 1 ? '' : 's') + ' on this board.', boardResult: { placed: items.length } }
+}
+
+async function boardSync(msg) {
+  if (figma.editorType !== 'figjam') return { message: 'Open the FigJam board to sync it.' }
+  await boardFonts()
+  const found = boardNodes(msg.campaignId)
+  const byId = {}
+  ;(msg.items || []).forEach((it) => { byId[it.id] = Object.assign({ campaignId: msg.campaignId }, it) })
+  let updated = 0, removed = 0, restatused = 0
+  const onBoard = {}
+  for (const entry of found.items) {
+    const d = entry.data, node = entry.node
+    onBoard[d.itemId] = true
+    const item = byId[d.itemId]
+    if (!item) {
+      // No longer in the campaign: fade it and say so, but leave it for people to tidy up.
+      if (node.opacity !== 0.35) { node.opacity = 0.35; removed += 1 }
+      continue
+    }
+    if (node.opacity !== 1) node.opacity = 1
+    if (item.hash && item.hash !== d.hash && item.url) {
+      try {
+        const img = await figma.createImageAsync(item.url)
+        node.fills = [{ type: 'IMAGE', imageHash: img.hash, scaleMode: 'FILL' }]
+        const sc = d.scale || 1
+        // Keep the top-left corner where people put it; follow the frame's new size if it changed.
+        const w = Math.round((item.w || node.width / sc) * sc), h = Math.round((item.h || node.height / sc) * sc)
+        if (Math.abs(w - node.width) > 1 || Math.abs(h - node.height) > 1) node.resize(Math.max(40, w), Math.max(40, h))
+        updated += 1
+      } catch (e) { /* keep the old image */ }
+    }
+    if ((item.status || '') !== (d.status || '')) restatused += 1
+    node.setSharedPluginData(NS, 'boardItem', JSON.stringify(Object.assign({}, d, { hash: item.hash || d.hash, status: item.status || '', syncedAt: Date.now() })))
+  }
+  // Refresh label text (names and statuses) for everything that's still in the campaign.
+  const labels = figma.currentPage.findAllWithCriteria ? figma.currentPage.findAllWithCriteria({ sharedPluginData: { namespace: NS, keys: ['boardLabel'] } }) : []
+  for (const t of labels) {
+    let d = {}; try { d = JSON.parse(t.getSharedPluginData(NS, 'boardLabel')) } catch (e) {}
+    const item = byId[d.itemId]; if (!item || t.type !== 'TEXT') continue
+    try {
+      if (d.part === 'name' && t.characters !== item.name) t.characters = item.name
+      if (d.part === 'meta') {
+        const text = (item.status ? STATUS_NAMES[item.status] + ' · ' : '') + item.channel + ' · ' + (item.fileName || 'File')
+        if (t.characters !== text) {
+          t.characters = text
+          t.fills = [{ type: 'SOLID', color: { r: 0.42, g: 0.42, b: 0.42 } }]
+          if (item.status && STATUS_COLORS[item.status]) t.setRangeFills(0, STATUS_NAMES[item.status].length, [{ type: 'SOLID', color: STATUS_COLORS[item.status] }])
+        }
+      }
+    } catch (e) { /* font missing: leave the label */ }
+  }
+  // New frames go into an Inbox section beside the board.
+  const fresh = Object.keys(byId).filter((id) => !onBoard[id]).map((id) => byId[id])
+  const board = found.boards[0] && found.boards[0].node
+  if (fresh.length) {
+    let inbox = found.boards.length ? board.children.find((n) => n.name === 'Inbox · new frames') : null
+    const spot = board ? { x: board.x + board.width + 400, y: board.y } : emptySpot()
+    if (!inbox) { inbox = makeSection('Inbox · new frames'); figma.currentPage.appendChild(inbox); inbox.x = spot.x; inbox.y = spot.y }
+    const scale = (found.boards[0] && found.boards[0].data.scale) || 1
+    const startY = inbox.children.length ? Math.max.apply(null, inbox.children.map((n) => n.y + n.height)) + BOARD.gap : BOARD.pad
+    const size = await layOut(inbox, fresh, scale, BOARD.pad, startY)
+    sizeSection(inbox, Math.max(inbox.width, size.w + BOARD.pad * 2), startY + size.h + BOARD.pad)
+  }
+  if (board) {
+    let d = {}; try { d = JSON.parse(board.getSharedPluginData(NS, 'board')) } catch (e) {}
+    board.setSharedPluginData(NS, 'board', JSON.stringify(Object.assign({}, d, { syncedAt: Date.now() })))
+  }
+  const parts = []
+  if (updated) parts.push(updated + ' updated')
+  if (fresh.length) parts.push(fresh.length + ' new in Inbox')
+  if (removed) parts.push(removed + ' no longer in the campaign (faded)')
+  if (restatused) parts.push(restatused + ' status change' + (restatused === 1 ? '' : 's'))
+  return { message: parts.length ? 'Board synced: ' + parts.join(', ') + '.' : 'Board is up to date.', boardResult: { updated: updated, added: fresh.length, removed: removed } }
 }
 
 // One action at a time, so quick double-clicks can't overwrite each other's saves.

@@ -5,7 +5,8 @@
   "main": "code.js",
   "ui": "ui.html",
   "editorType": [
-    "figma"
+    "figma",
+    "figjam"
   ],
   "documentAccess": "dynamic-page",
   "enablePrivatePluginApi": true,

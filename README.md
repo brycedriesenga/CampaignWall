@@ -44,6 +44,7 @@ The wall reads frames straight from their files through Figma's API, so it's alw
 - **Review statuses:** select frames on the wall and set them to Draft, In review or Approved. Statuses are shared with the team, show on each frame, and add up to a progress bar per campaign. You can filter by them too.
 - **Live:** when a teammate adds frames while your wall is open, they glide in with a glow and a "Sam added …" note. Click **Show** to jump to them. The panel lists recent activity.
 - **Setup guide:** the first time someone opens Showroom, it walks them through connecting their token (each permission is checked, with a plain fix if one's missing), adding the team, and turning on Team sync. Reopen it from Settings › Setup guide.
+- **FigJam boards (prototype):** Showroom also runs in FigJam. Open it on a board and click **Send to board**. Every campaign frame is placed as an image, at real or half size, in a section per channel. Each image gets a label with its status and an "Open live ↗" link, plus optional live Figma embeds per file or per frame. Arrange, sticky and stamp them like anything else. **Sync board** later swaps in new versions where they sit, updates names and statuses, fades frames that left the campaign, and puts new ones in an Inbox section. Board images are copies, so they're only as fresh as the last Sync.
 - **Keyboard:**
   - Shift+1 fits everything, Shift+2 zooms to the selection, and Shift+0 goes to 100%.
   - Arrow keys step from frame to frame.
