@@ -153,8 +153,32 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 .hist-row .nm { display: block; font-weight: 500; }
 .hist-row .mt { display: block; font-size: 10.5px; color: var(--muted); }
 #history { position: absolute; right: 12px; top: 60px; bottom: 12px; width: 340px; z-index: 5; padding: 12px; overflow: auto; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
-#world.glide { transition: transform .35s cubic-bezier(.2,.7,.2,1); }
-@media (prefers-reduced-motion: reduce) { #world.glide { transition: none; } }
+#world.glide, #live.glide { transition: transform .35s cubic-bezier(.2,.7,.2,1); }
+@media (prefers-reduced-motion: reduce) { #world.glide, #live.glide { transition: none; } }
+/* Live prototypes play in their own layer, moved exactly like #world but never redrawn (so they don't reload). */
+#live { position: absolute; left: 0; top: 0; transform-origin: 0 0; z-index: 2; pointer-events: none; }
+.lv { position: absolute; pointer-events: auto; background: #fff; box-shadow: 0 0 0 calc(2px * var(--inv)) var(--brand), 0 calc(12px * var(--inv)) calc(48px * var(--inv)) rgba(0,0,0,.28); }
+.lv iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; opacity: 0; transition: opacity .3s; }
+.lv iframe.in { opacity: 1; }
+.lv-wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg2) 85%, transparent); }
+.lv-bar { position: absolute; left: 0; bottom: 100%; transform-origin: 0 100%; transform: scale(var(--inv)); padding-bottom: 6px; display: flex; gap: 4px; white-space: nowrap; }
+.lv-bar span, .lv-bar button { height: 24px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; border-radius: 99px; font-size: 11px; font-weight: 600; border: 0; }
+.lv-bar span { background: var(--brand); color: var(--onbrand); max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.lv-bar span::before { flex-shrink: 0; content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: lv-pulse 1.4s ease-in-out infinite; }
+.lv-bar button { background: var(--bg); color: var(--text); box-shadow: 0 0 0 1px var(--line); cursor: pointer; }
+.lv-bar button:hover { background: var(--bg2); }
+@keyframes lv-pulse { 50% { opacity: .35; } }
+body.presenting .lv-bar span, body.presenting .lv-bar .lv-large { display: none; }
+/* The ▶ badge on frames that have prototype connections. */
+.pb { position: absolute; right: 0; top: 0; z-index: 3; transform-origin: 100% 0; transform: scale(var(--inv)); margin: 8px; width: 30px; height: 30px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; background: rgba(20,20,20,.72); color: #fff; border: 0; cursor: pointer; backdrop-filter: blur(6px);
+  box-shadow: 0 2px 10px rgba(0,0,0,.25); transition: transform .15s, background .15s; }
+.pb:hover { background: var(--brand); transform: scale(calc(var(--inv) * 1.08)); }
+.pb svg { margin-left: 2px; }
+.far .pb { width: 22px; height: 22px; margin: 4px; }
+.far .pb svg { width: 11px; height: 11px; }
+.fr.playing .lbl { visibility: hidden; }
+body.presenting .pb, .fr.playing .pb { display: none; }
 .fr { cursor: default; }
 .fr.dim { opacity: .12; }
 .fr.dragging { z-index: 5; opacity: .85; pointer-events: none; box-shadow: 0 calc(12px * var(--inv)) calc(40px * var(--inv)) rgba(0,0,0,.3); }
@@ -1249,9 +1273,12 @@ async function syncItems(list, opts) {
           const prev = fc.nodes[id] || {}
           if (!entry || !entry.document) { fc.nodes[id] = Object.assign({}, prev, { missing: true, url: '', urlAt: 0 }); continue }
           const doc = entry.document
-          const hash = hashStr(JSON.stringify(doc))
+          const json = JSON.stringify(doc)
+          const hash = hashStr(json)
           const same = prev.hash === hash
-          fc.nodes[id] = Object.assign({ name: doc.name, hash: hash }, frameGeometry(doc), {
+          // A frame (or anything inside it) with prototype connections can play as a live prototype.
+          const proto = /"interactions":\[\{/.test(json) || /"transitionNodeID":"[^"]/.test(json)
+          fc.nodes[id] = Object.assign({ name: doc.name, hash: hash, proto: proto }, frameGeometry(doc), {
             url: same ? prev.url : '', urlAt: same ? prev.urlAt : 0,
             changedAt: prev.hash && !same ? (Date.parse(fc.lastTouchedAt) || Date.now()) : (prev.changedAt || 0),
           })
@@ -1303,7 +1330,7 @@ async function syncItems(list, opts) {
 }
 
 // ---------- wall view options (saved per person in prefs.wallView) ----------
-const WALL_VIEW_DEFAULTS = { bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, edge: 'both', spacing: 'normal', group: 'channel',
+const WALL_VIEW_DEFAULTS = { protoStyle: 'legacy', protoPresent: 'auto', bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, edge: 'both', spacing: 'normal', group: 'channel',
   subChannel: 'file', subFile: 'channel', subNone: 'off' }   // how frames cluster inside each row, per grouping
 // Inside a row, frames can cluster by the other dimension: by file (and page) in channel rows,
 // by channel (or page) in file rows. Each choice: [value, button label].
@@ -1345,6 +1372,7 @@ function setWallView(change) {
   // Spacing, grouping and labels change where frames sit, so lay the wall out again and re-fit.
   const v = wallView()
   if (v.spacing !== before.spacing || v.group !== before.group || v.names !== before.names || subMode(v) !== subMode(before)) { S.wall.fitted = S.wall.touched; renderWall() }
+  if (v.protoStyle !== before.protoStyle && S.wall.live) playInPlace(S.wall.live.id, { noZoom: true })
   renderViewOptions()
 }
 function toggleViewOptions(open) {
@@ -1372,6 +1400,8 @@ function renderViewOptions() {
   html += '<div><div class="vo-title">Cluster within rows by</div>' + seg(so.key, so.options) + '</div>'
   html += '<div><div class="vo-title">Spacing</div>' + seg('spacing', [['tight', 'Tight'], ['normal', 'Normal'], ['roomy', 'Roomy']]) + '</div>'
   html += '<div><div class="vo-title">Content outside a frame’s edge</div>' + seg('edge', [['both', 'Both'], ['fade', 'Fade'], ['line', 'Line'], ['none', 'Off']], { both: 'Fade it and draw the frame’s edge', fade: 'Fade content outside the frame', line: 'Draw the frame’s edge as a dashed line', none: 'Show everything as rendered' }) + '</div>'
+  html += '<div><div class="vo-title">Live prototypes</div>' + seg('protoStyle', [['legacy', 'Clean'], ['kit2', 'With controls']], { legacy: 'Just the prototype, no Figma controls', kit2: 'Adds Figma’s back, forward and restart buttons under the prototype' }) +
+    '<div style="height:6px"></div>' + seg('protoPresent', [['auto', 'Play in Present'], ['click', 'Only with ▶']], { auto: 'Prototype frames start playing when you reach them in Present', click: 'Prototypes only play when you press ▶' }) + '</div>'
   html += '<div>' + toggle('grid', 'Dot grid') + toggle('names', 'Frame names') + toggle('meta', 'File and edit info') + toggle('headings', 'Row headings') + '</div>'
   html += '<div class="row" style="justify-content:space-between"><button class="btn ghost" id="vo-reset" style="height:26px;padding:0 6px">Reset to defaults</button>' +
     '<button class="btn ghost" id="vo-keys" style="height:26px;padding:0 6px">' + icon('keys', 14) + 'Shortcuts</button></div>'
@@ -1396,9 +1426,10 @@ function placementOf(id) {
 function reducedMotion() { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) }
 function glide() {
   const world = $('world'); if (!world || reducedMotion()) return
-  world.classList.add('glide')
+  const live = $('live')
+  world.classList.add('glide'); if (live) live.classList.add('glide')
   clearTimeout(S.wall.glideTimer)
-  S.wall.glideTimer = setTimeout(() => world.classList.remove('glide'), 400)
+  S.wall.glideTimer = setTimeout(() => { world.classList.remove('glide'); if (live) live.classList.remove('glide') }, 400)
 }
 // Zooms so a box (in wall units) fills the view, never past maxZoom.
 function zoomToRect(x, y, w, h, opts) {
@@ -1465,6 +1496,7 @@ function wallKey(e) {
   }
   const open = (id) => $(id) && !$(id).classList.contains('hidden')
   if (k === 'Escape' && open('player')) { closePlayer(); return true }
+  if (k === 'Escape' && S.wall.live) { stopLive(); return true }
   if (k === 'Escape') {
     if (open('shortcuts')) { toggleShortcuts(false); return true }
     if (open('viewopts')) { toggleViewOptions(false); return true }
@@ -1600,6 +1632,7 @@ function renderFilterPill(c) {
 // ---------- Present mode ----------
 function startPresent() {
   if (S.view !== 'wall' || S.wall.present) return
+  stopLive()
   const list = orderedPlacements().map((p) => p.it.id)
   if (!list.length) { toast('No frames to present.', true); return }
   const startId = S.wall.selected.find((id) => list.indexOf(id) >= 0)
@@ -1623,9 +1656,17 @@ function presentGo(i) {
   pr.id = pr.list[pr.index]
   const p = placementOf(pr.id)
   document.querySelectorAll('#world .fr').forEach((el) => el.classList.toggle('cur', el.dataset.id === pr.id))
+  if (S.wall.live && S.wall.live.id !== pr.id) stopLive()
   if (p) zoomToRect(p.x, p.y, p.w, p.h, { maxZoom: 2, pad: 40, bottom: 56 })
+  // Prototype frames start playing once the zoom settles (View options › Prototypes in Present).
+  clearTimeout(S.wall.autoplayTimer)
+  if (p && hasProto(p.it) && wallView().protoPresent === 'auto' && !S.wall.live) {
+    const id = pr.id
+    S.wall.autoplayTimer = setTimeout(() => { if (S.wall.present && S.wall.present.id === id) playInPlace(id, { noZoom: true }) }, 420)
+  }
   const what = $('hud-what')
-  if (what && p) what.innerHTML = (pr.index + 1) + ' / ' + pr.list.length + '<em>' + esc((nodeInfo(p.it) || {}).name || p.it.name) + ' · ' + esc(p.it.channel) + (p.it.status ? ' · ' + statusName(p.it.status) : '') + '</em>'
+  if (what && p) what.innerHTML = (pr.index + 1) + ' / ' + pr.list.length + '<em>' + esc((nodeInfo(p.it) || {}).name || p.it.name) + ' · ' + esc(p.it.channel) + (p.it.status ? ' · ' + statusName(p.it.status) : '') +
+    (hasProto(p.it) ? ' · <span id="hud-live">' + (S.wall.live ? 'Live prototype' : 'Prototype') + '</span>' : '') + '</em>'
   wakeHud()
 }
 function presentStep(d) { if (S.wall.present) presentGo(S.wall.present.index + d) }
@@ -1638,6 +1679,8 @@ function wakeHud() {
 function stopPresent() {
   const pr = S.wall.present; if (!pr) return
   S.wall.present = null
+  clearTimeout(S.wall.autoplayTimer)
+  stopLive()
   document.body.classList.remove('presenting')
   const hud = $('hud'); if (hud) hud.remove()
   document.querySelectorAll('#world .fr.cur').forEach((el) => el.classList.remove('cur'))
@@ -2499,6 +2542,7 @@ function openWall() {
   }, 60)
 }
 function closeWall() {
+  stopLive(true); closePlayer()
   S.view = 'panel'
   S.history = null
   send('resize', PANEL)
@@ -2593,7 +2637,7 @@ function renderWallShell() {
   html += '<button class="icon" id="filter-btn" title="Filter frames" aria-label="Filter frames" aria-expanded="false">' + icon('filter') + '</button>'
   html += '<button class="icon" id="view-opts" title="View options" aria-label="View options" aria-expanded="false">' + icon('gear') + '</button>'
   html += '<button class="btn ghost" id="present-btn" title="Present (P)" style="padding:0 8px">' + icon('play', 14) + 'Present</button></div>'
-  html += '<div id="viewport"><div id="world"></div><div id="banner"></div></div>'
+  html += '<div id="viewport"><div id="world"></div><div id="live"></div><div id="banner"></div></div>'
   html += '<div id="viewopts" class="card hidden" role="dialog" aria-label="View options"></div>'
   html += '<div id="filters" class="card hidden" role="dialog" aria-label="Filter frames"></div>'
   html += '<div id="shortcuts" class="card hidden" role="dialog" aria-label="Keyboard shortcuts"></div>'
@@ -2651,7 +2695,8 @@ function renderWall() {
       // Round the tile like the frame, unless content spills past the frame's edges (then the tile is bigger than the frame).
       const radius = n && n.radius && !edge ? ';border-radius:' + n.radius : ''
       html += '<div class="fr' + (S.wall.selected.indexOf(it.id) >= 0 ? ' sel' : '') + (n && n.missing ? ' missing' : '') + (matchesFilter(it) ? '' : ' dim') + (S.wall.present && S.wall.present.id === it.id ? ' cur' : '') + '" data-id="' + esc(it.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px;width:' + p.w + 'px;height:' + p.h + 'px;--w:' + p.w + radius + '">'
-      html += '<div class="lbl"><div class="nm">' + statusBadge(it.status) + (isUpdated(it) ? '<span class="upd">Updated</span>' : '') + esc(name) + '</div><div class="mt">' + esc(meta) + '</div></div>' + body + edge + '</div>'
+      const play = n && n.proto && !n.missing ? '<button class="pb" data-play="' + esc(it.id) + '" title="Play the live prototype" aria-label="Play the live prototype">' + icon('play', 14) + '</button>' : ''
+      html += '<div class="lbl"><div class="nm">' + statusBadge(it.status) + (isUpdated(it) ? '<span class="upd">Updated</span>' : '') + esc(name) + '</div><div class="mt">' + esc(meta) + '</div></div>' + body + edge + play + '</div>'
     }
   }
   world.innerHTML = html
@@ -2659,6 +2704,7 @@ function renderWall() {
   renderFilterPill(c)
   animateWall(L, c)
   if (!S.wall.fitted) { if (!restorePosition(c.id)) fit(); S.wall.fitted = true } else applyTransform()
+  syncLive()
   renderInspector()
   renderWallBar()
   // Frames added since the last check (by you in another window, or a teammate) load on their own.
@@ -2692,6 +2738,16 @@ function bindImageEvents(world) {
 }
 
 window.addEventListener('resize', () => { if (S.view === 'wall' && !S.wall.touched) fit() })
+// Clicking into a live prototype moves the keyboard into it. Say once how to get Showroom's keys back.
+window.addEventListener('blur', () => {
+  setTimeout(() => {
+    const a = document.activeElement
+    if (S.view === 'wall' && S.wall.live && a && a.tagName === 'IFRAME' && !S.wall.focusTip) {
+      S.wall.focusTip = true
+      toast('You’re using the prototype. Click outside it to use the arrow keys and shortcuts again.')
+    }
+  }, 0)
+})
 
 function applyTransform() {
   const world = $('world'); if (!world) return
@@ -2700,6 +2756,8 @@ function applyTransform() {
   world.style.setProperty('--inv', String(1 / z))
   world.style.setProperty('--z', String(z))
   world.classList.toggle('far', z < 0.18)
+  const live = $('live')
+  if (live) { live.style.transform = world.style.transform; live.style.setProperty('--inv', String(1 / z)) }
   const zv = $('zoom-val'); if (zv) zv.textContent = Math.round(z * 100) + '%'
   rememberPosition()
 }
@@ -2762,7 +2820,9 @@ function renderInspector() {
     else html += '<div class="muted small" style="margin-top:8px">Channel: <b>' + esc(it.channel) + '</b>. Change it from its own file.</div>'
     html += statusControl(items)
     html += '<div class="row" style="margin-top:10px"><button class="btn primary grow" id="insp-open">' + icon('ext', 14) + 'Open in Figma</button><button class="btn" id="insp-refresh" title="Reload this frame from its file now"' + busy + '>' + icon('refresh', 14) + 'Refresh</button></div>'
-    html += '<button class="btn" id="insp-play" style="margin-top:4px;width:100%" title="Test: play this frame’s live Figma prototype here">' + icon('play', 14) + 'Play prototype <span class="muted small">(test)</span></button>'
+    const live = S.wall.live && S.wall.live.id === it.id
+    html += '<div class="row" style="margin-top:4px"><button class="btn grow" id="insp-play" title="' + (n.proto ? 'Play the live prototype right here on the wall' : 'No prototype connections found in this frame. It will play as a still frame.') + '">' + icon(live ? 'x' : 'play', 14) + (live ? 'Stop prototype' : 'Play prototype') + '</button>' +
+      '<button class="btn" id="insp-play-large" title="Play the prototype in a large window over the wall">' + icon('fit', 14) + 'Large</button></div>'
     html += '<div class="row" style="margin-top:4px"><button class="btn ghost" id="insp-history" style="padding:0 4px">' + icon('clock', 14) + 'History</button><span class="grow"></span><button class="btn ghost danger" id="insp-remove" style="padding:0 4px">' + (editable ? 'Remove from campaign' : 'Hide on my wall') + '</button></div>'
   } else {
     html += '<div class="row" style="align-items:flex-start"><div class="grow"><div style="font-weight:600;font-size:13px">' + items.length + ' frames selected</div>'
@@ -2783,7 +2843,8 @@ function renderInspector() {
   $('insp-refresh').addEventListener('click', () => refreshSelected())
   const chSel = $('insp-channel'); if (chSel) chSel.addEventListener('change', (e) => { if (e.target.value) send('set-channel', { campaignId: c.id, itemIds: ids, channel: e.target.value }) })
   const hist = $('insp-history'); if (hist) hist.addEventListener('click', () => openHistory(items[0]))
-  const play = $('insp-play'); if (play) play.addEventListener('click', () => openPlayer(items[0]))
+  const play = $('insp-play'); if (play) play.addEventListener('click', () => { if (S.wall.live && S.wall.live.id === items[0].id) stopLive(); else playInPlace(items[0].id) })
+  const playL = $('insp-play-large'); if (playL) playL.addEventListener('click', () => { stopLive(); openPlayer(items[0]) })
   box.querySelectorAll('[data-status]').forEach((el) => el.addEventListener('click', () => setStatus(ids, el.dataset.status)))
   $('insp-remove').addEventListener('click', (e) => {
     const b = e.currentTarget
@@ -2810,13 +2871,13 @@ function protoUrl(it, style) {
 }
 function openPlayer(it, style) {
   const box = $('player'); if (!box || !it) return
-  style = style || S.prefs.protoStyle || 'kit2'
+  style = style || protoStyle()
   S.player = { it: it, style: style, at: Date.now() }
   const name = (nodeInfo(it) || {}).name || it.name
   const tab = (v, label) => '<button class="' + (style === v ? 'on' : '') + '" data-pstyle="' + v + '">' + label + '</button>'
   box.innerHTML = '<div class="pl-bar"><div class="grow" style="min-width:0"><div class="pl-name">' + icon('play', 12) + esc(name) + '</div>' +
-      '<div class="muted small">Test: if you see a Figma sign-in or “no access” screen, try the other embed style.</div></div>' +
-      '<div class="seg" style="width:auto">' + tab('kit2', 'New embed') + tab('legacy', 'Older embed') + '</div>' +
+      '<div class="muted small">Live prototype from Figma. Click through it as you would in Figma’s presentation view.</div></div>' +
+      '<div class="seg" style="width:auto" title="Clean: no Figma controls. With controls: Figma’s back, forward and restart buttons.">' + tab('legacy', 'Clean') + tab('kit2', 'With controls') + '</div>' +
       '<button class="icon" id="pl-restart" title="Restart the prototype" aria-label="Restart the prototype">' + icon('refresh') + '</button>' +
       '<button class="icon" id="pl-browser" title="Open the prototype in your browser" aria-label="Open the prototype in your browser">' + icon('ext') + '</button>' +
       '<button class="icon" id="pl-close" title="Close (Esc)" aria-label="Close">' + icon('x') + '</button></div>' +
@@ -2827,7 +2888,7 @@ function openPlayer(it, style) {
   // The embed's own page never tells the plugin whether it worked, so say so if it's slow.
   setTimeout(() => { const w = $('pl-wait'); if (S.player && S.player.it === it && w && !$('pl-frame').classList.contains('in')) w.textContent = 'Still loading… If this never finishes, the plugin may be blocked from showing Figma embeds.' }, 15000)
   box.querySelectorAll('[data-pstyle]').forEach((b) => b.addEventListener('click', () => {
-    S.prefs.protoStyle = b.dataset.pstyle; send('save-prefs', { prefs: { protoStyle: b.dataset.pstyle } })
+    setWallView({ protoStyle: b.dataset.pstyle })
     openPlayer(it, b.dataset.pstyle)
   }))
   $('pl-restart').addEventListener('click', () => openPlayer(it, style))
@@ -2838,6 +2899,61 @@ function closePlayer() {
   const box = $('player'); if (!box) return
   box.classList.add('hidden'); box.innerHTML = ''   // removing the iframe stops the prototype
   S.player = null
+}
+
+// ---------- live prototypes on the wall ----------
+// ▶ on a frame (or Play prototype in its details) plays its live Figma prototype right where the frame
+// sits. The embed lives in #live, a layer that pans and zooms with the wall but is never redrawn, so
+// wall updates (Team sync, other windows) don't reload it. Only one plays at a time: each embed is a
+// full Figma viewer. In Present, prototype frames play by themselves (View options › Prototypes).
+function hasProto(it) { const n = it && nodeInfo(it); return !!(n && n.proto && !n.missing) }
+function protoStyle() { return wallView().protoStyle || 'legacy' }
+// Where the live prototype sits: the frame's own box, not the render bounds (content outside it isn't part of the prototype).
+function liveBox(p) {
+  const n = p.n || nodeInfo(p.it) || {}
+  return { x: p.x + (n.offX || 0), y: p.y + (n.offY || 0), w: n.width || p.w, h: n.height || p.h }
+}
+function playInPlace(id, opts) {
+  opts = opts || {}
+  const p = placementOf(id); const layer = $('live')
+  if (!p || !layer) return
+  stopLive(true)
+  const b = liveBox(p)
+  if (!opts.noZoom) zoomToRect(b.x, b.y, b.w, b.h, { maxZoom: 1, pad: 56 })
+  const box = document.createElement('div')
+  box.className = 'lv'; box.dataset.id = id
+  box.style.cssText = 'left:' + b.x + 'px;top:' + b.y + 'px;width:' + b.w + 'px;height:' + b.h + 'px'
+  box.innerHTML = '<div class="lv-bar"><span title="Live prototype">Live · ' + esc((p.n && p.n.name) || p.it.name) + '</span><button class="lv-restart" title="Restart">' + icon('refresh', 12) + '</button>' +
+    '<button class="lv-large" title="Play in a large window">' + icon('fit', 12) + 'Large</button><button class="lv-stop" title="Stop (Esc)">' + icon('x', 12) + 'Stop</button></div>' +
+    '<div class="lv-wait" style="font-size:calc(14px * var(--inv))">' + skeleton('Loading the prototype…') + '</div>' +
+    '<iframe src="' + esc(protoUrl(p.it, protoStyle())) + '" allow="fullscreen; clipboard-write" allowfullscreen referrerpolicy="origin" title="Live prototype"></iframe>'
+  layer.appendChild(box)
+  const frame = box.querySelector('iframe')
+  frame.addEventListener('load', () => { frame.classList.add('in'); setTimeout(() => { const w = box.querySelector('.lv-wait'); if (w) w.remove() }, 320) })
+  box.querySelector('.lv-stop').addEventListener('click', () => stopLive())
+  box.querySelector('.lv-restart').addEventListener('click', () => playInPlace(id, { noZoom: true }))
+  box.querySelector('.lv-large').addEventListener('click', () => { stopLive(); openPlayer(p.it) })
+  S.wall.live = { id: id }
+  document.querySelectorAll('#world .fr').forEach((el) => el.classList.toggle('playing', el.dataset.id === id))
+  const hl = $('hud-live'); if (hl) hl.textContent = 'Live prototype'
+  if (!opts.quiet) renderInspector()
+}
+function stopLive(quiet) {
+  if (!S.wall.live) return
+  const layer = $('live'); if (layer) layer.innerHTML = ''   // removing the iframe stops the prototype
+  S.wall.live = null
+  document.querySelectorAll('#world .fr.playing').forEach((el) => el.classList.remove('playing'))
+  if (!quiet) renderInspector()
+}
+// After the wall redraws: keep the live prototype on its frame, or stop it if the frame is gone or filtered out.
+function syncLive() {
+  const live = S.wall.live; if (!live) return
+  const p = placementOf(live.id)
+  const box = document.querySelector('#live .lv')
+  if (!p || !box || !matchesFilter(p.it)) { stopLive(true); return }
+  const b = liveBox(p)
+  box.style.left = b.x + 'px'; box.style.top = b.y + 'px'; box.style.width = b.w + 'px'; box.style.height = b.h + 'px'
+  const tile = document.querySelector('#world .fr[data-id="' + live.id.replace(/"/g, '') + '"]'); if (tile) tile.classList.add('playing')
 }
 
 // ---------- history panel ----------
@@ -2923,7 +3039,9 @@ function bindWall() {
   vp.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 && e.button !== 1) return
     // Controls floating over the canvas handle their own clicks (capturing the pointer would swallow them).
-    if (e.target.closest('#filterpill, #hud, #banner, #arrivals')) return
+    if (e.target.closest('#filterpill, #hud, #banner, #arrivals, #live')) return
+    const pb = e.target.closest('.pb')
+    if (pb) { e.preventDefault(); playInPlace(pb.dataset.play); return }
     const r = vp.getBoundingClientRect()
     const target = e.target.closest('.fr')
     // Dragging a frame moves it within its row; dragging empty space (or with Space held, or the
@@ -3082,7 +3200,7 @@ window.onmessage = (event) => {
   if (msg.type === 'error') { toast(msg.message, true); if (S.boardJob) { S.boardJob = null; render() } }
 }
 
-window.showroomTest = { discover: discover, pollIndex: pollIndex }
+window.showroomTest = { discover: discover, pollIndex: pollIndex, renderWall: renderWall }
 setInterval(() => { pollIndex() }, INDEX_POLL)   // lets the automated tests run a search directly
 send('init')
 </script>

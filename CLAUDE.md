@@ -219,13 +219,20 @@ Steps that can't be checked yet show "–" with a note. Tests skip the screen th
   - the 4096 px image cap on long frames.
 - Tests build a small mock FigJam canvas inside `plugin.test.cjs`.
 
-**Prototype player (TEST, v0.9.1):** the inspector's "Play prototype (test)" button (single frame) runs `openPlayer(it, style)`, which fills `#player` (an overlay outside `#viewport`, so pointer capture doesn't swallow its clicks) with an iframe from `protoUrl(it, style)`.
-- `kit2`: `embed.figma.com/proto/:key/?node-id=…&starting-point-node-id=…&embed-host=showroom&footer=false&viewport-controls=false&hotspot-hints=false&device-frame=false&scaling=contain&content-scaling=fixed`.
-- `legacy`: `www.figma.com/embed?embed_host=showroom&url=<www.figma.com/proto/… hide-ui=1>`.
-- The chosen style is saved in `prefs.protoStyle`. Restart reloads the iframe; the external-link button sends `open-item {proto:true}` (code.js opens `figma.com/proto/…` in the browser); Esc or ✕ closes and removes the iframe.
-- `manifest.json` `allowedDomains` gained `https://embed.figma.com` and `https://www.figma.com` (network limits apply to a framed site's domain).
-- **Tested 2026-10-05 in Figma desktop (Windows): both styles load private files signed in.** The new embed still shows a small ← → ↺ control bar at the bottom; the older embed shows no controls.
-- Questions it was built to answer: does the embed know the user is signed in inside the plugin window (private files), and which style works. The Embed API (events/controls) needs an OAuth client-id plus an allowed origin, which a plugin iframe probably can't provide, so it isn't used.
+**Live prototypes (v0.10):** frames play their real Figma prototype on the wall.
+- **Detection:** when frames are read (`/nodes`), `proto` is set on the cache node if its JSON has `"interactions":[{` or a `transitionNodeID`. Older cache entries only get it after a re-read (Refresh). `hasProto(it)`.
+- **▶ badge** (`.pb`, screen-sized, smaller under `.far`) on prototype tiles. The viewport's pointerdown handles it before anything else (`playInPlace(id)`).
+- **`playInPlace(id, {noZoom})`:** zooms to the frame's own box (`liveBox(p)`: placement + `offX/offY`, `width/height`, max 100%), then adds `.lv` (iframe + `.lv-bar`: "Live · name", Restart, Large, Stop) to `#live`.
+  - `#live` is a sibling of `#world` inside `#viewport`; `applyTransform` gives it the same transform and `--inv`, and `glide()` animates both. It's never redrawn, so wall redraws don't reload the iframe (moving an iframe in the DOM would). `syncLive()` (called from `renderWall`) repositions it, or stops it if the frame is gone or filtered out.
+  - One at a time (`S.wall.live = {id}`); the tile gets `.playing` (hides its label and ▶). `#live` is excluded from the viewport's pointerdown; clicks inside the iframe never reach the parent anyway.
+  - Stops on Esc, Stop, leaving the wall (`closeWall`), entering/leaving Present.
+- **Present:** `presentGo` stops a live prototype from another frame, and if `wallView().protoPresent === 'auto'` plays prototype frames 420 ms after the zoom (`S.wall.autoplayTimer`). The HUD shows "Prototype" / "Live prototype". Clicking into the iframe moves keyboard focus into it; a `window` blur listener toasts once how to get the keys back (click outside).
+- **View options › Live prototypes:** `protoStyle` (`legacy` = Clean, default; `kit2` = With controls) and `protoPresent` (`auto`, `click`). Changing the style restarts a playing prototype.
+- **Embeds** (`protoUrl(it, style)`):
+  - `legacy`: `www.figma.com/embed?embed_host=showroom&url=<www.figma.com/proto/:key/?node-id&starting-point-node-id&hide-ui=1&hotspot-hints=0&scaling=contain>`, no Figma controls.
+  - `kit2`: `embed.figma.com/proto/:key/?…&footer=false&viewport-controls=false&hotspot-hints=false&device-frame=false&scaling=contain&content-scaling=fixed`. Still shows a small ← → ↺ bar.
+  - Tested 2026-10-05 in Figma desktop: both load private files signed in. `manifest.json` allows `embed.figma.com` and `www.figma.com`. The Embed API (events/controls) needs an OAuth client-id and allowed origin, which a plugin iframe can't provide, so it isn't used.
+- **Large window:** `openPlayer(it, style)` fills `#player` (overlay outside `#viewport`) with the same embed; Clean/With controls toggle, Restart, Open in browser (`open-item {proto:true}` → code.js opens `figma.com/proto/…`), Esc/✕ closes. The inspector has Play prototype (in place, or Stop) and Large.
 
 Wall selection is `S.wall.selected` (an array):
 - Shift, Ctrl or ⌘-click toggles a frame.

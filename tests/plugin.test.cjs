@@ -493,20 +493,49 @@ function pointer(w, type, target, extra) {
   check('the cluster option follows the grouping', /Cluster within rows by/.test($(wb, '#viewopts').textContent) && !!$(wb, '#viewopts [data-vo="subChannel"][data-val="filepage"]') && $(wb, '#viewopts [data-vo="subChannel"][data-val="file"]').classList.contains('on'))
   wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
   check('Esc closes View options', $(wb, '#viewopts').classList.contains('hidden'))
-  // Prototype player (test build)
+  // ===== live prototypes =====
   {
-    const tile = wb.document.querySelector('#world .fr')
-    pointer(wb, 'pointerdown', tile); pointer(wb, 'pointerup', tile); await tick(450)
-    click(wb, '#insp-play'); await tick(20)
-    const [fk, nid] = tile.dataset.id.split('|')
-    const src = () => ($(wb, '#pl-frame') || {}).src || ''
-    check('Play prototype opens the live prototype embed with Figma’s interface hidden', !$(wb, '#player').classList.contains('hidden') && src().indexOf('https://embed.figma.com/proto/' + fk + '/?node-id=' + nid.replace(':', '-')) === 0 && /footer=false/.test(src()) && /hotspot-hints=false/.test(src()), src())
-    click(wb, '#player [data-pstyle="legacy"]'); await tick(20)
-    check('…and can switch to the older embed style', src().indexOf('https://www.figma.com/embed?embed_host=showroom&url=') === 0 && (bryce.store.get('showroom.prefs') || {}).protoStyle === 'legacy', src())
-    click(wb, '#player [data-pstyle="kit2"]'); await tick(20)
+    const tile0 = wb.document.querySelector('#world .fr')
+    const [fk, nid] = tile0.dataset.id.split('|')
+    // Give that frame a prototype connection, then reload it from its file.
+    api.files[fk].nodes[nid].interactions = [{ trigger: { type: 'ON_CLICK' }, actions: [{ type: 'NODE', destinationId: '9:9' }] }]
+    pointer(wb, 'pointerdown', tile0); pointer(wb, 'pointerup', tile0); await tick(450)
+    click(wb, '#insp-refresh'); await tick(600)
+    const tile = () => wb.document.querySelector('#world .fr[data-id="' + fk + '|' + nid + '"]')
+    const others = [...wb.document.querySelectorAll('#world .fr .pb')].length
+    check('frames with prototype connections get a ▶ badge (and others don’t)', !!(tile() && tile().querySelector('.pb')) && others === 1, 'badges: ' + others)
+    const pb = tile().querySelector('.pb')
+    pointer(wb, 'pointerdown', pb); pointer(wb, 'pointerup', pb); await tick(30)
+    const frameEl = () => wb.document.querySelector('#live .lv iframe')
+    const src = () => (frameEl() || {}).src || ''
+    check('▶ plays the live prototype in place, in the clean embed by default', !!frameEl() && src().indexOf('https://www.figma.com/embed?embed_host=showroom&url=') === 0 && decodeURIComponent(src()).indexOf('/proto/' + fk + '/?node-id=' + nid.replace(':', '-')) > 0 && tile().classList.contains('playing'), src())
+    const before = frameEl()
+    wb.showroomTest.renderWall(); await tick(10)
+    check('wall redraws don’t reload a playing prototype', frameEl() === before && tile().classList.contains('playing'))
+    click(wb, '#view-opts'); await tick(10)
+    click(wb, '#viewopts [data-vo="protoStyle"][data-val="kit2"]'); await tick(20)
+    check('the “With controls” embed can be chosen in View options', src().indexOf('https://embed.figma.com/proto/' + fk) === 0 && /footer=false/.test(src()) && (bryce.store.get('showroom.prefs').wallView || {}).protoStyle === 'kit2', src())
+    click(wb, '#viewopts [data-vo="protoStyle"][data-val="legacy"]'); await tick(20)
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
-    check('Esc closes the prototype', $(wb, '#player').classList.contains('hidden') && !$(wb, '#pl-frame'))
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
+    check('Esc stops the prototype', !frameEl() && !tile().classList.contains('playing'))
+    // Large window
+    pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
+    click(wb, '#insp-play-large'); await tick(20)
+    const big = () => ($(wb, '#pl-frame') || {}).src || ''
+    check('“Large” plays it in a big window over the wall', !$(wb, '#player').classList.contains('hidden') && big().indexOf('https://www.figma.com/embed?') === 0, big())
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
+    check('Esc closes the big window', $(wb, '#player').classList.contains('hidden') && !$(wb, '#pl-frame'))
+    // Present plays prototype frames by themselves
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
+    pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'p', bubbles: true })); await tick(600)
+    check('Present plays a prototype frame when you reach it', !!frameEl() && /Live prototype/.test(($(wb, '#hud-what') || {}).textContent || ''), ($(wb, '#hud-what') || {}).textContent)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); await tick(30)
+    check('…and stops it when you move on', !frameEl())
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
+    delete api.files[fk].nodes[nid].interactions
   }
   click(wb, '#view-opts'); await tick(10); click(wb, '#vo-reset'); await tick(20); click(wb, '#view-opts'); await tick(10)
   click(wb, '#view-opts'); await tick(10)
@@ -526,6 +555,7 @@ function pointer(w, type, target, extra) {
   await key('ArrowRight')
   const secondSel = selIds()
   check('arrow keys step from frame to frame', firstSel.length === 1 && secondSel.length === 1 && firstSel[0] !== secondSel[0], firstSel + ' → ' + secondSel)
+  await key('!', { code: 'Digit1', shiftKey: true })
   const zoomBefore = $(wb, '#zoom-val').textContent
   await key('@', { code: 'Digit2', shiftKey: true })
   check('Shift+2 zooms to the selection', $(wb, '#zoom-val').textContent !== zoomBefore, zoomBefore + ' → ' + $(wb, '#zoom-val').textContent)
