@@ -219,6 +219,13 @@ Steps that can't be checked yet show "–" with a note. Tests skip the screen th
   - the 4096 px image cap on long frames.
 - Tests build a small mock FigJam canvas inside `plugin.test.cjs`.
 
+**Prototype player (TEST, v0.9.1):** the inspector's "Play prototype (test)" button (single frame) runs `openPlayer(it, style)`, which fills `#player` (an overlay outside `#viewport`, so pointer capture doesn't swallow its clicks) with an iframe from `protoUrl(it, style)`.
+- `kit2`: `embed.figma.com/proto/:key/?node-id=…&starting-point-node-id=…&embed-host=showroom&footer=false&viewport-controls=false&hotspot-hints=false&device-frame=false&scaling=contain&content-scaling=fixed`.
+- `legacy`: `www.figma.com/embed?embed_host=showroom&url=<www.figma.com/proto/… hide-ui=1>`.
+- The chosen style is saved in `prefs.protoStyle`. Restart reloads the iframe; the external-link button sends `open-item {proto:true}` (code.js opens `figma.com/proto/…` in the browser); Esc or ✕ closes and removes the iframe.
+- `manifest.json` `allowedDomains` gained `https://embed.figma.com` and `https://www.figma.com` (network limits apply to a framed site's domain).
+- Open questions it's meant to answer in real Figma: does the embed know the user is signed in inside the plugin window (private files), and which style works. The Embed API (events/controls) needs an OAuth client-id plus an allowed origin, which a plugin iframe probably can't provide, so it isn't used.
+
 Wall selection is `S.wall.selected` (an array):
 - Shift, Ctrl or ⌘-click toggles a frame.
 - Shift-drag on the background draws a selection box.

@@ -320,6 +320,17 @@ body.presenting .sec { display: none; }
 .vo-toggle input:checked { background: var(--brand); }
 .vo-toggle input:checked::after { transform: translateX(12px); }
 .icon.on { background: var(--bg2); color: var(--text); }
+#player { position: absolute; inset: 52px 12px 12px; z-index: 8; display: flex; flex-direction: column; border-radius: 12px; overflow: hidden;
+  background: var(--bg); box-shadow: 0 0 0 1px var(--line), 0 18px 60px rgba(0,0,0,.35); animation: pop .18s ease-out; }
+#player.hidden { display: none; }
+.pl-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--line); }
+.pl-bar .seg { flex-shrink: 0; }
+.pl-bar .seg button { padding: 0 10px; flex: none; overflow: visible; }
+.pl-name { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-stage { position: relative; flex: 1; background: #1e1e1e; }
+.pl-stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; opacity: 0; transition: opacity .25s; }
+.pl-stage iframe.in { opacity: 1; }
+.pl-wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 12px; padding: 20px; text-align: center; }
 #inspector { position: absolute; left: 12px; bottom: 12px; width: 290px; z-index: 4; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
 #grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 5;
   background: linear-gradient(135deg, transparent 50%, var(--muted) 50%, var(--muted) 56%, transparent 56%, transparent 70%, var(--muted) 70%, var(--muted) 76%, transparent 76%); opacity: .6; }
@@ -1453,6 +1464,7 @@ function wallKey(e) {
     return false
   }
   const open = (id) => $(id) && !$(id).classList.contains('hidden')
+  if (k === 'Escape' && open('player')) { closePlayer(); return true }
   if (k === 'Escape') {
     if (open('shortcuts')) { toggleShortcuts(false); return true }
     if (open('viewopts')) { toggleViewOptions(false); return true }
@@ -2585,7 +2597,8 @@ function renderWallShell() {
   html += '<div id="viewopts" class="card hidden" role="dialog" aria-label="View options"></div>'
   html += '<div id="filters" class="card hidden" role="dialog" aria-label="Filter frames"></div>'
   html += '<div id="shortcuts" class="card hidden" role="dialog" aria-label="Keyboard shortcuts"></div>'
-  html += '<div id="inspector" class="card hidden"></div><div id="history" class="card hidden" role="dialog" aria-label="Version history"></div><div id="grip" title="Drag to resize"></div></div>'
+  html += '<div id="inspector" class="card hidden"></div><div id="history" class="card hidden" role="dialog" aria-label="Version history"></div>'
+  html += '<div id="player" class="hidden" role="dialog" aria-label="Prototype"></div><div id="grip" title="Drag to resize"></div></div>'
   $('app').innerHTML = html
   applyWallView()
   bindWall()
@@ -2749,6 +2762,7 @@ function renderInspector() {
     else html += '<div class="muted small" style="margin-top:8px">Channel: <b>' + esc(it.channel) + '</b>. Change it from its own file.</div>'
     html += statusControl(items)
     html += '<div class="row" style="margin-top:10px"><button class="btn primary grow" id="insp-open">' + icon('ext', 14) + 'Open in Figma</button><button class="btn" id="insp-refresh" title="Reload this frame from its file now"' + busy + '>' + icon('refresh', 14) + 'Refresh</button></div>'
+    html += '<button class="btn" id="insp-play" style="margin-top:4px;width:100%" title="Test: play this frame’s live Figma prototype here">' + icon('play', 14) + 'Play prototype <span class="muted small">(test)</span></button>'
     html += '<div class="row" style="margin-top:4px"><button class="btn ghost" id="insp-history" style="padding:0 4px">' + icon('clock', 14) + 'History</button><span class="grow"></span><button class="btn ghost danger" id="insp-remove" style="padding:0 4px">' + (editable ? 'Remove from campaign' : 'Hide on my wall') + '</button></div>'
   } else {
     html += '<div class="row" style="align-items:flex-start"><div class="grow"><div style="font-weight:600;font-size:13px">' + items.length + ' frames selected</div>'
@@ -2769,6 +2783,7 @@ function renderInspector() {
   $('insp-refresh').addEventListener('click', () => refreshSelected())
   const chSel = $('insp-channel'); if (chSel) chSel.addEventListener('change', (e) => { if (e.target.value) send('set-channel', { campaignId: c.id, itemIds: ids, channel: e.target.value }) })
   const hist = $('insp-history'); if (hist) hist.addEventListener('click', () => openHistory(items[0]))
+  const play = $('insp-play'); if (play) play.addEventListener('click', () => openPlayer(items[0]))
   box.querySelectorAll('[data-status]').forEach((el) => el.addEventListener('click', () => setStatus(ids, el.dataset.status)))
   $('insp-remove').addEventListener('click', (e) => {
     const b = e.currentTarget
@@ -2776,6 +2791,53 @@ function renderInspector() {
     setSelection([])
     send('remove-item', { campaignId: c.id, itemIds: ids })
   })
+}
+
+// ---------- prototype player (TEST) ----------
+// Plays a frame's live Figma prototype inside the plugin, using Figma's own embed with its
+// interface hidden. This is a test of whether embeds work inside the plugin window at all
+// (mainly: does it know you're signed in, so private files load?). Two embed styles to compare:
+//  - 'kit2': the current one, embed.figma.com/proto/…
+//  - 'legacy': the older figma.com/embed?url=… wrapper, which may handle sign-in differently.
+function protoUrl(it, style) {
+  const nid = String(it.nodeId).replace(/:/g, '-')
+  if (style === 'legacy') {
+    const inner = 'https://www.figma.com/proto/' + it.fileKey + '/?node-id=' + nid + '&starting-point-node-id=' + nid + '&hide-ui=1&hotspot-hints=0&scaling=contain'
+    return 'https://www.figma.com/embed?embed_host=showroom&url=' + encodeURIComponent(inner)
+  }
+  return 'https://embed.figma.com/proto/' + it.fileKey + '/?node-id=' + nid + '&starting-point-node-id=' + nid +
+    '&embed-host=showroom&footer=false&viewport-controls=false&hotspot-hints=false&device-frame=false&scaling=contain&content-scaling=fixed'
+}
+function openPlayer(it, style) {
+  const box = $('player'); if (!box || !it) return
+  style = style || S.prefs.protoStyle || 'kit2'
+  S.player = { it: it, style: style, at: Date.now() }
+  const name = (nodeInfo(it) || {}).name || it.name
+  const tab = (v, label) => '<button class="' + (style === v ? 'on' : '') + '" data-pstyle="' + v + '">' + label + '</button>'
+  box.innerHTML = '<div class="pl-bar"><div class="grow" style="min-width:0"><div class="pl-name">' + icon('play', 12) + esc(name) + '</div>' +
+      '<div class="muted small">Test: if you see a Figma sign-in or “no access” screen, try the other embed style.</div></div>' +
+      '<div class="seg" style="width:auto">' + tab('kit2', 'New embed') + tab('legacy', 'Older embed') + '</div>' +
+      '<button class="icon" id="pl-restart" title="Restart the prototype" aria-label="Restart the prototype">' + icon('refresh') + '</button>' +
+      '<button class="icon" id="pl-browser" title="Open the prototype in your browser" aria-label="Open the prototype in your browser">' + icon('ext') + '</button>' +
+      '<button class="icon" id="pl-close" title="Close (Esc)" aria-label="Close">' + icon('x') + '</button></div>' +
+    '<div class="pl-stage"><div class="pl-wait" id="pl-wait">Loading the prototype from Figma…</div>' +
+      '<iframe id="pl-frame" src="' + esc(protoUrl(it, style)) + '" allow="fullscreen; clipboard-write" allowfullscreen referrerpolicy="origin"></iframe></div>'
+  box.classList.remove('hidden')
+  $('pl-frame').addEventListener('load', () => { const w = $('pl-wait'); if (w) w.textContent = 'Loaded. If nothing shows, try the other embed style.'; $('pl-frame').classList.add('in') })
+  // The embed's own page never tells the plugin whether it worked, so say so if it's slow.
+  setTimeout(() => { const w = $('pl-wait'); if (S.player && S.player.it === it && w && !$('pl-frame').classList.contains('in')) w.textContent = 'Still loading… If this never finishes, the plugin may be blocked from showing Figma embeds.' }, 15000)
+  box.querySelectorAll('[data-pstyle]').forEach((b) => b.addEventListener('click', () => {
+    S.prefs.protoStyle = b.dataset.pstyle; send('save-prefs', { prefs: { protoStyle: b.dataset.pstyle } })
+    openPlayer(it, b.dataset.pstyle)
+  }))
+  $('pl-restart').addEventListener('click', () => openPlayer(it, style))
+  $('pl-browser').addEventListener('click', () => send('open-item', { fileKey: it.fileKey, nodeId: it.nodeId, proto: true }))
+  $('pl-close').addEventListener('click', closePlayer)
+}
+function closePlayer() {
+  const box = $('player'); if (!box) return
+  box.classList.add('hidden'); box.innerHTML = ''   // removing the iframe stops the prototype
+  S.player = null
 }
 
 // ---------- history panel ----------

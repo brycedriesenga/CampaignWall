@@ -315,6 +315,11 @@ async function setChannel(msg) {
 async function openItem(msg) {
   const fileKey = msg.fileKey;
   const nodeId = msg.nodeId;
+  if (msg.proto) {
+    const nid = encodeURIComponent(nodeId.replace(/:/g, '-'));
+    figma.openExternal('https://www.figma.com/proto/' + fileKey + '/?node-id=' + nid + '&starting-point-node-id=' + nid);
+    return { message: 'Opening the prototype in your browser…' };
+  }
   if (fileKey && fileKey === currentFileKey() && !msg.versionId) {
     const node = await figma.getNodeByIdAsync(nodeId);
     if (node && node.type !== 'PAGE' && node.type !== 'DOCUMENT') {

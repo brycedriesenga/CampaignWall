@@ -493,6 +493,21 @@ function pointer(w, type, target, extra) {
   check('the cluster option follows the grouping', /Cluster within rows by/.test($(wb, '#viewopts').textContent) && !!$(wb, '#viewopts [data-vo="subChannel"][data-val="filepage"]') && $(wb, '#viewopts [data-vo="subChannel"][data-val="file"]').classList.contains('on'))
   wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
   check('Esc closes View options', $(wb, '#viewopts').classList.contains('hidden'))
+  // Prototype player (test build)
+  {
+    const tile = wb.document.querySelector('#world .fr')
+    pointer(wb, 'pointerdown', tile); pointer(wb, 'pointerup', tile); await tick(450)
+    click(wb, '#insp-play'); await tick(20)
+    const [fk, nid] = tile.dataset.id.split('|')
+    const src = () => ($(wb, '#pl-frame') || {}).src || ''
+    check('Play prototype opens the live prototype embed with Figma’s interface hidden', !$(wb, '#player').classList.contains('hidden') && src().indexOf('https://embed.figma.com/proto/' + fk + '/?node-id=' + nid.replace(':', '-')) === 0 && /footer=false/.test(src()) && /hotspot-hints=false/.test(src()), src())
+    click(wb, '#player [data-pstyle="legacy"]'); await tick(20)
+    check('…and can switch to the older embed style', src().indexOf('https://www.figma.com/embed?embed_host=showroom&url=') === 0 && (bryce.store.get('showroom.prefs') || {}).protoStyle === 'legacy', src())
+    click(wb, '#player [data-pstyle="kit2"]'); await tick(20)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
+    check('Esc closes the prototype', $(wb, '#player').classList.contains('hidden') && !$(wb, '#pl-frame'))
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
+  }
   click(wb, '#view-opts'); await tick(10); click(wb, '#vo-reset'); await tick(20); click(wb, '#view-opts'); await tick(10)
   click(wb, '#view-opts'); await tick(10)
   check('outside-the-edge setting defaults to fade + line', vp().dataset.edge === 'both')
