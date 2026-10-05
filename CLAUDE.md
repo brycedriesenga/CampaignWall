@@ -224,7 +224,8 @@ Steps that can't be checked yet show "–" with a note. Tests skip the screen th
 - `legacy`: `www.figma.com/embed?embed_host=showroom&url=<www.figma.com/proto/… hide-ui=1>`.
 - The chosen style is saved in `prefs.protoStyle`. Restart reloads the iframe; the external-link button sends `open-item {proto:true}` (code.js opens `figma.com/proto/…` in the browser); Esc or ✕ closes and removes the iframe.
 - `manifest.json` `allowedDomains` gained `https://embed.figma.com` and `https://www.figma.com` (network limits apply to a framed site's domain).
-- Open questions it's meant to answer in real Figma: does the embed know the user is signed in inside the plugin window (private files), and which style works. The Embed API (events/controls) needs an OAuth client-id plus an allowed origin, which a plugin iframe probably can't provide, so it isn't used.
+- **Tested 2026-10-05 in Figma desktop (Windows): both styles load private files signed in.** The new embed still shows a small ← → ↺ control bar at the bottom; the older embed shows no controls.
+- Questions it was built to answer: does the embed know the user is signed in inside the plugin window (private files), and which style works. The Embed API (events/controls) needs an OAuth client-id plus an allowed origin, which a plugin iframe probably can't provide, so it isn't used.
 
 Wall selection is `S.wall.selected` (an array):
 - Shift, Ctrl or ⌘-click toggles a frame.
