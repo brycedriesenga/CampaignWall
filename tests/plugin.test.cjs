@@ -500,12 +500,22 @@ function pointer(w, type, target, extra) {
     check('auto device: a wide Site page gets a browser, a narrow one a phone', t.autoDevice(it('Desktop', 'Site', 1440, 3000)).d === 'browser' && t.autoDevice(it('Mobile home', 'Site', 390, 2400)).d === 'phone')
     check('auto device: page parts and other channels get none', t.autoDevice(it('PLP banner - D - section-category-tall', 'Site', 1440, 730)).d === 'none' &&
       t.autoDevice(it('In-Gallery Ad', 'Site', 390, 700)).d === 'none' && t.autoDevice(it('Gift guide', 'Email', 600, 2000)).d === 'none' && t.autoDevice(it('Strip', 'Site', 1440, 300)).d === 'none')
+    const box = (x, y, w, h) => ({ x: x, y: y, width: w, height: h })
+    const doc = { absoluteBoundingBox: box(100, 100, 1440, 4000), children: [
+      { id: '9:1', name: 'Global Header / Desktop', absoluteBoundingBox: box(100, 100, 1440, 120) },
+      { id: '9:2', name: 'Hero', absoluteBoundingBox: box(100, 220, 1440, 700) },
+      { id: '9:3', name: 'Footer', absoluteBoundingBox: box(100, 3700, 1440, 400) } ] }
+    const parts = t.pageParts(doc)
+    check('a header layer across the top and a footer are recognised', parts.hdr && parts.hdr.id === '9:1' && parts.hdr.h === 120 && parts.ftr === true, JSON.stringify(parts))
+    check('…inside a single wrapper too, but not a narrow or low "nav"', t.pageParts({ absoluteBoundingBox: box(0, 0, 390, 2000), children: [{ id: 'w', name: 'Content', absoluteBoundingBox: box(0, 0, 390, 2000), children: [{ id: 'h', name: 'Header', absoluteBoundingBox: box(0, 0, 390, 60) }] }] }).hdr.id === 'h' &&
+      !t.pageParts({ absoluteBoundingBox: box(0, 0, 1440, 2000), children: [{ id: 'n', name: 'Side nav', absoluteBoundingBox: box(0, 0, 300, 2000) }, { id: 'n2', name: 'Nav', absoluteBoundingBox: box(0, 900, 1440, 80) }] }).hdr)
     // Make Bryce's "Desktop" frame a long page, then present it.
-    api.files.EMAILFILE0001.nodes['1:5'] = { id: '1:5', name: 'Desktop', absoluteBoundingBox: { x: 0, y: 0, width: 1536, height: 3200 } }
+    api.files.EMAILFILE0001.nodes['1:5'] = { id: '1:5', name: 'Desktop hero', absoluteBoundingBox: { x: 0, y: 0, width: 1536, height: 3200 },
+      children: [{ id: '1:50', name: 'Global Header', absoluteBoundingBox: { x: 0, y: 0, width: 1536, height: 110 } }] }
     const tile = () => wb.document.querySelector('#world .fr[data-id="EMAILFILE0001|1:5"]')
     pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
     click(wb, '#insp-refresh'); await tick(600)
-    check('frame details offer a device choice, showing what Auto picks', !!$(wb, '#inspector [data-device="phone"]') && /Auto: browser/.test($(wb, '#inspector').textContent), $(wb, '#inspector').textContent)
+    check('frame details offer a device choice, showing what Auto picks and why', !!$(wb, '#inspector [data-device="phone"]') && /Auto: browser \(1536 px wide, it has a header layer\)/.test($(wb, '#inspector').textContent), $(wb, '#inspector').textContent)
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'p', bubbles: true })); await tick(100)
     const pageY = () => { const pg = wb.document.querySelector('#dev .dv-page'); const m = pg && /translateY\((-?[\d.]+)px\)/.exec(pg.style.transform); return m ? -Number(m[1]) : null }
     check('Present shows a long Site page in a browser window', !!wb.document.querySelector('#dev .dv-browser') && pageY() === 0, ($(wb, '#dev') || {}).innerHTML)
