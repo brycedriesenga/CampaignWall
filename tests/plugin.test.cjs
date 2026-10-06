@@ -526,6 +526,13 @@ function pointer(w, type, target, extra) {
     check('↑ scrolls back up', pageY() === 0)
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)
     check('leaving Present removes the device', !$(wb, '#dev'))
+    // Device chrome on the wall too
+    click(wb, '#view-opts'); await tick(10)
+    click(wb, '#viewopts [data-vo="devicePresent"][data-val="wall"]'); await tick(30)
+    check('“Wall too” puts browser chrome around Site pages on the wall, with room above for it', tile().classList.contains('wdv-on') && !!tile().querySelector('.wdv-browser') && /--dvt:\s*88px/.test(tile().getAttribute('style')), tile().getAttribute('style'))
+    click(wb, '#viewopts [data-vo="devicePresent"][data-val="on"]'); await tick(30)
+    check('…and goes away again', !tile().classList.contains('wdv-on'))
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
     // Choose "Phone" for it: saved in the file for the team, and Present follows.
     pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
     click(wb, '#inspector [data-device="phone"]'); await tick(150)

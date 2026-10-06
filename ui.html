@@ -347,6 +347,18 @@ body.presenting .sec { display: none; }
 .vo-toggle input:checked { background: var(--brand); }
 .vo-toggle input:checked::after { transform: translateX(12px); }
 .icon.on { background: var(--bg2); color: var(--text); }
+/* Device chrome around frames on the wall (View options › Device frames › Wall too). It sits outside the
+   frame's box, in wall units, so it scales with the wall like the design does; labels and ▶ move above it. */
+.fr.wdv-on { box-shadow: none; }
+.fr.wdv-on .lbl { bottom: calc(100% + var(--dvt, 0px)); left: calc(-1 * var(--dvl, 0px)); }
+.fr.wdv-on .pb { bottom: calc(100% + var(--dvt, 0px)); right: calc(-1 * var(--dvl, 0px)); }
+.wdv { position: absolute; pointer-events: none; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #1f1f1f; }
+.wdv-browser { left: 0; right: 0; top: -88px; bottom: 0; border-radius: 12px 12px 0 0; background: #dfe3e8; box-shadow: 0 0 0 1px rgba(0,0,0,.18), 0 18px 50px rgba(0,0,0,.28); }
+.wdv-phone { left: -14px; right: -14px; top: -68px; bottom: -126px; border-radius: 62px; background: #121212; box-shadow: 0 0 0 1.5px #3a3a3a inset, 0 18px 50px rgba(0,0,0,.3); }
+.wdv-phone .dv-status { position: absolute; left: 14px; right: 14px; top: 14px; background: #fff; border-radius: 48px 48px 0 0; }
+.wdv-phone .dv-mbar { position: absolute; left: 14px; right: 14px; bottom: 14px; border-radius: 0 0 48px 48px; }
+.fr.wdv-on.sel { outline: none; }
+.fr.wdv-on.sel .wdv { box-shadow: 0 0 0 calc(2px * var(--inv)) var(--brand), 0 18px 50px rgba(0,0,0,.28); }
 /* Device frames in Present: a stage over the dimmed wall with the device scaled to fit. */
 #dev { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; background: var(--cv-bg); animation: pop .2s ease-out; }
 .dv-fit { position: relative; flex-shrink: 0; }
@@ -1440,7 +1452,7 @@ function setWallView(change) {
   applyWallView()
   // Spacing, grouping and labels change where frames sit, so lay the wall out again and re-fit.
   const v = wallView()
-  if (v.spacing !== before.spacing || v.group !== before.group || v.names !== before.names || subMode(v) !== subMode(before)) { S.wall.fitted = S.wall.touched; renderWall() }
+  if (v.spacing !== before.spacing || v.group !== before.group || v.names !== before.names || subMode(v) !== subMode(before) || (v.devicePresent === 'wall') !== (before.devicePresent === 'wall') || (v.siteAddress !== before.siteAddress && v.devicePresent === 'wall')) { S.wall.fitted = S.wall.touched; renderWall() }
   if (v.protoStyle !== before.protoStyle && S.wall.live) playInPlace(S.wall.live.id, { noZoom: true })
   renderViewOptions()
 }
@@ -1471,7 +1483,7 @@ function renderViewOptions() {
   html += '<div><div class="vo-title">Content outside a frame’s edge</div>' + seg('edge', [['both', 'Both'], ['fade', 'Fade'], ['line', 'Line'], ['none', 'Off']], { both: 'Fade it and draw the frame’s edge', fade: 'Fade content outside the frame', line: 'Draw the frame’s edge as a dashed line', none: 'Show everything as rendered' }) + '</div>'
   html += '<div><div class="vo-title">Live prototypes</div>' + seg('protoStyle', [['legacy', 'Clean'], ['kit2', 'With controls']], { legacy: 'Just the prototype, no Figma controls', kit2: 'Adds Figma’s back, forward and restart buttons under the prototype' }) +
     '<div style="height:6px"></div>' + seg('protoPresent', [['auto', 'Play in Present'], ['click', 'Only with ▶']], { auto: 'Prototype frames start playing when you reach them in Present', click: 'Prototypes only play when you press ▶' }) + '</div>'
-  html += '<div><div class="vo-title">Device frames</div>' + seg('devicePresent', [['on', 'In Present'], ['off', 'Off']], { on: 'Site pages show in a browser window or phone when you present them', off: 'Present frames on their own' }) +
+  html += '<div><div class="vo-title">Device frames</div>' + seg('devicePresent', [['on', 'In Present'], ['wall', 'Wall too'], ['off', 'Off']], { on: 'Site pages show in a browser window or phone when you present them', wall: 'Also show browser and phone chrome around Site pages on the wall', off: 'Present frames on their own' }) +
     '<input class="field" id="vo-site" style="margin-top:6px;height:28px" placeholder="Address in the browser bar, e.g. www.merrell.com" value="' + esc(v.siteAddress || '') + '" aria-label="Address shown in the browser bar"></div>'
   html += '<div>' + toggle('grid', 'Dot grid') + toggle('names', 'Frame names') + toggle('meta', 'File and edit info') + toggle('headings', 'Row headings') + '</div>'
   html += '<div class="row" style="justify-content:space-between"><button class="btn ghost" id="vo-reset" style="height:26px;padding:0 6px">Reset to defaults</button>' +
@@ -1800,7 +1812,7 @@ function deviceFor(it) { return it.device && it.device !== 'auto' ? it.device : 
 function deviceControl(items) {
   const cur = Array.from(new Set(items.map((it) => it.device || 'auto')))
   const one = cur.length === 1 ? cur[0] : null
-  let html = '<div style="margin-top:10px"><div class="label">Device frame in Present</div><div class="seg" role="radiogroup">'
+  let html = '<div style="margin-top:10px"><div class="label">Device frame</div><div class="seg" role="radiogroup">'
   html += DEVICES.map((d) => '<button role="radio" aria-checked="' + (one === d[0]) + '" class="' + (one === d[0] ? 'on' : '') + '" data-device="' + d[0] + '">' + d[1] + '</button>').join('')
   html += '</div>'
   if (items.length === 1 && one === 'auto') { const a = autoDevice(items[0]); html += '<div class="muted small" style="margin-top:4px">Auto: ' + (a.d === 'none' ? 'none' : a.d === 'phone' ? 'phone' : 'browser') + ' (' + esc(a.why) + ')</div>' }
@@ -1856,11 +1868,28 @@ function deviceHTML(kind, it, n, W, H, VH) {
     '<div class="dv-url">' + devIcon('lock', 14) + '<span>' + esc(addr.host) + '<em>' + esc(addr.path) + '</em></span>' + (wide ? '<span class="dv-star">' + devIcon('star', 16) + '</span>' : '') + '</div>' +
     '<span class="dv-tools"><i class="dv-avatar"></i>' + devIcon('menu', 18) + '</span></div>' + page + '</div>'
 }
+// Room the device chrome takes around a frame on the wall, in wall units (= the design's pixels).
+const DEV_INSETS = { none: { t: 0, r: 0, b: 0, l: 0 }, browser: { t: 88, r: 0, b: 0, l: 0 }, phone: { t: 68, r: 14, b: 126, l: 14 } }
+// The chrome alone, around a frame on the wall: the page shows at its full length below it.
+function wallDeviceHTML(kind, it, n, W, H) {
+  const addr = deviceAddress(it)
+  if (kind === 'phone') {
+    return '<div class="wdv wdv-phone" aria-hidden="true"><div class="dv-status"><span class="dv-time">9:41</span><span class="dv-island"></span><span class="dv-sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>' +
+      '<div class="dv-mbar"><div class="dv-murl">' + devIcon('aa', 18) + '<span>' + devIcon('lock', 13) + esc(addr.host.replace(/^www\./, '')) + '</span>' + devIcon('reload', 18) + '</div>' +
+      '<div class="dv-mnav">' + devIcon('back', 22) + devIcon('fwd', 22) + devIcon('share', 22) + devIcon('tabs', 22) + '</div></div></div>'
+  }
+  const wide = W >= 1200
+  return '<div class="wdv wdv-browser' + (wide ? ' wide' : '') + '" aria-hidden="true">' +
+    '<div class="dv-tabs"><span class="dv-dots"><i></i><i></i><i></i></span><div class="dv-tab"><span class="dv-fav"></span><span class="dv-title">' + esc((n && n.name) || it.name || addr.host) + '</span><span class="dv-x">×</span></div><span class="dv-plus">+</span></div>' +
+    '<div class="dv-bar"><span class="dv-nav">' + devIcon('back', 18) + devIcon('fwd', 18) + devIcon('reload', 18) + '</span>' +
+    '<div class="dv-url">' + devIcon('lock', 14) + '<span>' + esc(addr.host) + '<em>' + esc(addr.path) + '</em></span>' + (wide ? '<span class="dv-star">' + devIcon('star', 16) + '</span>' : '') + '</div>' +
+    '<span class="dv-tools"><i class="dv-avatar"></i>' + devIcon('menu', 18) + '</span></div></div>'
+}
 // Shows (or, with null, removes) the device stage over the dimmed wall for the frame being presented.
 function showDevice(p) {
   const vp = $('viewport'); if (!vp) return
   let stage = $('dev')
-  const kind = p && wallView().devicePresent !== 'off' ? deviceFor(p.it) : 'none'
+  const kind = p && wallView().devicePresent !== 'off' ? deviceFor(p.it) : 'none'   // 'on' (Present) or 'wall' (wall + Present)
   if (!p || kind === 'none') { if (stage) stage.remove(); S.wall.dev = null; return }
   const n = p.n || nodeInfo(p.it) || {}
   const W = n.width || p.w, H = n.height || p.h
@@ -2823,20 +2852,24 @@ function layout(c, zRef) {
       const n = nodeInfo(it)
       const w = Math.max(40, (n && (n.viewW || n.width)) || it.width || 400)
       const h = Math.max(40, (n && (n.viewH || n.height)) || it.height || 300)
+      // Device frames on the wall: the frame keeps its place inside a bigger block (its chrome around it).
+      const dev = view.devicePresent === 'wall' ? deviceFor(it) : 'none'
+      const ins = DEV_INSETS[dev] || DEV_INSETS.none
+      const ow = w + ins.l + ins.r, oh = h + ins.t + ins.b
       const cl = cl0 ? clusterOf(it, src.mode) : null
       const newCluster = cl && prevKey !== null && cl.key !== prevKey
       if (newCluster && x > 0) x += SEC.between + SEC.pad * 2 - GAP
-      if (x > 0 && x + w > MAX_ROW) { close(); x = 0; rowY += rowH + below + (cl0 ? px(28) : GAP) + above; rowH = 0 }
-      if (cl && (!seg || newCluster)) { close(); seg = { label: cl.label, x1: x, x2: x + w, y: rowY, ids: [] } }
-      g.items.push({ it: it, n: n, x: x, y: rowY, w: w, h: h })
-      if (seg) { seg.x2 = x + w; seg.ids.push(it.id) }
-      x += w + GAP; rowH = Math.max(rowH, h); maxX = Math.max(maxX, x - GAP + (cl0 ? SEC.pad : 0))
+      if (x > 0 && x + ow > MAX_ROW) { close(); x = 0; rowY += rowH + below + (cl0 ? px(28) : GAP) + above; rowH = 0 }
+      if (cl && (!seg || newCluster)) { close(); seg = { label: cl.label, x1: x, x2: x + ow, y: rowY, ids: [] } }
+      g.items.push({ it: it, n: n, x: x + ins.l, y: rowY + ins.t, w: w, h: h, dev: dev, ins: ins, oy: rowY, oh: oh })
+      if (seg) { seg.x2 = x + ow; seg.ids.push(it.id) }
+      x += ow + GAP; rowH = Math.max(rowH, oh); maxX = Math.max(maxX, x - GAP + (cl0 ? SEC.pad : 0))
       if (cl) prevKey = cl.key
     }
     close()
     // Sections in a row share its height (its tallest frame), so they line up.
     g.segments.forEach((sg) => {
-      sg.h = Math.max.apply(null, g.items.filter((p) => p.y === sg.y).map((p) => p.h))
+      sg.h = Math.max.apply(null, g.items.filter((p) => p.oy === sg.y).map((p) => p.oh))
       sg.box = { x: sg.x1 - SEC.pad, y: sg.y - SEC.top, w: sg.x2 - sg.x1 + SEC.pad * 2, h: sg.h + SEC.top + SEC.pad }
     })
     groups.push(g)
@@ -2936,7 +2969,9 @@ function renderWall() {
       // Round the tile like the frame, unless content spills past the frame's edges (then the tile is bigger than the frame).
       const radius = n && n.radius && !edge ? ';border-radius:' + n.radius : ''
       const play = n && n.proto && !n.missing ? '<button class="pb" data-play="' + esc(it.id) + '" title="Play the live prototype" aria-label="Play the live prototype">' + icon('play', 13) + '</button>' : ''
-      html += '<div class="fr' + (play ? ' hasproto' : '') + (S.wall.selected.indexOf(it.id) >= 0 ? ' sel' : '') + (n && n.missing ? ' missing' : '') + (matchesFilter(it) ? '' : ' dim') + (S.wall.present && S.wall.present.id === it.id ? ' cur' : '') + '" data-id="' + esc(it.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px;width:' + p.w + 'px;height:' + p.h + 'px;--w:' + p.w + radius + '">'
+      const dvc = p.dev && p.dev !== 'none' ? wallDeviceHTML(p.dev, it, n, p.w, p.h) : ''
+      const dvs = dvc ? ';--dvt:' + p.ins.t + 'px;--dvl:' + p.ins.l + 'px' : ''
+      html += '<div class="fr' + (dvc ? ' wdv-on wdv-' + p.dev : '') + (play ? ' hasproto' : '') + (S.wall.selected.indexOf(it.id) >= 0 ? ' sel' : '') + (n && n.missing ? ' missing' : '') + (matchesFilter(it) ? '' : ' dim') + (S.wall.present && S.wall.present.id === it.id ? ' cur' : '') + '" data-id="' + esc(it.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px;width:' + p.w + 'px;height:' + p.h + 'px;--w:' + p.w + radius + dvs + '">' + dvc
       html += '<div class="lbl"><div class="nm">' + statusBadge(it.status) + (isUpdated(it) ? '<span class="upd">Updated</span>' : '') + esc(name) + '</div><div class="mt">' + esc(meta) + '</div></div>' + body + edge + play + '</div>'
     }
   }
