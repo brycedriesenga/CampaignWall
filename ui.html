@@ -368,6 +368,10 @@ body.presenting .sec { display: none; }
 .dv-page.anim { transition: transform .45s cubic-bezier(.2,.7,.2,1); }
 .dv-page img { position: absolute; max-width: none; }
 .dv-page .sk { position: absolute; inset: 0; }
+.dv-live { position: absolute; inset: 0; overflow: hidden; }
+.dv-live .sk { position: absolute; inset: 0; }
+.dv-live iframe { position: absolute; border: 0; opacity: 0; transition: opacity .3s; }
+.dv-live iframe.in { opacity: 1; }
 .dv-sticky { position: absolute; top: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity .15s, box-shadow .2s; }
 .dv-sticky.stuck { opacity: 1; box-shadow: 0 6px 18px rgba(0,0,0,.14); }
 .dv-sticky img { display: block; width: 100%; height: 100%; }
@@ -1753,14 +1757,17 @@ function presentGo(i) {
   if (p) zoomToRect(p.x, p.y, p.w, p.h, { maxZoom: 1, pad: 40, bottom: 56 })
   // Prototype frames start playing once the zoom settles (View options › Prototypes in Present).
   clearTimeout(S.wall.autoplayTimer)
-  showDevice(p && !(hasProto(p.it) && wallView().protoPresent === 'auto') ? p : null)
-  if (p && hasProto(p.it) && wallView().protoPresent === 'auto' && !S.wall.live) {
+  // A prototype frame with a device plays inside the device; without one it plays on the wall as before.
+  const autoProto = !!(p && hasProto(p.it) && wallView().protoPresent === 'auto')
+  const kind = p && wallView().devicePresent !== 'off' ? deviceFor(p.it) : 'none'
+  showDevice(p && (!autoProto || kind !== 'none') ? p : null, { proto: autoProto })
+  if (p && autoProto && kind === 'none' && !S.wall.live) {
     const id = pr.id
     S.wall.autoplayTimer = setTimeout(() => { if (S.wall.present && S.wall.present.id === id) playInPlace(id, { noZoom: true }) }, 420)
   }
   const what = $('hud-what')
   if (what && p) what.innerHTML = (pr.index + 1) + ' / ' + pr.list.length + '<em>' + esc((nodeInfo(p.it) || {}).name || p.it.name) + ' · ' + esc(p.it.channel) + (p.it.status ? ' · ' + statusName(p.it.status) : '') +
-    (hasProto(p.it) ? ' · <span id="hud-live">' + (S.wall.live ? 'Live prototype' : 'Prototype') + '</span>' : '') + '</em>'
+    (hasProto(p.it) ? ' · <span id="hud-live">' + (S.wall.live || (S.wall.dev && S.wall.dev.proto) ? 'Live prototype' : 'Prototype') + '</span>' : '') + '</em>'
   wakeHud()
 }
 function presentStep(d) { if (S.wall.present) presentGo(S.wall.present.index + d) }
@@ -1854,16 +1861,23 @@ const DEV_ICONS = {
 }
 function devIcon(name, size) { return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + DEV_ICONS[name] + '</svg>' }
 // The device around a frame, at the design's own size (W = frame width).
-function deviceHTML(kind, it, n, W, H, VH) {
+function deviceHTML(kind, it, n, W, H, VH, proto) {
   const addr = deviceAddress(it)
+  // A live prototype fills the device's window at actual size: a bigger embed, cropped to the window.
+  // A frame that fits is centred in the embed (cropped on all sides); a taller one starts at the top and
+  // scrolls inside Figma's viewer, so only the sides are cropped.
+  const M = LIVE_MARGIN
+  const live = proto ? '<div class="dv-view" style="height:' + VH + 'px"><div class="dv-live">' + skeleton('Loading the prototype…') +
+    '<iframe src="' + esc(protoUrl(it, protoStyle(), 'min-zoom')) + '" style="left:' + (-M) + 'px;top:' + (H > VH ? 0 : -M) + 'px;width:' + (W + M * 2) + 'px;height:' + (H > VH ? VH : VH + M * 2) + 'px" allow="fullscreen; clipboard-write" allowfullscreen referrerpolicy="origin" title="Live prototype"></iframe></div></div>' : ''
   const sticky = n && n.hdr && H > VH && wallView().stickyHeader !== false
     ? '<div class="dv-sticky" style="left:' + (n.hdr.x || 0) + 'px;width:' + (n.hdr.w || W) + 'px;height:' + n.hdr.h + 'px">' + (n.hdrUrl ? '<img src="' + esc(n.hdrUrl) + '" alt="" draggable="false">' : '') + '</div>' : ''
   const page = '<div class="dv-view" style="height:' + VH + 'px">' + sticky + '<div class="dv-page" style="width:' + W + 'px;height:' + H + 'px">' +
     (n && n.url ? '<img src="' + esc(n.url) + '" alt="" draggable="false" style="left:' + (-(n.offX || 0)) + 'px;top:' + (-(n.offY || 0)) + 'px;width:' + (n.viewW || W) + 'px;height:' + (n.viewH || H) + 'px">' : skeleton(PHASE_TEXT.image)) +
     '</div>' + (H > VH ? '<div class="dv-scroll"><i></i></div>' : '') + '</div>'
+  const view = live || page
   if (kind === 'phone') {
     return '<div class="dv dv-phone" style="width:' + (W + 28) + 'px"><div class="dv-screen" style="width:' + W + 'px">' +
-      '<div class="dv-status"><span class="dv-time">9:41</span><span class="dv-island"></span><span class="dv-sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>' + page +
+      '<div class="dv-status"><span class="dv-time">9:41</span><span class="dv-island"></span><span class="dv-sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>' + view +
       '<div class="dv-mbar"><div class="dv-murl">' + devIcon('aa', 18) + '<span>' + devIcon('lock', 13) + esc(addr.host.replace(/^www\./, '')) + '</span>' + devIcon('reload', 18) + '</div>' +
       '<div class="dv-mnav">' + devIcon('back', 22) + devIcon('fwd', 22) + devIcon('share', 22) + devIcon('tabs', 22) + '</div><div class="dv-home"><i></i></div></div></div></div>'
   }
@@ -1873,7 +1887,7 @@ function deviceHTML(kind, it, n, W, H, VH) {
     '<div class="dv-tabs"><span class="dv-dots"><i></i><i></i><i></i></span><div class="dv-tab"><span class="dv-fav"></span><span class="dv-title">' + title + '</span><span class="dv-x">×</span></div><span class="dv-plus">+</span></div>' +
     '<div class="dv-bar"><span class="dv-nav">' + devIcon('back', 18) + devIcon('fwd', 18) + devIcon('reload', 18) + '</span>' +
     '<div class="dv-url">' + devIcon('lock', 14) + '<span>' + esc(addr.host) + '<em>' + esc(addr.path) + '</em></span>' + (wide ? '<span class="dv-star">' + devIcon('star', 16) + '</span>' : '') + '</div>' +
-    '<span class="dv-tools"><i class="dv-avatar"></i>' + devIcon('menu', 18) + '</span></div>' + page + '</div>'
+    '<span class="dv-tools"><i class="dv-avatar"></i>' + devIcon('menu', 18) + '</span></div>' + view + '</div>'
 }
 // Room the device chrome takes around a frame on the wall, in wall units (= the design's pixels).
 const DEV_INSETS = { none: { t: 0, r: 0, b: 0, l: 0 }, browser: { t: 88, r: 0, b: 0, l: 0 }, phone: { t: 68, r: 14, b: 126, l: 14 } }
@@ -1893,7 +1907,8 @@ function wallDeviceHTML(kind, it, n, W, H) {
     '<span class="dv-tools"><i class="dv-avatar"></i>' + devIcon('menu', 18) + '</span></div></div>'
 }
 // Shows (or, with null, removes) the device stage over the dimmed wall for the frame being presented.
-function showDevice(p) {
+function showDevice(p, opts) {
+  opts = opts || {}
   const vp = $('viewport'); if (!vp) return
   let stage = $('dev')
   const kind = p && wallView().devicePresent !== 'off' ? deviceFor(p.it) : 'none'   // 'on' (Present) or 'wall' (wall + Present)
@@ -1904,7 +1919,7 @@ function showDevice(p) {
   const full = kind === 'phone' ? Math.round(W * 2.164) - 54 - 112 : Math.round(W * 0.56)
   const VH = H <= full * 1.15 ? H : full
   if (!stage) { stage = document.createElement('div'); stage.id = 'dev'; vp.appendChild(stage) }
-  stage.innerHTML = '<div class="dv-fit">' + deviceHTML(kind, p.it, n, W, H, VH) + '</div>'
+  stage.innerHTML = '<div class="dv-fit">' + deviceHTML(kind, p.it, n, W, H, VH, opts.proto) + '</div>'
   const fitBox = stage.firstChild, dev = fitBox.firstChild
   const devW = kind === 'phone' ? W + 28 : W
   const devH = (kind === 'phone' ? 54 + 112 + 28 : 88) + VH
@@ -1913,7 +1928,10 @@ function showDevice(p) {
   dev.style.transform = 'scale(' + sc + ')'
   fitBox.style.width = (devW * sc) + 'px'; fitBox.style.height = (devH * sc) + 'px'
   fitBox.style.marginBottom = bottom + 'px'
-  S.wall.dev = { id: p.it.id, y: 0, max: Math.max(0, H - VH), vh: VH, h: H, s: sc, hdr: n.hdr && H > VH && wallView().stickyHeader !== false ? n.hdr : null }
+  // A live prototype scrolls itself (trackpad over it), so the keys move between frames.
+  S.wall.dev = { id: p.it.id, y: 0, max: opts.proto ? 0 : Math.max(0, H - VH), vh: VH, h: H, s: sc, proto: !!opts.proto,
+    hdr: !opts.proto && n.hdr && H > VH && wallView().stickyHeader !== false ? n.hdr : null }
+  if (opts.proto) { const fr = stage.querySelector('.dv-live iframe'); if (fr) fr.addEventListener('load', () => { fr.classList.add('in'); const w = stage.querySelector('.dv-live .sk'); if (w) setTimeout(() => w.remove(), 320) }) }
   devApply(false)
   if (S.wall.dev.hdr && !n.hdrUrl) loadStickyHeader(p.it, n)
 }

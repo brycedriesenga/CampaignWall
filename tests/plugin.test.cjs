@@ -530,6 +530,18 @@ function pointer(w, type, target, extra) {
     check('↑ scrolls back up', pageY() === 0)
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)
     check('leaving Present removes the device', !$(wb, '#dev'))
+    // A prototype frame with a device plays inside it in Present.
+    api.files.EMAILFILE0001.nodes['1:5'].interactions = [{ trigger: { type: 'ON_CLICK' }, actions: [{ type: 'NODE', destinationId: '9:9' }] }]
+    pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
+    click(wb, '#insp-refresh'); await tick(600)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'p', bubbles: true })); await tick(600)
+    const devFrame = wb.document.querySelector('#dev .dv-browser .dv-live iframe')
+    check('a prototype frame plays live inside its browser window in Present', !!devFrame && /scaling%3Dmin-zoom/.test(devFrame.src) && !wb.document.querySelector('#live .lv') && /Live prototype/.test($(wb, '#hud-what').textContent), ($(wb, '#dev') || {}).innerHTML)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)
+    delete api.files.EMAILFILE0001.nodes['1:5'].interactions
+    pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
+    click(wb, '#insp-refresh'); await tick(600)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
     // Device chrome on the wall too
     click(wb, '#view-opts'); await tick(10)
     click(wb, '#viewopts [data-vo="devicePresent"][data-val="wall"]'); await tick(30)
