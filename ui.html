@@ -88,24 +88,22 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 /* The wall's canvas has its own colours, so it can be light or dark whatever Figma's theme is (View options). */
 #viewport { --cv-bg: var(--bg2); --cv-ink: var(--text); --cv-sub: var(--muted); --cv-line: color-mix(in srgb, var(--cv-ink) 16%, transparent);
   flex: 1; min-height: 0; position: relative; overflow: hidden; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
-  color: var(--cv-ink); background-color: var(--cv-bg);
-  /* Dot grid in wall units: two layers (fine and coarse), sized and moved by moveGrid() so it pans and
-     zooms with the frames. The fine layer fades in as you zoom in, so the spacing never jumps. */
-  --g1: 20px; --g2: 40px; --gx: 0px; --gy: 0px; --ga: 1;
-  background-image: radial-gradient(circle, color-mix(in srgb, var(--cv-ink) calc(15% * var(--ga)), transparent) 1px, transparent 1.4px),
-    radial-gradient(circle, color-mix(in srgb, var(--cv-ink) 15%, transparent) 1px, transparent 1.4px);
-  background-size: var(--g1) var(--g1), var(--g2) var(--g2);
-  background-position: calc(var(--gx) - var(--g1) / 2) calc(var(--gy) - var(--g1) / 2), calc(var(--gx) - var(--g2) / 2) calc(var(--gy) - var(--g2) / 2); }
+  color: var(--cv-ink); background-color: var(--cv-bg); contain: layout paint; }
+/* Dot grid in wall units, in its own layer: two dot layers (fine and coarse) that moveGrid() sizes and moves so
+   the grid pans and zooms with the frames. The fine layer fades in as you zoom in, so the spacing never jumps. */
+#grid { position: absolute; inset: 0; pointer-events: none; }
+#grid i { position: absolute; inset: 0; background-image: radial-gradient(circle, color-mix(in srgb, var(--cv-ink) 15%, transparent) 1px, transparent 1.4px); }
+#viewport.no-grid #grid { display: none; }
 #viewport[data-bg="light"] { --cv-bg: #f0f0f0; --cv-ink: #1e1e1e; --cv-sub: #6b6b6b; }
 #viewport[data-bg="gray"] { --cv-bg: #9e9e9e; --cv-ink: #111111; --cv-sub: #2e2e2e; }
 #viewport[data-bg="dark"] { --cv-bg: #1e1e1e; --cv-ink: #f2f2f2; --cv-sub: #a3a3a3; }
 #viewport[data-bg="black"] { --cv-bg: #000000; --cv-ink: #ffffff; --cv-sub: #9a9a9a; }
-#viewport.no-grid { background-image: none; }
 #viewport[data-frame="none"] .fr { box-shadow: none; }
 #viewport[data-frame="shadow"] .fr { box-shadow: 0 calc(2px * var(--inv)) calc(6px * var(--inv)) rgba(0,0,0,.12), 0 calc(10px * var(--inv)) calc(30px * var(--inv)) rgba(0,0,0,.16); }
 #viewport.no-names .lbl, #viewport.no-headings .ch, #viewport.no-meta .lbl .mt { display: none; }
 #viewport.panning { cursor: grabbing; }
-#world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+#world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+#world.moving, #live.moving { will-change: transform; }
 /* No background: frames with rounded corners or see-through areas show the canvas, like in Figma. */
 .fr { position: absolute; box-shadow: 0 0 0 calc(1px * var(--inv)) var(--cv-line); }
 .fr img, .fr .sk, .fr .ph { border-radius: inherit; }
@@ -143,7 +141,9 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 .fr .edge { position: absolute; pointer-events: none; }
 #viewport[data-edge="line"] .edge, #viewport[data-edge="both"] .edge { outline: calc(1px * var(--inv)) dashed color-mix(in srgb, var(--brand) 70%, transparent); }
 /* Fade: everything outside the frame's own edge sinks into the canvas colour. */
-#viewport[data-edge="fade"] .edge, #viewport[data-edge="both"] .edge { box-shadow: 0 0 0 100000px color-mix(in srgb, var(--cv-bg) 72%, transparent); }
+/* The fade: four bands around the frame's box (a giant box-shadow used to do this, which made zooming flicker). */
+.fr .fd { position: absolute; background: color-mix(in srgb, var(--cv-bg) 72%, transparent); display: none; }
+#viewport[data-edge="fade"] .fd, #viewport[data-edge="both"] .fd { display: block; }
 #viewport[data-edge="none"] .edgewrap { display: none; }
 .ch { pointer-events: auto; cursor: pointer; }
 .ch:hover { color: var(--brand); }
@@ -2668,7 +2668,7 @@ function renderWallShell() {
   html += '<button class="icon" id="filter-btn" title="Filter frames" aria-label="Filter frames" aria-expanded="false">' + icon('filter') + '</button>'
   html += '<button class="icon" id="view-opts" title="View options" aria-label="View options" aria-expanded="false">' + icon('gear') + '</button>'
   html += '<button class="btn ghost" id="present-btn" title="Present (P)" style="padding:0 8px">' + icon('play', 14) + 'Present</button></div>'
-  html += '<div id="viewport"><div id="world"></div><div id="live"></div><div id="banner"></div></div>'
+  html += '<div id="viewport"><div id="grid"><i></i><i></i></div><div id="world"></div><div id="live"></div><div id="banner"></div></div>'
   html += '<div id="viewopts" class="card hidden" role="dialog" aria-label="View options"></div>'
   html += '<div id="filters" class="card hidden" role="dialog" aria-label="Filter frames"></div>'
   html += '<div id="shortcuts" class="card hidden" role="dialog" aria-label="Keyboard shortcuts"></div>'
@@ -2723,7 +2723,7 @@ function renderWall() {
       if (n && n.url && !n.missing && !S.wall.loaded[n.url]) body = skeleton(PHASE_TEXT.image) + body.replace('<img ', '<img class="ld" ')
       const meta = (fc.name || it.fileName) + (fc.lastTouchedAt ? ' · file edited ' + ago(fc.lastTouchedAt) + (fc.lastTouchedBy ? ' by ' + fc.lastTouchedBy : '') : '')
       const edge = n && n.url && n.viewW && (Math.abs(n.viewW - n.width) > 1 || Math.abs(n.viewH - n.height) > 1)
-        ? '<div class="edgewrap"><div class="edge" style="left:' + n.offX + 'px;top:' + n.offY + 'px;width:' + n.width + 'px;height:' + n.height + 'px"></div></div>' : ''
+        ? '<div class="edgewrap">' + fadeBands(p.w, p.h, n.offX, n.offY, n.width, n.height) + '<div class="edge" style="left:' + n.offX + 'px;top:' + n.offY + 'px;width:' + n.width + 'px;height:' + n.height + 'px"></div></div>' : ''
       // Round the tile like the frame, unless content spills past the frame's edges (then the tile is bigger than the frame).
       const radius = n && n.radius && !edge ? ';border-radius:' + n.radius : ''
       const play = n && n.proto && !n.missing ? '<button class="pb" data-play="' + esc(it.id) + '" title="Play the live prototype" aria-label="Play the live prototype">' + icon('play', 13) + '</button>' : ''
@@ -2741,6 +2741,12 @@ function renderWall() {
   renderWallBar()
   // Frames added since the last check (by you in another window, or a teammate) load on their own.
   if (S.wall.synced && c.items.some((it) => needsImage(it) && !S.wall.tried[it.id])) setTimeout(loadMissing, 50)
+}
+
+// Four bands that cover everything in a tile outside the frame's own box (for the fade).
+function fadeBands(W, H, x, y, w, h) {
+  const band = (l, t, bw, bh) => bw > 0 && bh > 0 ? '<div class="fd" style="left:' + l + 'px;top:' + t + 'px;width:' + bw + 'px;height:' + bh + 'px"></div>' : ''
+  return band(0, 0, W, y) + band(0, y + h, W, H - y - h) + band(0, y, x, h) + band(x + w, y, W - x - w, h)
 }
 
 // Image load/error events don't bubble, so listen on the world in the capture phase (once).
@@ -2784,31 +2790,50 @@ window.addEventListener('blur', () => {
 function applyTransform() {
   const world = $('world'); if (!world) return
   const z = S.wall.zoom
-  world.style.transform = 'translate(' + S.wall.tx + 'px,' + S.wall.ty + 'px) scale(' + z + ')'
-  world.style.setProperty('--inv', String(1 / z))
-  world.style.setProperty('--z', String(z))
-  world.classList.toggle('far', z < 0.18)
-  const live = $('live')
-  if (live) { live.style.transform = world.style.transform; live.style.setProperty('--inv', String(1 / z)) }
-  moveGrid()
+  const t = 'translate(' + S.wall.tx + 'px,' + S.wall.ty + 'px) scale(' + z + ')'
+  world.style.transform = t
+  const live = $('live'); if (live) live.style.transform = t
   const zv = $('zoom-val'); if (zv) zv.textContent = Math.round(z * 100) + '%'
+  // While moving, the layers stay on the GPU (smooth); a moment after you stop they're redrawn sharp.
+  world.classList.add('moving'); if (live) live.classList.add('moving')
+  clearTimeout(S.wall.movingTimer)
+  S.wall.movingTimer = setTimeout(() => { const w = $('world'), l = $('live'); if (w) w.classList.remove('moving'); if (l) l.classList.remove('moving') }, 180)
+  // Labels, headings and the grid follow the zoom once per screen refresh, not on every wheel event.
+  if (!S.wall.styleQueued) {
+    S.wall.styleQueued = true
+    const run = () => { S.wall.styleQueued = false; applyZoomStyles() }
+    if (window.requestAnimationFrame) requestAnimationFrame(run); else setTimeout(run, 16)
+  }
   rememberPosition()
+}
+function applyZoomStyles() {
+  const world = $('world'); if (!world) return
+  const z = S.wall.zoom
+  if (world.style.getPropertyValue('--z') !== String(z)) {
+    world.style.setProperty('--inv', String(1 / z))
+    world.style.setProperty('--z', String(z))
+    world.classList.toggle('far', z < 0.18)
+    const live = $('live'); if (live) live.style.setProperty('--inv', String(1 / z))
+  }
+  moveGrid()
 }
 
 // The dot grid sits in wall units, like Figma's canvas: a spacing of 10 × 2ⁿ wall units chosen so the dots
 // are 12–24 px apart on screen, plus a coarser layer at twice that. The fine layer fades in as it opens up.
 function moveGrid() {
-  const vp = $('viewport'); if (!vp) return
+  const grid = $('grid'); if (!grid) return
   const z = S.wall.zoom || 1
   let g = 10
   while (g * z < 12) g *= 2
   while (g * z >= 24) g /= 2
   const s1 = g * z
-  vp.style.setProperty('--g1', s1 + 'px')
-  vp.style.setProperty('--g2', (s1 * 2) + 'px')
-  vp.style.setProperty('--ga', String(Math.max(0, Math.min(1, (s1 - 12) / 8))))
-  vp.style.setProperty('--gx', S.wall.tx + 'px')
-  vp.style.setProperty('--gy', S.wall.ty + 'px')
+  const tx = S.wall.tx, ty = S.wall.ty
+  const fine = grid.children[0], coarse = grid.children[1]
+  fine.style.backgroundSize = s1 + 'px ' + s1 + 'px'
+  fine.style.backgroundPosition = (tx - s1 / 2) + 'px ' + (ty - s1 / 2) + 'px'
+  fine.style.opacity = String(Math.max(0, Math.min(1, (s1 - 12) / 8)))
+  coarse.style.backgroundSize = (s1 * 2) + 'px ' + (s1 * 2) + 'px'
+  coarse.style.backgroundPosition = (tx - s1) + 'px ' + (ty - s1) + 'px'
 }
 
 function fit() {
