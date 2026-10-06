@@ -493,6 +493,43 @@ function pointer(w, type, target, extra) {
   check('the cluster option follows the grouping', /Cluster within rows by/.test($(wb, '#viewopts').textContent) && !!$(wb, '#viewopts [data-vo="subChannel"][data-val="filepage"]') && $(wb, '#viewopts [data-vo="subChannel"][data-val="file"]').classList.contains('on'))
   wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
   check('Esc closes View options', $(wb, '#viewopts').classList.contains('hidden'))
+  // ===== device frames in Present =====
+  {
+    const t = wb.showroomTest
+    const it = (name, channel, w, h, extra) => Object.assign({ id: 'X|' + name, fileKey: 'X', nodeId: name, name: name, channel: channel, width: w, height: h }, extra || {})
+    check('auto device: a wide Site page gets a browser, a narrow one a phone', t.autoDevice(it('Desktop', 'Site', 1440, 3000)).d === 'browser' && t.autoDevice(it('Mobile home', 'Site', 390, 2400)).d === 'phone')
+    check('auto device: page parts and other channels get none', t.autoDevice(it('PLP banner - D - section-category-tall', 'Site', 1440, 730)).d === 'none' &&
+      t.autoDevice(it('In-Gallery Ad', 'Site', 390, 700)).d === 'none' && t.autoDevice(it('Gift guide', 'Email', 600, 2000)).d === 'none' && t.autoDevice(it('Strip', 'Site', 1440, 300)).d === 'none')
+    // Make Bryce's "Desktop" frame a long page, then present it.
+    api.files.EMAILFILE0001.nodes['1:5'] = { id: '1:5', name: 'Desktop', absoluteBoundingBox: { x: 0, y: 0, width: 1536, height: 3200 } }
+    const tile = () => wb.document.querySelector('#world .fr[data-id="EMAILFILE0001|1:5"]')
+    pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
+    click(wb, '#insp-refresh'); await tick(600)
+    check('frame details offer a device choice, showing what Auto picks', !!$(wb, '#inspector [data-device="phone"]') && /Auto: browser/.test($(wb, '#inspector').textContent), $(wb, '#inspector').textContent)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'p', bubbles: true })); await tick(100)
+    const pageY = () => { const pg = wb.document.querySelector('#dev .dv-page'); const m = pg && /translateY\((-?[\d.]+)px\)/.exec(pg.style.transform); return m ? -Number(m[1]) : null }
+    check('Present shows a long Site page in a browser window', !!wb.document.querySelector('#dev .dv-browser') && pageY() === 0, ($(wb, '#dev') || {}).innerHTML)
+    const idxBefore = $(wb, '#hud-what').textContent
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })); await tick(20)
+    check('↓ scrolls the page inside the browser instead of moving on', pageY() > 0 && $(wb, '#hud-what').textContent === idxBefore, pageY() + ' ' + $(wb, '#hud-what').textContent)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })); await tick(20)
+    check('↑ scrolls back up', pageY() === 0)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)
+    check('leaving Present removes the device', !$(wb, '#dev'))
+    // Choose "Phone" for it: saved in the file for the team, and Present follows.
+    pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
+    click(wb, '#inspector [data-device="phone"]'); await tick(150)
+    const m = JSON.parse(bryce.figma.root.getSharedPluginData('showroom', 'manifest') || '{}')
+    const saved = m.devices && Object.values(m.devices).some((cd) => cd['EMAILFILE0001|1:5'] && cd['EMAILFILE0001|1:5'].d === 'phone')
+    check('a device choice is saved in the file for the team', saved, JSON.stringify(m.devices))
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'p', bubbles: true })); await tick(100)
+    check('…and Present uses it', !!wb.document.querySelector('#dev .dv-phone'))
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)
+    pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
+    click(wb, '#inspector [data-device="auto"]'); await tick(150)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
+  }
+
   // ===== live prototypes =====
   {
     const tile0 = wb.document.querySelector('#world .fr')

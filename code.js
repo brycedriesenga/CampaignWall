@@ -456,6 +456,18 @@ async function handle(msg) {
       try { writeManifest(manifest); } catch (e) { return sendState({ message: 'Status saved for you only: this file can’t be edited.' }); }
       return sendState({ external: true });
     }
+    case 'save-device': {
+      // Device frame choices for frames in a campaign (Auto / Browser / Phone / None), from any file.
+      // Saved in this file's manifest like statuses; the newest choice per frame wins across files.
+      const manifest = readManifest();
+      const devices = Object.assign({}, manifest.devices || {});
+      devices[msg.campaignId] = Object.assign({}, devices[msg.campaignId] || {}, msg.changes || {});
+      const newest = (cid) => Math.max.apply(null, [0].concat(Object.values(devices[cid] || {}).map((e) => (e && e.at) || 0)));
+      Object.keys(devices).sort((a, b) => newest(b) - newest(a)).slice(50).forEach((k) => { delete devices[k]; });
+      manifest.devices = devices;
+      try { writeManifest(manifest); } catch (e) { return sendState({ message: 'Device saved for you only: this file can’t be edited.' }); }
+      return sendState({ external: true });
+    }
     case 'save-layout': {
       // A campaign's frame order (from dragging frames on the wall). Saved in this file's
       // manifest so it travels to the team; newest wins. Keeps the 50 most recent campaigns.

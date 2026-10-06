@@ -347,6 +347,51 @@ body.presenting .sec { display: none; }
 .vo-toggle input:checked { background: var(--brand); }
 .vo-toggle input:checked::after { transform: translateX(12px); }
 .icon.on { background: var(--bg2); color: var(--text); }
+/* Device frames in Present: a stage over the dimmed wall with the device scaled to fit. */
+#dev { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; background: var(--cv-bg); animation: pop .2s ease-out; }
+.dv-fit { position: relative; flex-shrink: 0; }
+.dv { position: absolute; left: 0; top: 0; transform-origin: 0 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #1f1f1f; }
+.dv-view { position: relative; overflow: hidden; background: #fff; }
+.dv-page { position: relative; overflow: hidden; will-change: transform; }
+.dv-page.anim { transition: transform .45s cubic-bezier(.2,.7,.2,1); }
+.dv-page img { position: absolute; max-width: none; }
+.dv-page .sk { position: absolute; inset: 0; }
+.dv-scroll { position: absolute; right: 3px; top: 3px; bottom: 3px; width: 6px; }
+.dv-scroll i { position: absolute; left: 0; right: 0; border-radius: 3px; background: rgba(0,0,0,.35); transition: top .45s cubic-bezier(.2,.7,.2,1); }
+/* Browser window: tab strip + toolbar, neutral (not any real browser) */
+.dv-browser { border-radius: 12px; overflow: hidden; background: #dfe3e8; box-shadow: 0 0 0 1px rgba(0,0,0,.18), 0 30px 80px rgba(0,0,0,.35); }
+.dv-tabs { height: 42px; display: flex; align-items: flex-end; gap: 8px; padding: 0 12px; }
+.dv-dots { display: flex; gap: 8px; align-self: center; margin-right: 10px; }
+.dv-dots i { width: 13px; height: 13px; border-radius: 50%; background: #c4c9cf; }
+.dv-tab { height: 34px; min-width: 0; width: 260px; display: flex; align-items: center; gap: 9px; padding: 0 12px; background: #fff; border-radius: 10px 10px 0 0; font-size: 13px; }
+.dv-fav { width: 16px; height: 16px; border-radius: 4px; background: #1f1f1f; flex-shrink: 0; }
+.dv-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-x, .dv-plus { color: #6b7178; font-size: 16px; line-height: 1; }
+.dv-plus { align-self: center; padding-bottom: 2px; }
+.dv-bar { height: 46px; display: flex; align-items: center; gap: 12px; padding: 0 14px; background: #fff; border-bottom: 1px solid #e3e5e8; }
+.dv-nav, .dv-tools { display: flex; align-items: center; gap: 14px; color: #5f6368; }
+.dv-url { flex: 1; min-width: 0; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 16px; background: #eef0f3; color: #5f6368; font-size: 14px; }
+.dv-url span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #1f1f1f; }
+.dv-url em { font-style: normal; color: #6b7178; }
+.dv-star { flex: none !important; display: flex; color: #6b7178; }
+.dv-avatar { width: 22px; height: 22px; border-radius: 50%; background: #c9ced4; display: inline-block; }
+/* Phone: a rounded body with status bar, a bottom address bar and the home indicator */
+.dv-phone { padding: 14px; border-radius: 62px; background: #121212; box-shadow: 0 0 0 1.5px #3a3a3a inset, 0 30px 80px rgba(0,0,0,.4); }
+.dv-screen { border-radius: 48px; overflow: hidden; background: #fff; }
+.dv-status { height: 54px; display: flex; align-items: center; justify-content: space-between; padding: 0 30px 0 38px; font-size: 16px; font-weight: 600; position: relative; }
+.dv-island { position: absolute; left: 50%; top: 11px; width: 120px; height: 34px; margin-left: -60px; border-radius: 20px; background: #000; }
+.dv-sys { display: flex; align-items: center; gap: 6px; }
+.dv-sys i { display: block; background: #1f1f1f; }
+.dv-sys .sig { width: 17px; height: 11px; clip-path: polygon(0 100%, 100% 0, 100% 100%); }
+.dv-sys .wifi { width: 15px; height: 11px; border-radius: 15px 15px 0 0; clip-path: polygon(50% 100%, 0 0, 100% 0); }
+.dv-sys .bat { width: 25px; height: 12px; border-radius: 3.5px; background: none; box-shadow: inset 0 0 0 1.5px #1f1f1f; position: relative; }
+.dv-sys .bat::after { content: ''; position: absolute; inset: 2.5px 6px 2.5px 2.5px; border-radius: 1.5px; background: #1f1f1f; }
+.dv-mbar { height: 112px; background: #f6f6f7; border-top: 1px solid #e3e3e5; padding: 8px 14px 0; box-sizing: border-box; }
+.dv-murl { height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-radius: 13px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.12); color: #3c3c43; font-size: 16px; }
+.dv-murl span { flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; color: #1f1f1f; }
+.dv-mnav { display: flex; justify-content: space-around; color: #0a7aff; margin-top: 8px; }
+.dv-home { display: none; }
+.dv-home i { display: block; width: 134px; height: 5px; border-radius: 3px; background: #1f1f1f; margin: 0 auto; }
 #player { position: absolute; inset: 52px 12px 12px; z-index: 8; display: flex; flex-direction: column; border-radius: 12px; overflow: hidden;
   background: var(--bg); box-shadow: 0 0 0 1px var(--line), 0 18px 60px rgba(0,0,0,.35); animation: pop .18s ease-out; }
 #player.hidden { display: none; }
@@ -497,6 +542,8 @@ function allCampaigns() {
     c.items.forEach((it) => { it.seenHash = seen[it.id] || '' })
     const sm = statusMap(c.id)
     c.items.forEach((it) => { const st = sm[it.id]; it.status = st ? st.s || '' : ''; it.statusBy = st ? st.by || '' : ''; it.statusAt = st ? st.at || 0 : 0 })
+    const dm = deviceMap(c.id)
+    c.items.forEach((it) => { const dv = dm[it.id]; it.device = dv ? dv.d || 'auto' : 'auto'; it.deviceBy = dv ? dv.by || '' : '' })
     return c
   }).sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -596,7 +643,7 @@ function teamInfo() {
 }
 function hasCampaigns(m) { return !!(m && m.campaigns && Object.keys(m.campaigns).length) }
 // Campaign frames or a saved frame order: either is worth sharing through Team sync.
-function hasShared(m) { return hasCampaigns(m) || !!(m && ((m.layouts && Object.keys(m.layouts).length) || (m.statuses && Object.keys(m.statuses).length))) }
+function hasShared(m) { return hasCampaigns(m) || !!(m && ((m.layouts && Object.keys(m.layouts).length) || (m.statuses && Object.keys(m.statuses).length) || (m.devices && Object.keys(m.devices).length))) }
 
 // Folders to search: the built-in ones, your own, and any found from the team's ID.
 function teamFolders() {
@@ -1333,7 +1380,7 @@ async function syncItems(list, opts) {
 }
 
 // ---------- wall view options (saved per person in prefs.wallView) ----------
-const WALL_VIEW_DEFAULTS = { protoStyle: 'legacy', protoPresent: 'auto', bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, edge: 'both', spacing: 'normal', group: 'channel',
+const WALL_VIEW_DEFAULTS = { devicePresent: 'on', siteAddress: '', protoStyle: 'legacy', protoPresent: 'auto', bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, edge: 'both', spacing: 'normal', group: 'channel',
   subChannel: 'file', subFile: 'channel', subNone: 'off' }   // how frames cluster inside each row, per grouping
 // Inside a row, frames can cluster by the other dimension: by file (and page) in channel rows,
 // by channel (or page) in file rows. Each choice: [value, button label].
@@ -1405,12 +1452,15 @@ function renderViewOptions() {
   html += '<div><div class="vo-title">Content outside a frame’s edge</div>' + seg('edge', [['both', 'Both'], ['fade', 'Fade'], ['line', 'Line'], ['none', 'Off']], { both: 'Fade it and draw the frame’s edge', fade: 'Fade content outside the frame', line: 'Draw the frame’s edge as a dashed line', none: 'Show everything as rendered' }) + '</div>'
   html += '<div><div class="vo-title">Live prototypes</div>' + seg('protoStyle', [['legacy', 'Clean'], ['kit2', 'With controls']], { legacy: 'Just the prototype, no Figma controls', kit2: 'Adds Figma’s back, forward and restart buttons under the prototype' }) +
     '<div style="height:6px"></div>' + seg('protoPresent', [['auto', 'Play in Present'], ['click', 'Only with ▶']], { auto: 'Prototype frames start playing when you reach them in Present', click: 'Prototypes only play when you press ▶' }) + '</div>'
+  html += '<div><div class="vo-title">Device frames</div>' + seg('devicePresent', [['on', 'In Present'], ['off', 'Off']], { on: 'Site pages show in a browser window or phone when you present them', off: 'Present frames on their own' }) +
+    '<input class="field" id="vo-site" style="margin-top:6px;height:28px" placeholder="Address in the browser bar, e.g. www.merrell.com" value="' + esc(v.siteAddress || '') + '" aria-label="Address shown in the browser bar"></div>'
   html += '<div>' + toggle('grid', 'Dot grid') + toggle('names', 'Frame names') + toggle('meta', 'File and edit info') + toggle('headings', 'Row headings') + '</div>'
   html += '<div class="row" style="justify-content:space-between"><button class="btn ghost" id="vo-reset" style="height:26px;padding:0 6px">Reset to defaults</button>' +
     '<button class="btn ghost" id="vo-keys" style="height:26px;padding:0 6px">' + icon('keys', 14) + 'Shortcuts</button></div>'
   box.innerHTML = html
   box.querySelectorAll('[data-vo]').forEach((el) => el.addEventListener('click', () => setWallView({ [el.dataset.vo]: el.dataset.val })))
   box.querySelectorAll('[data-vo-toggle]').forEach((el) => el.addEventListener('change', () => setWallView({ [el.dataset.voToggle]: el.checked })))
+  const site = $('vo-site'); if (site) site.addEventListener('change', () => setWallView({ siteAddress: site.value.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '') }))
   $('vo-reset').addEventListener('click', () => setWallView(Object.assign({}, WALL_VIEW_DEFAULTS)))
   $('vo-keys').addEventListener('click', () => { toggleViewOptions(false); toggleShortcuts(true) })
 }
@@ -1491,8 +1541,11 @@ function wallKey(e) {
   const k = e.key, code = e.code
   if (S.wall.present) {
     if (k === 'Escape') { stopPresent(); return true }
-    if (k === 'ArrowRight' || k === 'ArrowDown' || k === ' ' || k === 'PageDown' || k === 'Enter') { presentStep(1); return true }
-    if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp' || k === 'Backspace') { presentStep(-1); return true }
+    // ↓, Space and Page Down scroll a long page inside its device frame first, then move on; ↑ and Page Up go back up.
+    if (k === 'ArrowDown' || k === ' ' || k === 'PageDown') { if (!devScroll(1)) presentStep(1); return true }
+    if (k === 'ArrowUp' || k === 'PageUp') { if (!devScroll(-1)) presentStep(-1); return true }
+    if (k === 'ArrowRight' || k === 'Enter') { presentStep(1); return true }
+    if (k === 'ArrowLeft' || k === 'Backspace') { presentStep(-1); return true }
     if (k === 'Home') { presentGo(0); return true }
     if (k === 'End') { presentGo(S.wall.present.list.length - 1); return true }
     return false
@@ -1664,6 +1717,7 @@ function presentGo(i) {
   if (p) zoomToRect(p.x, p.y, p.w, p.h, { maxZoom: 1, pad: 40, bottom: 56 })
   // Prototype frames start playing once the zoom settles (View options › Prototypes in Present).
   clearTimeout(S.wall.autoplayTimer)
+  showDevice(p && !(hasProto(p.it) && wallView().protoPresent === 'auto') ? p : null)
   if (p && hasProto(p.it) && wallView().protoPresent === 'auto' && !S.wall.live) {
     const id = pr.id
     S.wall.autoplayTimer = setTimeout(() => { if (S.wall.present && S.wall.present.id === id) playInPlace(id, { noZoom: true }) }, 420)
@@ -1685,12 +1739,144 @@ function stopPresent() {
   S.wall.present = null
   clearTimeout(S.wall.autoplayTimer)
   stopLive()
+  showDevice(null)
   document.body.classList.remove('presenting')
   const hud = $('hud'); if (hud) hud.remove()
   document.querySelectorAll('#world .fr.cur').forEach((el) => el.classList.remove('cur'))
   setSelection([pr.id])
   S.wall.zoom = pr.back.zoom; S.wall.tx = pr.back.tx; S.wall.ty = pr.back.ty
   requestAnimationFrame(() => { const p = placementOf(pr.id); applyTransform(); if (p) reveal(p) })
+}
+
+// ---------- device frames (Present) ----------
+// Site pages present inside a generic browser window or phone, drawn here in HTML at the design's
+// real size and scaled to fit. A long page scrolls inside the device's viewport (trackpad, ↓/↑,
+// Space, Page Up/Down). Which device: Auto (from the frame's channel, size and name), or a choice
+// made in the frame's details, shared with the team like statuses (manifest "devices").
+const DEVICES = [['auto', 'Auto'], ['browser', 'Browser'], ['phone', 'Phone'], ['none', 'None']]
+function deviceMap(campaignId) {
+  const out = {}
+  const take = (map) => { for (const id of Object.keys(map || {})) { const e = map[id]; if (e && (!out[id] || (e.at || 0) > (out[id].at || 0))) out[id] = e } }
+  take(((S.prefs && S.prefs.devices) || {})[campaignId])
+  for (const src of manifests()) take(src.m.devices && src.m.devices[campaignId])
+  return out
+}
+// Auto: only Site frames that look like whole pages get a device; parts of pages (banners, tiles,
+// in-gallery ads…) and other channels stay as they are.
+function autoDevice(it) {
+  const n = nodeInfo(it) || {}
+  const w = n.width || it.width || 0, h = n.height || it.height || 0
+  const name = ((n.name || it.name || '') + ' ' + (it.pageName || '')).toLowerCase()
+  if (!/site|web|landing|store|shop|ecom/i.test(it.channel || '')) return { d: 'none', why: 'only Site frames get one' }
+  if (/\b(banners?|tiles?|promos?|modules?|sections?|cards?|heroe?s?|nav|modals?|components?|iga|ads?)\b|in[- ]?gallery/.test(name)) return { d: 'none', why: 'the name says it’s part of a page' }
+  if (w >= 1000 && h >= 600) return { d: 'browser', why: w + ' px wide page' }
+  if (w >= 320 && w <= 500 && h >= 560) return { d: 'phone', why: w + ' px wide mobile page' }
+  return { d: 'none', why: w + ' × ' + h + ' isn’t a page size' }
+}
+function deviceFor(it) { return it.device && it.device !== 'auto' ? it.device : autoDevice(it).d }
+function deviceControl(items) {
+  const cur = Array.from(new Set(items.map((it) => it.device || 'auto')))
+  const one = cur.length === 1 ? cur[0] : null
+  let html = '<div style="margin-top:10px"><div class="label">Device frame in Present</div><div class="seg" role="radiogroup">'
+  html += DEVICES.map((d) => '<button role="radio" aria-checked="' + (one === d[0]) + '" class="' + (one === d[0] ? 'on' : '') + '" data-device="' + d[0] + '">' + d[1] + '</button>').join('')
+  html += '</div>'
+  if (items.length === 1 && one === 'auto') { const a = autoDevice(items[0]); html += '<div class="muted small" style="margin-top:4px">Auto: ' + (a.d === 'none' ? 'none' : a.d === 'phone' ? 'phone' : 'browser') + ' (' + esc(a.why) + ')</div>' }
+  else if (items.length === 1 && items[0].deviceBy) html += '<div class="muted small" style="margin-top:4px">Set by ' + esc(items[0].deviceBy) + '</div>'
+  return html + '</div>'
+}
+function setDevice(ids, d) {
+  const c = campaign(); if (!c || !ids.length) return
+  const changes = {}
+  const at = Date.now(), by = (S.prefs.me && S.prefs.me.handle) || ''
+  ids.forEach((id) => { changes[id] = { d: d, by: by, at: at } })
+  const all = Object.assign({}, S.prefs.devices || {})
+  all[c.id] = Object.assign({}, all[c.id] || {}, changes)
+  S.prefs.devices = all
+  send('save-prefs', { prefs: { devices: all } })
+  send('save-device', { campaignId: c.id, changes: changes })
+  if (S.view === 'wall') renderWall(); else render()
+}
+// The address in the browser bar: the address from View options (or a placeholder) + a path from the frame or page name.
+function deviceAddress(it) {
+  const n = nodeInfo(it) || {}
+  const host = wallView().siteAddress || 'www.example.com'
+  const slug = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
+  const nm = n.name || it.name || ''
+  const generic = /^(desktop|mobile|tablet|d|m|dt|mb|frame \d+|page \d+)$/i.test(nm.trim())
+  const path = slug(generic ? it.pageName : nm)
+  return { host: host, path: path && !/^(home|homepage|hp)$/.test(path) ? '/' + path : '' }
+}
+const DEV_ICONS = {
+  back: '<path d="M10 4L6 8l4 4"/>', fwd: '<path d="M6 4l4 4-4 4"/>', reload: '<path d="M12.5 8a4.5 4.5 0 1 1-1.3-3.2M12.7 2.8v2.6h-2.6"/>',
+  lock: '<rect x="4.5" y="7" width="7" height="5.5" rx="1.2"/><path d="M6 7V5.6a2 2 0 0 1 4 0V7"/>', star: '<path d="M8 2.8l1.6 3.3 3.6.5-2.6 2.5.6 3.6L8 11l-3.2 1.7.6-3.6-2.6-2.5 3.6-.5z"/>',
+  menu: '<circle cx="8" cy="4" r=".9"/><circle cx="8" cy="8" r=".9"/><circle cx="8" cy="12" r=".9"/>', share: '<path d="M8 2.5v7M5.5 5L8 2.5 10.5 5M4.5 8v5h7V8"/>',
+  tabs: '<rect x="3" y="3" width="8" height="8" rx="1.5"/><path d="M5.5 13h7.5V5.5"/>', aa: '<path d="M2.5 11.5L5 5l2.5 6.5M3.4 9.5h3.2M9 11.5V8.2a1.7 1.7 0 0 1 3.4 0v3.3M9 9.6h3.4"/>',
+}
+function devIcon(name, size) { return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + DEV_ICONS[name] + '</svg>' }
+// The device around a frame, at the design's own size (W = frame width).
+function deviceHTML(kind, it, n, W, H, VH) {
+  const addr = deviceAddress(it)
+  const page = '<div class="dv-view" style="height:' + VH + 'px"><div class="dv-page" style="width:' + W + 'px;height:' + H + 'px">' +
+    (n && n.url ? '<img src="' + esc(n.url) + '" alt="" draggable="false" style="left:' + (-(n.offX || 0)) + 'px;top:' + (-(n.offY || 0)) + 'px;width:' + (n.viewW || W) + 'px;height:' + (n.viewH || H) + 'px">' : skeleton(PHASE_TEXT.image)) +
+    '</div>' + (H > VH ? '<div class="dv-scroll"><i></i></div>' : '') + '</div>'
+  if (kind === 'phone') {
+    return '<div class="dv dv-phone" style="width:' + (W + 28) + 'px"><div class="dv-screen" style="width:' + W + 'px">' +
+      '<div class="dv-status"><span class="dv-time">9:41</span><span class="dv-island"></span><span class="dv-sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>' + page +
+      '<div class="dv-mbar"><div class="dv-murl">' + devIcon('aa', 18) + '<span>' + devIcon('lock', 13) + esc(addr.host.replace(/^www\./, '')) + '</span>' + devIcon('reload', 18) + '</div>' +
+      '<div class="dv-mnav">' + devIcon('back', 22) + devIcon('fwd', 22) + devIcon('share', 22) + devIcon('tabs', 22) + '</div><div class="dv-home"><i></i></div></div></div></div>'
+  }
+  const wide = W >= 1200
+  const title = esc((n && n.name) || it.name || addr.host)
+  return '<div class="dv dv-browser' + (wide ? ' wide' : '') + '" style="width:' + W + 'px">' +
+    '<div class="dv-tabs"><span class="dv-dots"><i></i><i></i><i></i></span><div class="dv-tab"><span class="dv-fav"></span><span class="dv-title">' + title + '</span><span class="dv-x">×</span></div><span class="dv-plus">+</span></div>' +
+    '<div class="dv-bar"><span class="dv-nav">' + devIcon('back', 18) + devIcon('fwd', 18) + devIcon('reload', 18) + '</span>' +
+    '<div class="dv-url">' + devIcon('lock', 14) + '<span>' + esc(addr.host) + '<em>' + esc(addr.path) + '</em></span>' + (wide ? '<span class="dv-star">' + devIcon('star', 16) + '</span>' : '') + '</div>' +
+    '<span class="dv-tools"><i class="dv-avatar"></i>' + devIcon('menu', 18) + '</span></div>' + page + '</div>'
+}
+// Shows (or, with null, removes) the device stage over the dimmed wall for the frame being presented.
+function showDevice(p) {
+  const vp = $('viewport'); if (!vp) return
+  let stage = $('dev')
+  const kind = p && wallView().devicePresent !== 'off' ? deviceFor(p.it) : 'none'
+  if (!p || kind === 'none') { if (stage) stage.remove(); S.wall.dev = null; return }
+  const n = p.n || nodeInfo(p.it) || {}
+  const W = n.width || p.w, H = n.height || p.h
+  // How much of the page fits in the device's window: about a laptop screen, or a phone screen.
+  const full = kind === 'phone' ? Math.round(W * 2.164) - 54 - 112 : Math.round(W * 0.56)
+  const VH = H <= full * 1.15 ? H : full
+  if (!stage) { stage = document.createElement('div'); stage.id = 'dev'; vp.appendChild(stage) }
+  stage.innerHTML = '<div class="dv-fit">' + deviceHTML(kind, p.it, n, W, H, VH) + '</div>'
+  const fitBox = stage.firstChild, dev = fitBox.firstChild
+  const devW = kind === 'phone' ? W + 28 : W
+  const devH = (kind === 'phone' ? 54 + 112 + 28 : 88) + VH
+  const pad = 40, bottom = 56
+  const sc = Math.min(1, (vp.clientWidth - pad * 2) / devW, (vp.clientHeight - pad * 2 - bottom) / devH)
+  dev.style.transform = 'scale(' + sc + ')'
+  fitBox.style.width = (devW * sc) + 'px'; fitBox.style.height = (devH * sc) + 'px'
+  fitBox.style.marginBottom = bottom + 'px'
+  S.wall.dev = { id: p.it.id, y: 0, max: Math.max(0, H - VH), vh: VH, h: H, s: sc }
+  devApply(false)
+}
+function devApply(animate) {
+  const d = S.wall.dev; const stage = $('dev'); if (!d || !stage) return
+  const pageEl = stage.querySelector('.dv-page')
+  if (pageEl) { pageEl.classList.toggle('anim', !!animate); pageEl.style.transform = 'translateY(' + (-d.y) + 'px)' }
+  const thumb = stage.querySelector('.dv-scroll i')
+  if (thumb && d.h) { thumb.style.height = (d.vh / d.h * 100) + '%'; thumb.style.top = (d.y / d.h * 100) + '%' }
+}
+// Scrolls the presented page by most of a screen. Returns false at the end, so the key moves on to the next frame.
+function devScroll(dir) {
+  const d = S.wall.dev; if (!d || !d.max) return false
+  if (dir > 0 && d.y >= d.max - 1) return false
+  if (dir < 0 && d.y <= 0) return false
+  d.y = Math.max(0, Math.min(d.max, d.y + dir * Math.round(d.vh * 0.85)))
+  devApply(true)
+  return true
+}
+function devWheel(e) {
+  const d = S.wall.dev; if (!d || !d.max) return
+  d.y = Math.max(0, Math.min(d.max, d.y + e.deltaY / (d.s || 1)))
+  devApply(false)
 }
 
 // ---------- review statuses (shared with the team) ----------
@@ -2893,6 +3079,7 @@ function renderInspector() {
     if (editable) html += '<div style="margin-top:10px"><label class="label" for="insp-channel">Channel</label>' + channelSelect(it.channel) + '</div>'
     else html += '<div class="muted small" style="margin-top:8px">Channel: <b>' + esc(it.channel) + '</b>. Change it from its own file.</div>'
     html += statusControl(items)
+    html += deviceControl(items)
     html += '<div class="row" style="margin-top:10px"><button class="btn primary grow" id="insp-open">' + icon('ext', 14) + 'Open in Figma</button><button class="btn" id="insp-refresh" title="Reload this frame from its file now"' + busy + '>' + icon('refresh', 14) + 'Refresh</button></div>'
     const live = S.wall.live && S.wall.live.id === it.id
     html += '<div class="row" style="margin-top:4px"><button class="btn grow" id="insp-play" title="' + (n.proto ? 'Play the live prototype right here on the wall' : 'No prototype connections found in this frame. It will play as a still frame.') + '">' + icon(live ? 'x' : 'play', 14) + (live ? 'Stop prototype' : 'Play prototype') + '</button>' +
@@ -2906,6 +3093,7 @@ function renderInspector() {
     const channels = Array.from(new Set(items.map((it) => it.channel)))
     html += '<div style="margin-top:10px"><label class="label" for="insp-channel">Channel</label>' + channelSelect(channels.length === 1 ? channels[0] : '') + '</div>'
     html += statusControl(items)
+    html += deviceControl(items)
     html += '<div class="row" style="margin-top:10px"><button class="btn primary grow" id="insp-refresh" title="Reload these frames from their files now"' + busy + '>' + icon('refresh', 14) + 'Refresh ' + items.length + ' frames</button></div>'
     html += '<button class="btn ghost danger" id="insp-remove" style="margin-top:4px;padding:0 4px">Remove ' + items.length + ' from campaign</button>'
   }
@@ -2920,6 +3108,7 @@ function renderInspector() {
   const play = $('insp-play'); if (play) play.addEventListener('click', () => { if (S.wall.live && S.wall.live.id === items[0].id) stopLive(); else playInPlace(items[0].id) })
   const playL = $('insp-play-large'); if (playL) playL.addEventListener('click', () => { stopLive(); openPlayer(items[0]) })
   box.querySelectorAll('[data-status]').forEach((el) => el.addEventListener('click', () => setStatus(ids, el.dataset.status)))
+  box.querySelectorAll('[data-device]').forEach((el) => el.addEventListener('click', () => setDevice(ids, el.dataset.device)))
   $('insp-remove').addEventListener('click', (e) => {
     const b = e.currentTarget
     if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again to confirm'; return }
@@ -3107,6 +3296,7 @@ function bindWall() {
   const vp = $('viewport')
   vp.addEventListener('wheel', (e) => {
     e.preventDefault()
+    if (S.wall.dev && e.target.closest && e.target.closest('#dev')) { devWheel(e); return }
     const r = vp.getBoundingClientRect()
     if (e.ctrlKey || e.metaKey) zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top)
     else { S.wall.touched = true; S.wall.tx -= e.deltaX; S.wall.ty -= e.deltaY; applyTransform() }
@@ -3120,7 +3310,7 @@ function bindWall() {
   vp.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 && e.button !== 1) return
     // Controls floating over the canvas handle their own clicks (capturing the pointer would swallow them).
-    if (e.target.closest('#filterpill, #hud, #banner, #arrivals, #live')) return
+    if (e.target.closest('#filterpill, #hud, #banner, #arrivals, #live, #dev')) return
     const pb = e.target.closest('.pb')
     if (pb) { e.preventDefault(); playInPlace(pb.dataset.play); return }
     const r = vp.getBoundingClientRect()
@@ -3281,7 +3471,7 @@ window.onmessage = (event) => {
   if (msg.type === 'error') { toast(msg.message, true); if (S.boardJob) { S.boardJob = null; render() } }
 }
 
-window.showroomTest = { discover: discover, pollIndex: pollIndex, renderWall: renderWall }
+window.showroomTest = { discover: discover, pollIndex: pollIndex, renderWall: renderWall, autoDevice: autoDevice }
 setInterval(() => { pollIndex() }, INDEX_POLL)   // lets the automated tests run a search directly
 send('init')
 </script>

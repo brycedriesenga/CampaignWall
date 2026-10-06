@@ -30,7 +30,7 @@ Campaign membership lives **inside each design file**, so it's shared with no se
 - **Where it's stored:** shared plugin data `showroom/manifest` on the document root, with an identical backup copy on the first page.
   - The backup exists because it's unverified whether `GET /v1/files/:key?plugin_data=shared` returns plugin data on the DOCUMENT node.
   - Readers take whichever copy has the newest `updatedAt`.
-- **Manifest shape:** `{ v:1, fileKey, fileName, updatedAt, campaigns: { [campaignId]: { name, updatedAt, items: { [nodeId]: { name, w, h, pageName, channel, addedBy, addedAt, updatedAt } } } }, links: { [fileKey]: fileName }, layouts: { [campaignId]: { order: [itemId], at, by } }, statuses: { [campaignId]: { [itemId]: { s, by, at } } } }`. Size limit about 95 kB; empty campaigns are dropped. `links` (up to 300) is dropped first if the manifest gets too big.
+- **Manifest shape:** `{ v:1, fileKey, fileName, updatedAt, campaigns: { [campaignId]: { name, updatedAt, items: { [nodeId]: { name, w, h, pageName, channel, addedBy, addedAt, updatedAt } } } }, links: { [fileKey]: fileName }, layouts: { [campaignId]: { order: [itemId], at, by } }, statuses: { [campaignId]: { [itemId]: { s, by, at } } }, devices: { [campaignId]: { [itemId]: { d, by, at } } } }`. Size limit about 95 kB; empty campaigns are dropped. `links` (up to 300) is dropped first if the manifest gets too big.
 - **Links (v0.3):** each campaign file's manifest lists the other campaign files known to whoever last opened the plugin there.
   - `campaignFiles()` = scanned files with campaigns, plus keys from any manifest's `links` (unless this computer read that file after the link was written and found no manifest).
   - `syncLinks()` sends `save-links` when that set differs from this file's `links`; code.js writes only if the file has campaigns and the key set changed (read-only files are skipped silently). `S.linksSent` stops repeat sends.
@@ -236,6 +236,15 @@ Steps that can't be checked yet show "–" with a note. Tests skip the screen th
   - Tested 2026-10-05 in Figma desktop: both load private files signed in. `manifest.json` allows `embed.figma.com` and `www.figma.com`. The Embed API (events/controls) needs an OAuth client-id and allowed origin, which a plugin iframe can't provide, so it isn't used.
 - **Large window:** `openPlayer(it, style)` fills `#player` (overlay outside `#viewport`) with the same embed; Clean/With controls toggle, Restart, Open in browser (`open-item {proto:true}` → code.js opens `figma.com/proto/…`), Esc/✕ closes. The inspector has Play prototype (in place, or Stop) and Large.
 
+**Device frames (v0.11, Present only for now):** Site pages present inside a generic browser window or phone.
+- **Which device:** `deviceFor(it)` = the frame's choice (`it.device`: auto, browser, phone, none) or `autoDevice(it)` → `{d, why}`: only channels matching /site|web|landing|store|shop|ecom/; names with banner, tile, promo, module, section, card, hero, nav, modal, component, iga, ad(s) or "in-gallery" → none; ≥ 1000 × 600 → browser; 320–500 wide and ≥ 560 tall → phone; else none.
+- **Choice is shared** like statuses: `setDevice(ids, d)` → `prefs.devices` (local copy) + `save-device {campaignId, changes}` → manifest `devices[cid][itemId] = {d, by, at}` (newest wins across files, 50 campaigns kept). `deviceMap(cid)` merges; `allCampaigns()` sets `it.device`/`it.deviceBy`; `hasShared` counts `devices`. The inspector's "Device frame in Present" control (`deviceControl`) shows what Auto picks and why.
+- **Drawing:** `showDevice(p)` (from `presentGo`; `null` removes it) builds `#dev`, an opaque stage over the wall (z 5, under the HUD), with `deviceHTML(kind, it, n, W, H, VH)` drawn at the design's own size and scaled to fit (`≤ 1`). Browser: tab strip (42) + toolbar (46) with back/forward/reload, an address pill (`deviceAddress(it)`: View options › Device frames address, default www.example.com, plus a path slugged from the frame name, or the page name when the name is generic), star (≥ 1200 wide), avatar, menu. Phone: 14 px bezel, status bar (54) with island, bottom address bar + nav (112). Neutral designs, not any real browser or phone.
+- **Long pages:** the window shows about a screen (browser `W × 0.56`, phone `W × 2.164 − 166`; whole frame if it's within 15% of that). `S.wall.dev = {id, y, max, vh, h, s}`; `devScroll(dir)` moves 85% of a screen (animated) and returns false at the end, so in Present ↓/Space/PageDown and ↑/PageUp scroll first, then change frame; ←/→ always change frame. The trackpad scrolls it (`devWheel`, from the viewport's wheel handler). A thin scrollbar shows the position.
+- Prototype frames that autoplay in Present skip the device (the live prototype plays on the wall as before). `#dev` is excluded from the viewport's pointerdown.
+- **View options › Device frames:** `devicePresent` (on, off; default on) and `siteAddress`.
+- **Not built yet:** devices on the wall itself, tablets, playing prototypes inside the device, smarter detection (see the ideas doc).
+
 Wall selection is `S.wall.selected` (an array):
 - Shift, Ctrl or ⌘-click toggles a frame.
 - Shift-drag on the background draws a selection box.
@@ -249,7 +258,7 @@ Rate limits: tier 1 is about 15 requests/min on an Organization plan with a Full
 
 ## Messages (UI → code)
 
-`init`, `save-token`, `create-campaign`, `rename-campaign`, `hide-campaign {shared}`, `unhide-campaign`, `unhide-items`, `set-active {campaignId, campaignName}`, `add-selection {campaignId, campaignName, channel|'auto'}`, `remove-item {itemIds}`, `set-channel {itemIds, channel}`, `mark-seen {seen}`, `set-file-key {url}`, `save-links {links}`, `save-layout {campaignId, layout}`, `save-status {campaignId, changes}`, `board-place {campaignId, campaignName, items, embeds, scale}`, `board-sync {campaignId, items}`, `save-cache`, `save-scan`, `save-prefs`, `resize`, `open-item {fileKey, nodeId, versionId?}`, `notify`.
+`init`, `save-token`, `create-campaign`, `rename-campaign`, `hide-campaign {shared}`, `unhide-campaign`, `unhide-items`, `set-active {campaignId, campaignName}`, `add-selection {campaignId, campaignName, channel|'auto'}`, `remove-item {itemIds}`, `set-channel {itemIds, channel}`, `mark-seen {seen}`, `set-file-key {url}`, `save-links {links}`, `save-layout {campaignId, layout}`, `save-status {campaignId, changes}`, `save-device {campaignId, changes}`, `board-place {campaignId, campaignName, items, embeds, scale}`, `board-sync {campaignId, items}`, `save-cache`, `save-scan`, `save-prefs`, `resize`, `open-item {fileKey, nodeId, versionId?}`, `notify`.
 
 Code → UI: `state` (full), `selection`, `error`.
 
