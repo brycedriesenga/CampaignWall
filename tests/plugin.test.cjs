@@ -509,6 +509,7 @@ function pointer(w, type, target, extra) {
     const frameEl = () => wb.document.querySelector('#live .lv iframe')
     const src = () => (frameEl() || {}).src || ''
     check('▶ plays the live prototype in place, in the clean embed by default', !!frameEl() && src().indexOf('https://www.figma.com/embed?embed_host=showroom&url=') === 0 && decodeURIComponent(src()).indexOf('/proto/' + fk + '/?node-id=' + nid.replace(':', '-')) > 0 && tile().classList.contains('playing'), src())
+    check('on the wall the prototype plays at actual size, cropped to the frame’s box', /scaling%3Dmin-zoom/.test(src()) && !!wb.document.querySelector('#live .lv .lv-crop iframe'), src())
     const before = frameEl()
     wb.showroomTest.renderWall(); await tick(10)
     check('wall redraws don’t reload a playing prototype', frameEl() === before && tile().classList.contains('playing'))
@@ -530,6 +531,7 @@ function pointer(w, type, target, extra) {
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
     pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'p', bubbles: true })); await tick(600)
+    check('Present never shows a frame bigger than its real size', parseInt($(wb, '#zoom-val').textContent, 10) <= 100, $(wb, '#zoom-val').textContent)
     check('Present plays a prototype frame when you reach it', !!frameEl() && /Live prototype/.test(($(wb, '#hud-what') || {}).textContent || ''), ($(wb, '#hud-what') || {}).textContent)
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); await tick(30)
     check('…and stops it when you move on', !frameEl())

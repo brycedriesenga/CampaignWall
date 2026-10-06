@@ -88,7 +88,14 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 /* The wall's canvas has its own colours, so it can be light or dark whatever Figma's theme is (View options). */
 #viewport { --cv-bg: var(--bg2); --cv-ink: var(--text); --cv-sub: var(--muted); --cv-line: color-mix(in srgb, var(--cv-ink) 16%, transparent);
   flex: 1; min-height: 0; position: relative; overflow: hidden; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
-  color: var(--cv-ink); background-color: var(--cv-bg); background-image: radial-gradient(color-mix(in srgb, var(--cv-ink) 14%, transparent) 1px, transparent 1px); background-size: 20px 20px; }
+  color: var(--cv-ink); background-color: var(--cv-bg);
+  /* Dot grid in wall units: two layers (fine and coarse), sized and moved by moveGrid() so it pans and
+     zooms with the frames. The fine layer fades in as you zoom in, so the spacing never jumps. */
+  --g1: 20px; --g2: 40px; --gx: 0px; --gy: 0px; --ga: 1;
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--cv-ink) calc(15% * var(--ga)), transparent) 1px, transparent 1.4px),
+    radial-gradient(circle, color-mix(in srgb, var(--cv-ink) 15%, transparent) 1px, transparent 1.4px);
+  background-size: var(--g1) var(--g1), var(--g2) var(--g2);
+  background-position: calc(var(--gx) - var(--g1) / 2) calc(var(--gy) - var(--g1) / 2), calc(var(--gx) - var(--g2) / 2) calc(var(--gy) - var(--g2) / 2); }
 #viewport[data-bg="light"] { --cv-bg: #f0f0f0; --cv-ink: #1e1e1e; --cv-sub: #6b6b6b; }
 #viewport[data-bg="gray"] { --cv-bg: #9e9e9e; --cv-ink: #111111; --cv-sub: #2e2e2e; }
 #viewport[data-bg="dark"] { --cv-bg: #1e1e1e; --cv-ink: #f2f2f2; --cv-sub: #a3a3a3; }
@@ -158,7 +165,8 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 /* Live prototypes play in their own layer, moved exactly like #world but never redrawn (so they don't reload). */
 #live { position: absolute; left: 0; top: 0; transform-origin: 0 0; z-index: 2; pointer-events: none; }
 .lv { position: absolute; pointer-events: auto; background: #fff; box-shadow: 0 0 0 calc(2px * var(--inv)) var(--brand), 0 calc(12px * var(--inv)) calc(48px * var(--inv)) rgba(0,0,0,.28); }
-.lv iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; opacity: 0; transition: opacity .3s; }
+.lv-crop { position: absolute; inset: 0; overflow: hidden; }
+.lv iframe { position: absolute; border: 0; opacity: 0; transition: opacity .3s; }
 .lv iframe.in { opacity: 1; }
 .lv-wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg2) 85%, transparent); }
 .lv-bar { position: absolute; left: 0; bottom: 100%; transform-origin: 0 100%; transform: scale(var(--inv)); padding-bottom: 6px; display: flex; gap: 4px; white-space: nowrap; }
@@ -169,15 +177,16 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 .lv-bar button:hover { background: var(--bg2); }
 @keyframes lv-pulse { 50% { opacity: .35; } }
 body.presenting .lv-bar span, body.presenting .lv-bar .lv-large { display: none; }
-/* The ▶ badge on frames that have prototype connections. */
-.pb { position: absolute; right: 0; top: 0; z-index: 3; transform-origin: 100% 0; transform: scale(var(--inv)); margin: 8px; width: 30px; height: 30px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center; background: rgba(20,20,20,.72); color: #fff; border: 0; cursor: pointer; backdrop-filter: blur(6px);
-  box-shadow: 0 2px 10px rgba(0,0,0,.25); transition: transform .15s, background .15s; }
-.pb:hover { background: var(--brand); transform: scale(calc(var(--inv) * 1.08)); }
-.pb svg { margin-left: 2px; }
-.far .pb { width: 22px; height: 22px; margin: 4px; }
-.far .pb svg { width: 11px; height: 11px; }
-.fr.playing .lbl { visibility: hidden; }
+/* ▶ on frames that have prototype connections: just above the frame's top-right corner, on the line of
+   its name (like the play icon Figma shows over frames with prototypes). */
+.pb { position: absolute; right: 0; bottom: 100%; z-index: 3; transform-origin: 100% 100%; transform: scale(var(--inv)); margin-bottom: 4px;
+  width: 22px; height: 22px; padding: 0; border-radius: 5px; display: flex; align-items: center; justify-content: center;
+  background: transparent; color: var(--cv-sub); border: 0; cursor: pointer; transition: color .15s, background .15s; }
+.pb:hover { color: var(--onbrand); background: var(--brand); }
+.fr.sel .pb { color: var(--brand); }
+.fr.sel .pb:hover { color: var(--onbrand); }
+.fr.hasproto .lbl { max-width: max(24px, calc(var(--w) * var(--z) * 1px - 28px)); }
+#viewport.no-names .pb { margin-bottom: 2px; }
 body.presenting .pb, .fr.playing .pb { display: none; }
 .fr { cursor: default; }
 .fr.dim { opacity: .12; }
@@ -309,23 +318,17 @@ body.presenting .fr { box-shadow: none; }
 .scopes .skip i { background: var(--bg2); color: var(--muted); }
 .scopes .sc small { display: block; color: var(--muted); font-size: 10.5px; }
 .scopes code { font-size: 10.5px; background: var(--bg2); padding: 0 4px; border-radius: 4px; }
-/* Sections: a light Figma-style container around each cluster of frames (same file, page or channel).
-   The box is placed in world units around the frames; its padding and the room for frame names and
-   the section name above are screen-sized (× --inv), capped by the space the layout leaves (--px, --pb). */
-.sec { position: absolute; pointer-events: none; --lh: 38px; }
-.far .sec, #viewport.no-meta .sec { --lh: 23px; }
-#viewport.no-names .sec { --lh: 4px; }
-.sec::before { content: ''; position: absolute; z-index: 0;
-  left: calc(-1 * min(calc(14px * var(--inv)), var(--px))); right: calc(-1 * min(calc(14px * var(--inv)), var(--px)));
-  top: calc(-1 * (var(--lh) + 10px) * var(--inv)); bottom: calc(-1 * min(calc(14px * var(--inv)), var(--pb)));
-  background: color-mix(in srgb, var(--cv-ink) 3.5%, transparent);
-  border: calc(1px * var(--inv)) solid color-mix(in srgb, var(--cv-ink) 11%, transparent); border-radius: calc(10px * var(--inv)); }
-.sec-t { position: absolute; left: 0; bottom: calc(100% + var(--lh) * var(--inv));   /* a tab sitting on the box's top edge */
-  transform-origin: 0 100%; transform: scale(var(--inv)); padding: 2px 9px; pointer-events: auto; cursor: pointer;
-  background: var(--cv-bg); border: 1px solid color-mix(in srgb, var(--cv-ink) 11%, transparent); border-radius: 99px;
-  font-size: 11px; line-height: 14px; font-weight: 600; color: var(--cv-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+/* Sections: Figma-style boxes around each cluster of frames (same file, page or channel). The box is in
+   wall units (layout() sizes it for the fit-to-screen zoom); its name is a screen-sized label just above
+   the box, aligned left, like a Figma section's name. */
+.sec { position: absolute; pointer-events: none; border-radius: calc(3px * var(--inv));
+  background: color-mix(in srgb, var(--cv-ink) 6%, var(--cv-bg)); box-shadow: inset 0 0 0 calc(1px * var(--inv)) color-mix(in srgb, var(--cv-ink) 9%, transparent); }
+.sec-t { position: absolute; left: 0; bottom: 100%; transform-origin: 0 100%; transform: scale(var(--inv)); margin-bottom: 0; pointer-events: auto; cursor: pointer;
+  padding: 4px 9px; border-radius: 6px 6px 6px 6px; margin-bottom: 7px;
+  background: color-mix(in srgb, var(--cv-ink) 9%, var(--cv-bg)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cv-ink) 12%, transparent);
+  font-size: 12px; line-height: 16px; font-weight: 500; color: var(--cv-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: max(48px, calc(var(--w) * var(--z) * 1px)); }
-.sec-t:hover { color: var(--cv-ink); border-color: color-mix(in srgb, var(--cv-ink) 30%, transparent); }
+.sec-t:hover { box-shadow: inset 0 0 0 1px var(--brand); }
 #viewport.no-headings .sec-t { display: none; }
 body.presenting .sec { display: none; }
 .marquee { position: absolute; z-index: 2; border: 1px solid var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); pointer-events: none; }
@@ -1657,7 +1660,8 @@ function presentGo(i) {
   const p = placementOf(pr.id)
   document.querySelectorAll('#world .fr').forEach((el) => el.classList.toggle('cur', el.dataset.id === pr.id))
   if (S.wall.live && S.wall.live.id !== pr.id) stopLive()
-  if (p) zoomToRect(p.x, p.y, p.w, p.h, { maxZoom: 2, pad: 40, bottom: 56 })
+  // Never bigger than real size: small things like ads stay their true size.
+  if (p) zoomToRect(p.x, p.y, p.w, p.h, { maxZoom: 1, pad: 40, bottom: 56 })
   // Prototype frames start playing once the zoom settles (View options › Prototypes in Present).
   clearTimeout(S.wall.autoplayTimer)
   if (p && hasProto(p.it) && wallView().protoPresent === 'auto' && !S.wall.live) {
@@ -2559,9 +2563,9 @@ function wallGroups(c, by) {
     for (const it of g.items) { const k = clusterOf(it, mode).key; if (!byKey[k]) { byKey[k] = []; order.push(k) } byKey[k].push(it) }
     return Object.assign({}, g, { items: [].concat.apply([], order.map((k) => byKey[k])), clusters: order.length, mode: mode })
   }).map((g, i, all) => {
-    // Sections only add something when a row mixes files (or channels/pages). If any row does,
-    // every row gets them so the wall looks consistent; if none does, the wall stays plain.
-    g.clustered = all.some((x) => x.clusters > 1)
+    // Sections only add something when a row mixes files (or channels/pages); rows from a single file
+    // stay plain (each frame's info line already names its file), which keeps the wall compact.
+    g.clustered = g.clusters > 1
     return g
   })
 }
@@ -2583,44 +2587,71 @@ function wallGroupsRaw(c, by) {
 }
 
 const SPACING = { tight: [32, 120], normal: [80, 240], roomy: [200, 480] }   // [gap between frames, gap between rows]
-function layout(c) {
+// Lays out the wall. Frame names, row headings and section names stay screen-sized, so the room they
+// need in wall units depends on the zoom. zRef is the zoom the room is sized for: the fit-to-screen zoom,
+// found by wallLayout() (a couple of passes, since the room changes the wall's size).
+function layout(c, zRef) {
   const view = wallView()
   const sp = SPACING[view.spacing] || SPACING.normal
   const GAP = sp[0], LABEL = view.names ? 60 : 16, ROW_GAP = sp[1], MAX_ROW = 9000
+  const z = Math.max(0.03, Math.min(1, zRef || 0.25)), px = (n) => Math.round(n / z)   // screen px → wall units
+  // Sections (clusters within rows) are Figma-style boxes in wall units: padding around the frames, room
+  // inside the top for the frame names, and the section's name sitting just above the box.
+  const labelPx = !view.names ? 6 : (view.meta && z >= 0.18 ? 40 : 25)
+  const SEC = { pad: px(16), top: px(labelPx + 12), title: px(30), between: Math.max(GAP * 2, px(40)) }
   const groups = []
   let y = 0
   let maxX = 0
   for (const src of wallGroups(c, view.group)) {
     const items = src.items
-    // Clusters sit in Figma-style sections: a wider gap between them, and extra room above the row
-    // for the section's name (TOP) and below it for the section's padding (BOT). Section names and
-    // padding stay screen-sized like frame names, so that room grows with the row gap.
-    const TOP = src.clustered ? ROW_GAP : 0, BOT = src.clustered ? Math.round(ROW_GAP * 0.3) : 0
-    const g = { label: src.label, y: y + LABEL + TOP, items: [], segments: [] }
-    let x = 0, rowY = y + LABEL + TOP, rowH = 0, seg = null, prevKey = null
+    const cl0 = !!src.clustered
+    const above = cl0 ? SEC.title + SEC.top : LABEL          // from the row's top to the frames' top
+    const below = cl0 ? SEC.pad : 0                          // under the frames, inside the section
+    const g = { label: src.label, y: y + above, items: [], segments: [] }
+    let x = 0, rowY = y + above, rowH = 0, seg = null, prevKey = null
     const close = () => { if (seg) { g.segments.push(seg); seg = null } }
     for (const it of items) {
       const n = nodeInfo(it)
       const w = Math.max(40, (n && (n.viewW || n.width)) || it.width || 400)
       const h = Math.max(40, (n && (n.viewH || n.height)) || it.height || 300)
-      const cl = src.clustered ? clusterOf(it, src.mode) : null
+      const cl = cl0 ? clusterOf(it, src.mode) : null
       const newCluster = cl && prevKey !== null && cl.key !== prevKey
-      if (newCluster && x > 0) x += GAP * 2
-      if (x > 0 && x + w > MAX_ROW) { close(); x = 0; rowY += rowH + LABEL + GAP + TOP + BOT; rowH = 0 }
+      if (newCluster && x > 0) x += SEC.between + SEC.pad * 2 - GAP
+      if (x > 0 && x + w > MAX_ROW) { close(); x = 0; rowY += rowH + below + (cl0 ? px(28) : GAP) + above; rowH = 0 }
       if (cl && (!seg || newCluster)) { close(); seg = { label: cl.label, x1: x, x2: x + w, y: rowY, ids: [] } }
       g.items.push({ it: it, n: n, x: x, y: rowY, w: w, h: h })
       if (seg) { seg.x2 = x + w; seg.ids.push(it.id) }
-      x += w + GAP; rowH = Math.max(rowH, h); maxX = Math.max(maxX, x - GAP)
+      x += w + GAP; rowH = Math.max(rowH, h); maxX = Math.max(maxX, x - GAP + (cl0 ? SEC.pad : 0))
       if (cl) prevKey = cl.key
     }
     close()
     // Sections in a row share its height (its tallest frame), so they line up.
-    g.segments.forEach((sg) => { sg.h = Math.max.apply(null, g.items.filter((p) => p.y === sg.y).map((p) => p.h)) })
-    g.pad = { x: Math.round(GAP * 0.6), b: BOT }
+    g.segments.forEach((sg) => {
+      sg.h = Math.max.apply(null, g.items.filter((p) => p.y === sg.y).map((p) => p.h))
+      sg.box = { x: sg.x1 - SEC.pad, y: sg.y - SEC.top, w: sg.x2 - sg.x1 + SEC.pad * 2, h: sg.h + SEC.top + SEC.pad }
+    })
     groups.push(g)
-    y = rowY + rowH + ROW_GAP + BOT
+    y = rowY + rowH + below + (cl0 ? Math.max(ROW_GAP * 0.6, px(36)) : ROW_GAP)
   }
-  return { groups: groups, width: maxX, height: Math.max(0, y - ROW_GAP) }
+  const lastGap = groups.length && groups[groups.length - 1].segments.length ? Math.max(ROW_GAP * 0.6, px(36)) : ROW_GAP
+  return { groups: groups, width: maxX, height: Math.max(0, y - lastGap), zRef: z }
+}
+// The zoom fit() would pick for a layout.
+function fitZoomFor(b) {
+  const vp = $('viewport')
+  const vw = (vp && vp.clientWidth) || 1200, vh = (vp && vp.clientHeight) || 750
+  if (!b || !b.width) return 1
+  const pad = 48, gutter = 150
+  return Math.max(0.02, Math.min(1, Math.min((vw - pad * 2 - gutter) / b.width, (vh - pad * 2) / b.height)))
+}
+function wallLayout(c) {
+  let L = layout(c, 0.25)
+  for (let i = 0; i < 3; i++) {
+    const z = fitZoomFor(L)
+    if (Math.abs(z - L.zRef) / L.zRef < 0.05) break
+    L = layout(c, z)
+  }
+  return L
 }
 
 function renderWallShell() {
@@ -2666,14 +2697,15 @@ function renderWall() {
   const banner = $('banner')
   banner.innerHTML = S.wall.banner ? '<div class="notice ' + (S.wall.banner.kind === 'error' ? 'error' : 'warn') + '">' + esc(S.wall.banner.text) + '</div>' : ''
   if (!c || !c.items.length) { world.innerHTML = ''; banner.innerHTML = '<div class="notice">No frames in this campaign yet.</div>'; renderWallBar(); return }
-  const L = layout(c)
+  const L = wallLayout(c)
   S.wall.bounds = L
   S.wall.selected = S.wall.selected.filter((id) => c.items.some((it) => it.id === id))
   let html = ''
   for (const g of L.groups) {
     const gi = L.groups.indexOf(g)
     ;(g.segments || []).forEach((sg, si) => {
-      html += '<div class="sec" style="left:' + sg.x1 + 'px;top:' + sg.y + 'px;width:' + (sg.x2 - sg.x1) + 'px;height:' + sg.h + 'px;--w:' + (sg.x2 - sg.x1) + ';--px:' + g.pad.x + 'px;--pb:' + g.pad.b + 'px">' +
+      const b = sg.box
+      html += '<div class="sec" style="left:' + b.x + 'px;top:' + b.y + 'px;width:' + b.w + 'px;height:' + b.h + 'px;--w:' + b.w + '">' +
         '<div class="sec-t" data-seg="' + gi + ':' + si + '" title="Select the ' + sg.ids.length + ' frame' + (sg.ids.length === 1 ? '' : 's') + ' in ' + esc(sg.label) + '">' + esc(sg.label) + '</div></div>'
     })
     if (g.label) html += '<div class="ch" data-group="' + L.groups.indexOf(g) + '" title="Select all ' + esc(g.label) + ' frames" style="top:' + g.y + 'px">' + esc(g.label) + '<em>' + g.items.length + ' frame' + (g.items.length === 1 ? '' : 's') + '</em></div>'
@@ -2694,8 +2726,8 @@ function renderWall() {
         ? '<div class="edgewrap"><div class="edge" style="left:' + n.offX + 'px;top:' + n.offY + 'px;width:' + n.width + 'px;height:' + n.height + 'px"></div></div>' : ''
       // Round the tile like the frame, unless content spills past the frame's edges (then the tile is bigger than the frame).
       const radius = n && n.radius && !edge ? ';border-radius:' + n.radius : ''
-      html += '<div class="fr' + (S.wall.selected.indexOf(it.id) >= 0 ? ' sel' : '') + (n && n.missing ? ' missing' : '') + (matchesFilter(it) ? '' : ' dim') + (S.wall.present && S.wall.present.id === it.id ? ' cur' : '') + '" data-id="' + esc(it.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px;width:' + p.w + 'px;height:' + p.h + 'px;--w:' + p.w + radius + '">'
-      const play = n && n.proto && !n.missing ? '<button class="pb" data-play="' + esc(it.id) + '" title="Play the live prototype" aria-label="Play the live prototype">' + icon('play', 14) + '</button>' : ''
+      const play = n && n.proto && !n.missing ? '<button class="pb" data-play="' + esc(it.id) + '" title="Play the live prototype" aria-label="Play the live prototype">' + icon('play', 13) + '</button>' : ''
+      html += '<div class="fr' + (play ? ' hasproto' : '') + (S.wall.selected.indexOf(it.id) >= 0 ? ' sel' : '') + (n && n.missing ? ' missing' : '') + (matchesFilter(it) ? '' : ' dim') + (S.wall.present && S.wall.present.id === it.id ? ' cur' : '') + '" data-id="' + esc(it.id) + '" style="left:' + p.x + 'px;top:' + p.y + 'px;width:' + p.w + 'px;height:' + p.h + 'px;--w:' + p.w + radius + '">'
       html += '<div class="lbl"><div class="nm">' + statusBadge(it.status) + (isUpdated(it) ? '<span class="upd">Updated</span>' : '') + esc(name) + '</div><div class="mt">' + esc(meta) + '</div></div>' + body + edge + play + '</div>'
     }
   }
@@ -2758,15 +2790,32 @@ function applyTransform() {
   world.classList.toggle('far', z < 0.18)
   const live = $('live')
   if (live) { live.style.transform = world.style.transform; live.style.setProperty('--inv', String(1 / z)) }
+  moveGrid()
   const zv = $('zoom-val'); if (zv) zv.textContent = Math.round(z * 100) + '%'
   rememberPosition()
+}
+
+// The dot grid sits in wall units, like Figma's canvas: a spacing of 10 × 2ⁿ wall units chosen so the dots
+// are 12–24 px apart on screen, plus a coarser layer at twice that. The fine layer fades in as it opens up.
+function moveGrid() {
+  const vp = $('viewport'); if (!vp) return
+  const z = S.wall.zoom || 1
+  let g = 10
+  while (g * z < 12) g *= 2
+  while (g * z >= 24) g /= 2
+  const s1 = g * z
+  vp.style.setProperty('--g1', s1 + 'px')
+  vp.style.setProperty('--g2', (s1 * 2) + 'px')
+  vp.style.setProperty('--ga', String(Math.max(0, Math.min(1, (s1 - 12) / 8))))
+  vp.style.setProperty('--gx', S.wall.tx + 'px')
+  vp.style.setProperty('--gy', S.wall.ty + 'px')
 }
 
 function fit() {
   const vp = $('viewport'); const b = S.wall.bounds
   if (!vp || !b || !b.width) return applyTransform()
   const pad = 48, gutter = 150   // gutter: room for channel names, which stay screen-sized
-  const z = Math.max(0.02, Math.min(1, Math.min((vp.clientWidth - pad * 2 - gutter) / b.width, (vp.clientHeight - pad * 2) / b.height)))
+  const z = fitZoomFor(b)
   S.wall.zoom = z
   S.wall.tx = Math.round(gutter + Math.max(0, (vp.clientWidth - gutter - pad - b.width * z) / 2))
   S.wall.ty = Math.round(pad)
@@ -2860,15 +2909,21 @@ function renderInspector() {
 // (mainly: does it know you're signed in, so private files load?). Two embed styles to compare:
 //  - 'kit2': the current one, embed.figma.com/proto/…
 //  - 'legacy': the older figma.com/embed?url=… wrapper, which may handle sign-in differently.
-function protoUrl(it, style) {
+// scaling: 'contain' fits the prototype to the window (the Large window); 'min-zoom' is Figma's "Actual size",
+// used on the wall so the prototype lines up exactly with the frame's image.
+function protoUrl(it, style, scaling) {
   const nid = String(it.nodeId).replace(/:/g, '-')
+  const sc = scaling || 'contain'
   if (style === 'legacy') {
-    const inner = 'https://www.figma.com/proto/' + it.fileKey + '/?node-id=' + nid + '&starting-point-node-id=' + nid + '&hide-ui=1&hotspot-hints=0&scaling=contain'
+    const inner = 'https://www.figma.com/proto/' + it.fileKey + '/?node-id=' + nid + '&starting-point-node-id=' + nid + '&hide-ui=1&hotspot-hints=0&scaling=' + sc
     return 'https://www.figma.com/embed?embed_host=showroom&url=' + encodeURIComponent(inner)
   }
   return 'https://embed.figma.com/proto/' + it.fileKey + '/?node-id=' + nid + '&starting-point-node-id=' + nid +
-    '&embed-host=showroom&footer=false&viewport-controls=false&hotspot-hints=false&device-frame=false&scaling=contain&content-scaling=fixed'
+    '&embed-host=showroom&footer=false&viewport-controls=false&hotspot-hints=false&device-frame=false&scaling=' + sc + '&content-scaling=fixed'
 }
+// On the wall the prototype plays at real size in an embed a little bigger than the frame, cropped to the
+// frame's exact box, so whatever space Figma's viewer leaves around a prototype is hidden.
+const LIVE_MARGIN = 120
 function openPlayer(it, style) {
   const box = $('player'); if (!box || !it) return
   style = style || protoStyle()
@@ -2926,7 +2981,7 @@ function playInPlace(id, opts) {
   box.innerHTML = '<div class="lv-bar"><span title="Live prototype">Live · ' + esc((p.n && p.n.name) || p.it.name) + '</span><button class="lv-restart" title="Restart">' + icon('refresh', 12) + '</button>' +
     '<button class="lv-large" title="Play in a large window">' + icon('fit', 12) + 'Large</button><button class="lv-stop" title="Stop (Esc)">' + icon('x', 12) + 'Stop</button></div>' +
     '<div class="lv-wait" style="font-size:calc(14px * var(--inv))">' + skeleton('Loading the prototype…') + '</div>' +
-    '<iframe src="' + esc(protoUrl(p.it, protoStyle())) + '" allow="fullscreen; clipboard-write" allowfullscreen referrerpolicy="origin" title="Live prototype"></iframe>'
+    '<div class="lv-crop"><iframe src="' + esc(protoUrl(p.it, protoStyle(), 'min-zoom')) + '" style="left:' + (-LIVE_MARGIN) + 'px;top:' + (-LIVE_MARGIN) + 'px;width:' + (b.w + LIVE_MARGIN * 2) + 'px;height:' + (b.h + LIVE_MARGIN * 2) + 'px" allow="fullscreen; clipboard-write" allowfullscreen referrerpolicy="origin" title="Live prototype"></iframe></div>'
   layer.appendChild(box)
   const frame = box.querySelector('iframe')
   frame.addEventListener('load', () => { frame.classList.add('in'); setTimeout(() => { const w = box.querySelector('.lv-wait'); if (w) w.remove() }, 320) })
@@ -2953,6 +3008,7 @@ function syncLive() {
   if (!p || !box || !matchesFilter(p.it)) { stopLive(true); return }
   const b = liveBox(p)
   box.style.left = b.x + 'px'; box.style.top = b.y + 'px'; box.style.width = b.w + 'px'; box.style.height = b.h + 'px'
+  const fr = box.querySelector('iframe'); if (fr) { fr.style.width = (b.w + LIVE_MARGIN * 2) + 'px'; fr.style.height = (b.h + LIVE_MARGIN * 2) + 'px' }
   const tile = document.querySelector('#world .fr[data-id="' + live.id.replace(/"/g, '') + '"]'); if (tile) tile.classList.add('playing')
 }
 
