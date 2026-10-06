@@ -512,6 +512,7 @@ function pointer(w, type, target, extra) {
     // Make Bryce's "Desktop" frame a long page, then present it.
     api.files.EMAILFILE0001.nodes['1:5'] = { id: '1:5', name: 'Desktop hero', absoluteBoundingBox: { x: 0, y: 0, width: 1536, height: 3200 },
       children: [{ id: '1:50', name: 'Global Header', absoluteBoundingBox: { x: 0, y: 0, width: 1536, height: 110 } }] }
+    api.files.EMAILFILE0001.nodes['1:50'] = { id: '1:50', name: 'Global Header', absoluteBoundingBox: { x: 0, y: 0, width: 1536, height: 110 } }
     const tile = () => wb.document.querySelector('#world .fr[data-id="EMAILFILE0001|1:5"]')
     pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
     click(wb, '#insp-refresh'); await tick(600)
@@ -522,6 +523,9 @@ function pointer(w, type, target, extra) {
     const idxBefore = $(wb, '#hud-what').textContent
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })); await tick(20)
     check('↓ scrolls the page inside the browser instead of moving on', pageY() > 0 && $(wb, '#hud-what').textContent === idxBefore, pageY() + ' ' + $(wb, '#hud-what').textContent)
+    await tick(60)
+    const stuck = wb.document.querySelector('#dev .dv-sticky')
+    check('the page’s header is rendered once and stays at the top while it scrolls', stuck && stuck.classList.contains('stuck') && /1:50/.test((stuck.querySelector('img') || {}).src || '') && api.calls.filter((x) => /images\/EMAILFILE0001\?ids=1%3A50/.test(x)).length === 1, stuck && stuck.outerHTML)
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })); await tick(20)
     check('↑ scrolls back up', pageY() === 0)
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)

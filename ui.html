@@ -368,6 +368,9 @@ body.presenting .sec { display: none; }
 .dv-page.anim { transition: transform .45s cubic-bezier(.2,.7,.2,1); }
 .dv-page img { position: absolute; max-width: none; }
 .dv-page .sk { position: absolute; inset: 0; }
+.dv-sticky { position: absolute; top: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity .15s, box-shadow .2s; }
+.dv-sticky.stuck { opacity: 1; box-shadow: 0 6px 18px rgba(0,0,0,.14); }
+.dv-sticky img { display: block; width: 100%; height: 100%; }
 .dv-scroll { position: absolute; right: 3px; top: 3px; bottom: 3px; width: 6px; }
 .dv-scroll i { position: absolute; left: 0; right: 0; border-radius: 3px; background: rgba(0,0,0,.35); transition: top .45s cubic-bezier(.2,.7,.2,1); }
 /* Browser window: tab strip + toolbar, neutral (not any real browser) */
@@ -1305,7 +1308,7 @@ function pageParts(doc) {
     /header|navigation|\bnav\b|masthead|top ?bar|menu ?bar|global/i.test(k.name || ''))
   const foot = list.find((k) => wide(k) && (bb.y + bb.height) - (k.absoluteBoundingBox.y + k.absoluteBoundingBox.height) <= 40 && /footer/i.test(k.name || ''))
   return {
-    hdr: top ? { id: top.id, h: Math.round(top.absoluteBoundingBox.height), y: Math.max(0, Math.round(top.absoluteBoundingBox.y - bb.y)) } : null,
+    hdr: top ? { id: top.id, h: Math.round(top.absoluteBoundingBox.height), y: Math.max(0, Math.round(top.absoluteBoundingBox.y - bb.y)), x: Math.round(top.absoluteBoundingBox.x - bb.x), w: Math.round(top.absoluteBoundingBox.width) } : null,
     ftr: !!foot,
   }
 }
@@ -1361,6 +1364,7 @@ async function syncItems(list, opts) {
           const parts = pageParts(doc)
           fc.nodes[id] = Object.assign({ name: doc.name, hash: hash, proto: proto, hdr: parts.hdr, ftr: parts.ftr }, frameGeometry(doc), {
             url: same ? prev.url : '', urlAt: same ? prev.urlAt : 0,
+            hdrUrl: same ? prev.hdrUrl || '' : '', hdrUrlAt: same ? prev.hdrUrlAt || 0 : 0,
             changedAt: prev.hash && !same ? (Date.parse(fc.lastTouchedAt) || Date.now()) : (prev.changedAt || 0),
           })
         }
@@ -1411,7 +1415,7 @@ async function syncItems(list, opts) {
 }
 
 // ---------- wall view options (saved per person in prefs.wallView) ----------
-const WALL_VIEW_DEFAULTS = { devicePresent: 'on', siteAddress: '', protoStyle: 'legacy', protoPresent: 'auto', bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, edge: 'both', spacing: 'normal', group: 'channel',
+const WALL_VIEW_DEFAULTS = { devicePresent: 'on', siteAddress: '', stickyHeader: true, protoStyle: 'legacy', protoPresent: 'auto', bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, edge: 'both', spacing: 'normal', group: 'channel',
   subChannel: 'file', subFile: 'channel', subNone: 'off' }   // how frames cluster inside each row, per grouping
 // Inside a row, frames can cluster by the other dimension: by file (and page) in channel rows,
 // by channel (or page) in file rows. Each choice: [value, button label].
@@ -1484,6 +1488,7 @@ function renderViewOptions() {
   html += '<div><div class="vo-title">Live prototypes</div>' + seg('protoStyle', [['legacy', 'Clean'], ['kit2', 'With controls']], { legacy: 'Just the prototype, no Figma controls', kit2: 'Adds Figma’s back, forward and restart buttons under the prototype' }) +
     '<div style="height:6px"></div>' + seg('protoPresent', [['auto', 'Play in Present'], ['click', 'Only with ▶']], { auto: 'Prototype frames start playing when you reach them in Present', click: 'Prototypes only play when you press ▶' }) + '</div>'
   html += '<div><div class="vo-title">Device frames</div>' + seg('devicePresent', [['on', 'In Present'], ['wall', 'Wall too'], ['off', 'Off']], { on: 'Site pages show in a browser window or phone when you present them', wall: 'Also show browser and phone chrome around Site pages on the wall', off: 'Present frames on their own' }) +
+    '<label class="row small" style="margin-top:6px;gap:6px"><input type="checkbox" data-vo-toggle="stickyHeader"' + (v.stickyHeader !== false ? ' checked' : '') + '> Keep the page’s header at the top while it scrolls</label>' +
     '<input class="field" id="vo-site" style="margin-top:6px;height:28px" placeholder="Address in the browser bar, e.g. www.merrell.com" value="' + esc(v.siteAddress || '') + '" aria-label="Address shown in the browser bar"></div>'
   html += '<div>' + toggle('grid', 'Dot grid') + toggle('names', 'Frame names') + toggle('meta', 'File and edit info') + toggle('headings', 'Row headings') + '</div>'
   html += '<div class="row" style="justify-content:space-between"><button class="btn ghost" id="vo-reset" style="height:26px;padding:0 6px">Reset to defaults</button>' +
@@ -1851,7 +1856,9 @@ function devIcon(name, size) { return '<svg width="' + size + '" height="' + siz
 // The device around a frame, at the design's own size (W = frame width).
 function deviceHTML(kind, it, n, W, H, VH) {
   const addr = deviceAddress(it)
-  const page = '<div class="dv-view" style="height:' + VH + 'px"><div class="dv-page" style="width:' + W + 'px;height:' + H + 'px">' +
+  const sticky = n && n.hdr && H > VH && wallView().stickyHeader !== false
+    ? '<div class="dv-sticky" style="left:' + (n.hdr.x || 0) + 'px;width:' + (n.hdr.w || W) + 'px;height:' + n.hdr.h + 'px">' + (n.hdrUrl ? '<img src="' + esc(n.hdrUrl) + '" alt="" draggable="false">' : '') + '</div>' : ''
+  const page = '<div class="dv-view" style="height:' + VH + 'px">' + sticky + '<div class="dv-page" style="width:' + W + 'px;height:' + H + 'px">' +
     (n && n.url ? '<img src="' + esc(n.url) + '" alt="" draggable="false" style="left:' + (-(n.offX || 0)) + 'px;top:' + (-(n.offY || 0)) + 'px;width:' + (n.viewW || W) + 'px;height:' + (n.viewH || H) + 'px">' : skeleton(PHASE_TEXT.image)) +
     '</div>' + (H > VH ? '<div class="dv-scroll"><i></i></div>' : '') + '</div>'
   if (kind === 'phone') {
@@ -1906,13 +1913,36 @@ function showDevice(p) {
   dev.style.transform = 'scale(' + sc + ')'
   fitBox.style.width = (devW * sc) + 'px'; fitBox.style.height = (devH * sc) + 'px'
   fitBox.style.marginBottom = bottom + 'px'
-  S.wall.dev = { id: p.it.id, y: 0, max: Math.max(0, H - VH), vh: VH, h: H, s: sc }
+  S.wall.dev = { id: p.it.id, y: 0, max: Math.max(0, H - VH), vh: VH, h: H, s: sc, hdr: n.hdr && H > VH && wallView().stickyHeader !== false ? n.hdr : null }
   devApply(false)
+  if (S.wall.dev.hdr && !n.hdrUrl) loadStickyHeader(p.it, n)
+}
+// The header layer is rendered once on its own (one image request), then reused until the frame changes.
+async function loadStickyHeader(it, n) {
+  if (!S.token || !n.hdr || S.wall.hdrLoading === it.id) return
+  S.wall.hdrLoading = it.id
+  try {
+    const res = await api('/images/' + it.fileKey + '?ids=' + encodeURIComponent(n.hdr.id) + '&format=png&scale=1')
+    const url = res && res.images && res.images[n.hdr.id]
+    if (url) {
+      n.hdrUrl = url; n.hdrUrlAt = Date.now()
+      S.cache.savedAt = Date.now(); send('save-cache', { cache: S.cache })
+      const layer = document.querySelector('#dev .dv-sticky')
+      if (layer && S.wall.dev && S.wall.dev.id === it.id) { layer.innerHTML = '<img src="' + esc(url) + '" alt="" draggable="false">'; devApply(false) }
+    }
+  } catch (e) { /* no sticky header this time; the page still scrolls */ }
+  S.wall.hdrLoading = ''
 }
 function devApply(animate) {
   const d = S.wall.dev; const stage = $('dev'); if (!d || !stage) return
   const pageEl = stage.querySelector('.dv-page')
   if (pageEl) { pageEl.classList.toggle('anim', !!animate); pageEl.style.transform = 'translateY(' + (-d.y) + 'px)' }
+  const st = stage.querySelector('.dv-sticky')
+  if (st && d.hdr) {
+    const top = d.hdr.y - d.y
+    st.style.top = Math.max(0, top) + 'px'
+    st.classList.toggle('stuck', top < 0 && !!st.firstChild)
+  }
   const thumb = stage.querySelector('.dv-scroll i')
   if (thumb && d.h) { thumb.style.height = (d.vh / d.h * 100) + '%'; thumb.style.top = (d.y / d.h * 100) + '%' }
 }
