@@ -53,7 +53,11 @@ The wall reads frames straight from their files through Figma's API, so it's alw
 - **Arrange:** drag a frame to move it within its row. The new order is saved in the file and synced to the team. Dragging empty space still pans.
 - **Filter:** the funnel button shows only certain channels, people, or frames updated since you last looked. The other frames fade out.
 - **Present:** press P or click **Present**. Use the arrow keys to step through frames, shown as large as fits but never bigger than their real size, and Esc to go back.
-- **Device frames:** in Present, Site pages show inside a browser window or a phone. Long pages scroll inside the device: use the trackpad, or ↓/Space to scroll and → to move on. Showroom picks the device from the frame's size and name (banners, tiles and ads stay as they are); change it for any frame in its details (Auto, Browser, Phone, None), and the choice is shared with the team. Set the address shown in the browser bar, or turn device frames off, in View options.
+- **Device frames:** Site pages show inside a browser window or a phone.
+  - **In Present:** long pages scroll inside the device. Use the trackpad, or ↓/Space to scroll and → to move on. The page's header stays at the top while it scrolls, like a real site. Prototype frames play live inside the device.
+  - **On the wall too:** View options › Device frames › Wall too puts the browser bar or phone around each page on the wall, with the page running its full length.
+  - **Which device:** Showroom picks it from the frame's size, name and contents (a header or footer layer means it's a whole page; banners, tiles and ads stay as they are). Change it for any frame in its details (Auto, Browser, Phone, None); the choice is shared with the team.
+  - Set the address shown in the browser bar, turn the sticky header off, or turn device frames off, in View options.
 - **Live prototypes:** frames with prototype connections get a ▶ just above their top-right corner. Click it to play the real Figma prototype right on the wall, at the frame's exact size: click through it, scroll it, then press Esc or Stop. **Large** plays it in a big window. In Present, prototype frames start playing when you reach them; click outside the prototype to use the arrow keys again. View options › Live prototypes switches between a clean embed and one with Figma's back/forward/restart buttons, and can stop prototypes from playing automatically in Present. Prototypes need you to be signed in to Figma with access to the file.
 - **Position:** each campaign reopens at the zoom and position you left it.
 - **View options:** the sliders button at the top right of the wall changes how it looks, just for you: background colour (light, mid grey, dark, black, or match Figma), dot grid, frame borders or shadows, frame names, file info, row headings, spacing, and grouping rows by channel, by file or not at all. **Cluster within rows** keeps frames from the same file (or file and page) together inside a channel row, each in a Figma-style section with its name just above it (only rows that mix files get sections). Click a section's name to select its frames. Grouped by file, it clusters by channel or page instead.
@@ -121,6 +125,10 @@ Then share the plugin in one of two ways.
   - The first person to publish may need an admin to approve it, depending on your org's settings.
 
 Each person uses their own token, so API limits are per person. Figma's heavier requests (reading a file, rendering images) are limited to roughly 10–15 a minute on Full and Dev seats. The plugin paces itself to stay under that. View and Collab seats get only a handful of requests a month, so they can't really use the wall.
+
+## Going back to an earlier version
+
+Every version is saved on GitHub, and `CHANGELOG.md` lists each one with its commit ID. To try an older build, run `git checkout <commit ID>` in the plugin's folder and re-run the plugin in Figma. Run `git checkout main` to come back to the newest.
 
 ## Development
 
