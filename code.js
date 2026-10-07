@@ -116,7 +116,29 @@ function readManifest() {
   return best || { v: 1, campaigns: {} };
 }
 
+// Frames set as a prototype flow's starting point (on any page). Showroom treats them as prototypes.
+function flowStarts() {
+  const out = [];
+  try { for (const page of figma.root.children) for (const f of (page.flowStartingPoints || [])) if (f && f.nodeId) out.push(f.nodeId); } catch (e) { /* not available */ }
+  return out;
+}
+// The campaign frames in this file that start a flow, so teammates (who only see the manifest) know too.
+function campaignFlows(manifest) {
+  const ids = {};
+  for (const c of Object.values(manifest.campaigns || {})) for (const id of Object.keys(c.items || {})) ids[id] = true;
+  return flowStarts().filter((id) => ids[id]).sort();
+}
+// Opening the plugin keeps that list up to date (written only when it changed, and only where we can edit).
+function syncFlows() {
+  const m = readManifest();
+  if (!Object.keys(m.campaigns || {}).length) return;
+  if ((m.flows || []).slice().sort().join(',') === campaignFlows(m).join(',')) return;
+  try { writeManifest(m); } catch (e) { /* read-only file */ }
+}
+
 function writeManifest(manifest) {
+  const flows = campaignFlows(manifest);
+  if (flows.length) manifest.flows = flows; else delete manifest.flows;
   manifest.v = 1;
   manifest.fileKey = currentFileKey();
   manifest.fileName = figma.root.name;
@@ -181,7 +203,7 @@ async function sendState(extra) {
   figma.ui.postMessage(Object.assign({
     type: 'state', data: data, token: token, cache: cache, scan: scan, prefs: prefs,
     selection: selectionInfo(manifest),
-    file: { key: currentFileKey(), name: figma.root.name, keyFromApi: !!figma.fileKey, manifest: manifest },
+    file: { key: currentFileKey(), name: figma.root.name, keyFromApi: !!figma.fileKey, manifest: manifest, flows: flowStarts() },
     editor: figma.editorType, board: figma.editorType === 'figjam' ? boardSummary() : null,
   }, extra || {}));
 }
@@ -340,6 +362,7 @@ async function handle(msg) {
   switch (msg.type) {
     case 'init':
       await carryOverOldStorage();
+      syncFlows();
       return sendState();
     case 'save-token':
       await figma.clientStorage.setAsync(TOKEN_KEY, String(msg.token || '').trim());

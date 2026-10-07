@@ -500,7 +500,7 @@ function pointer(w, type, target, extra) {
   click(wb, '#viewopts [data-vo="subFile"][data-val="off"]'); await tick(20)
   check('clustering can be turned off', caps().length === 0 && (bryce.store.get('showroom.prefs').wallView || {}).subFile === 'off')
   click(wb, '#viewopts [data-vo="group"][data-val="channel"]'); await tick(20)
-  check('the cluster option follows the grouping', /Cluster within rows by/.test($(wb, '#viewopts').textContent) && !!$(wb, '#viewopts [data-vo="subChannel"][data-val="filepage"]') && $(wb, '#viewopts [data-vo="subChannel"][data-val="file"]').classList.contains('on'))
+  check('the cluster option follows the grouping', /Cluster within channel rows by/.test($(wb, '#viewopts').textContent) && !!$(wb, '#viewopts [data-vo="subChannel"][data-val="filepage"]') && $(wb, '#viewopts [data-vo="subChannel"][data-val="file"]').classList.contains('on'))
   wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
   check('Esc closes View options', $(wb, '#viewopts').classList.contains('hidden'))
   // ===== device frames in Present =====
@@ -643,6 +643,19 @@ function pointer(w, type, target, extra) {
     check('“Large” plays it in a big window over the wall', !$(wb, '#player').classList.contains('hidden') && big().indexOf('https://www.figma.com/embed?') === 0, big())
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
     check('Esc closes the big window', $(wb, '#player').classList.contains('hidden') && !$(wb, '#pl-frame'))
+    {
+      // A frame set as a flow starting point in Figma counts as a prototype too, and the file's manifest says so for the team.
+      const bf = [...wb.document.querySelectorAll('#world .fr')].map((t) => t.dataset.id).find((id) => /^EMAILFILE0001\|/.test(id) && !wb.document.querySelector('.fr[data-id="' + id + '"] .pb'))
+      bryce.page.flowStartingPoints = [{ nodeId: bf.split('|')[1], name: 'Flow 1' }]
+      const ft = () => wb.document.querySelector('.fr[data-id="' + bf + '"]')
+      pointer(wb, 'pointerdown', ft()); pointer(wb, 'pointerup', ft()); await tick(450)
+      click(wb, '#inspector [data-status="draft"]'); await tick(150)
+      const mf = JSON.parse(bryce.figma.root.getSharedPluginData('showroom', 'manifest') || '{}')
+      check('a flow starting point gets ▶ and is listed in the file’s manifest', !!ft().querySelector('.pb') && (mf.flows || []).indexOf(bf.split('|')[1]) >= 0, JSON.stringify(mf.flows))
+      bryce.page.flowStartingPoints = []
+      click(wb, '#inspector [data-status=""]'); await tick(150)
+      wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
+    }
     // Present plays prototype frames by themselves
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
     pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
@@ -658,8 +671,14 @@ function pointer(w, type, target, extra) {
   click(wb, '#view-opts'); await tick(10); click(wb, '#vo-reset'); await tick(20); click(wb, '#view-opts'); await tick(10)
   click(wb, '#view-opts'); await tick(10)
   check('outside-the-edge setting defaults to fade + line', vp().dataset.edge === 'both')
-  click(wb, '#viewopts [data-vo="edge"][data-val="fade"]'); await tick(20)
-  check('content outside a frame can just fade', vp().dataset.edge === 'fade')
+  const lineToggle = $(wb, '#viewopts [data-vo-toggle="edgeLine"]'); lineToggle.checked = false; lineToggle.dispatchEvent(new wb.Event('change')); await tick(20)
+  check('content outside a frame can just fade (no edge line)', vp().dataset.edge === 'fade')
+  click(wb, '#viewopts [data-vo="outside"][data-val="hide"]'); await tick(30)
+  const dt2 = wb.document.querySelector('.fr[data-id="EMAILFILE0001|1:5"]')
+  check('…or be hidden: the tile is the frame’s own box, the render cropped inside it', vp().dataset.edge === 'hide' && dt2 && dt2.style.height === '864px' && !!dt2.querySelector('.crop img') && !dt2.querySelector('.edge') && $(wb, '#viewopts [data-vo-toggle="edgeLine"]').disabled, dt2 && dt2.getAttribute('style'))
+  click(wb, '#viewopts [data-vo-tab="present"]'); await tick(10)
+  check('View options are split into Look, Layout and Present tabs', !wb.document.querySelector('#viewopts [data-pane="present"]').classList.contains('hidden') && wb.document.querySelector('#viewopts [data-pane="look"]').classList.contains('hidden'))
+  click(wb, '#viewopts [data-vo-tab="look"]'); await tick(10)
   click(wb, '#vo-reset'); await tick(20); click(wb, '#view-opts'); await tick(10)
   check('reset restores the defaults', vp().dataset.bg === 'auto' && !vp().classList.contains('no-grid') && vp().dataset.frame === 'border')
 
@@ -695,6 +714,7 @@ function pointer(w, type, target, extra) {
   await key('Escape'); await key('Escape')
   await key('p')
   check('P starts Present mode at the first frame', wb.document.body.classList.contains('presenting') && /^1 \/ \d+/.test($(wb, '#hud-what').textContent), $(wb, '#hud') && $(wb, '#hud').textContent)
+  check('the Present toolbar offers ▶ on any frame (Figma’s player can play it)', !$(wb, '#hud-play').classList.contains('hidden'))
   await key('ArrowRight')
   check('arrow keys move through Present mode', /^2 \/ \d+/.test($(wb, '#hud-what').textContent) && wb.document.querySelectorAll('#world .fr.cur').length === 1)
   pointer(wb, 'pointerdown', $(wb, '#hud-next')); pointer(wb, 'pointerup', $(wb, '#hud-next')); click(wb, '#hud-next'); await tick(20)

@@ -137,6 +137,8 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
   font-size: 15px; font-weight: 700; white-space: nowrap; }
 .ch em { display: block; font-style: normal; font-size: 11px; color: var(--cv-sub); font-weight: 500; }
 .far .lbl .mt { display: none; }
+.fr .crop { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; }
+.fr .crop img { position: absolute; max-width: none; border-radius: 0; }
 .fr .edgewrap { position: absolute; inset: 0; overflow: hidden; z-index: 2; pointer-events: none; }   /* above the image */
 .fr .edge { position: absolute; pointer-events: none; }
 #viewport[data-edge="line"] .edge, #viewport[data-edge="both"] .edge { outline: calc(1px * var(--inv)) dashed color-mix(in srgb, var(--brand) 70%, transparent); }
@@ -338,8 +340,20 @@ body.presenting .sec { display: none; }
 .fr.wdv-on.willsel { outline: none; }
 .fr.wdv-on.willsel .wdv { box-shadow: 0 0 0 calc(2px * var(--inv)) color-mix(in srgb, var(--brand) 80%, transparent), 0 18px 50px rgba(0,0,0,.28); }
 .marquee { position: absolute; z-index: 2; border: 1px solid var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); pointer-events: none; }
-#viewopts { position: absolute; right: 12px; top: 56px; width: 280px; max-height: calc(100% - 80px); overflow: auto; z-index: 6; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 12px; }
+#viewopts { position: absolute; right: 12px; top: 56px; width: 288px; max-height: calc(100% - 80px); overflow: auto; z-index: 6; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 12px; }
 #viewopts .vo-title { font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+#viewopts .vo-tabs { margin: -2px 0 2px; }
+#viewopts .vo-tabs button { height: 28px; font-size: 12px; }
+#viewopts .vo-pane { display: flex; flex-direction: column; gap: 14px; }
+#viewopts .vo-pane.hidden { display: none; }
+#viewopts .vo-field .vo-toggle { margin-top: 6px; }
+#viewopts .vo-note { font-size: 11px; color: var(--muted); margin: 8px 0 4px; }
+#viewopts .vo-sub.off { opacity: .45; pointer-events: none; }
+#viewopts .vo-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 14px; }
+#viewopts .vo-grid .vo-toggle { margin-top: 0; }
+.vo-toggle.off { opacity: .45; }
+#viewopts .vo-foot { display: flex; justify-content: space-between; border-top: 1px solid var(--line); margin: 2px -12px -4px; padding: 8px 6px 0; }
+#viewopts .vo-foot .btn { height: 26px; padding: 0 6px; }
 .seg { display: flex; gap: 2px; padding: 2px; border-radius: 7px; background: var(--bg2); }
 .seg button { flex: 1; height: 26px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; padding: 0 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .seg button.on { background: var(--bg); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); font-weight: 600; }
@@ -824,6 +838,11 @@ async function listTeamFolders(teamId) {
   return out
 }
 
+function flowStarts(doc) {
+  const out = []
+  for (const page of (doc && doc.children) || []) for (const f of page.flowStartingPoints || []) if (f && f.nodeId) out.push(f.nodeId)
+  return out
+}
 function readManifestFromDocument(doc) {
   const parse = (node) => {
     try {
@@ -948,7 +967,7 @@ async function discover(opts) {
         try {
           if (!touched) touched = await lastTouched(f.key, true).catch((e) => { if (retryable(e)) throw e; return '' })
           const res = await api('/v1/files/' + f.key + '?depth=1&plugin_data=shared')
-          scan.files[f.key] = { name: res.name || f.name || prev.name || '', lastModified: f.lastModified || prev.lastModified || '', touched: touched, scannedAt: Date.now(), manifest: readManifestFromDocument(res.document) }
+          scan.files[f.key] = { name: res.name || f.name || prev.name || '', lastModified: f.lastModified || prev.lastModified || '', touched: touched, scannedAt: Date.now(), manifest: readManifestFromDocument(res.document), flows: flowStarts(res.document) }
         } catch (e) {
           if (retryable(e)) throw e
           scan.files[f.key] = { name: f.name || prev.name || '', lastModified: f.lastModified || prev.lastModified || '', scannedAt: Date.now(), touched: touched, manifest: null, error: e.message, gone: e.kind === 'notfound' }
@@ -1388,7 +1407,7 @@ async function syncItems(list, opts) {
           const hash = hashStr(json)
           const same = prev.hash === hash
           // A frame (or anything inside it) with prototype connections can play as a live prototype.
-          const proto = /"interactions":\[\{/.test(json) || /"transitionNodeID":"[^"]/.test(json)
+          const proto = /"interactions":\[\{/.test(json) || /"transitionNodeID":"[^"]/.test(json) || /"overflowDirection":"(VERTICAL|HORIZONTAL|BOTH)/.test(json)
           const parts = pageParts(doc)
           fc.nodes[id] = Object.assign({ name: doc.name, hash: hash, proto: proto, hdr: parts.hdr, ftr: parts.ftr }, frameGeometry(doc), {
             url: same ? prev.url : '', urlAt: same ? prev.urlAt : 0,
@@ -1442,7 +1461,7 @@ async function syncItems(list, opts) {
 }
 
 // ---------- wall view options (saved per person in prefs.wallView) ----------
-const WALL_VIEW_DEFAULTS = { devicePresent: 'on', siteAddress: '', deviceHeight: 'real', protoStyle: 'legacy', protoPresent: 'auto', bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, edge: 'both', spacing: 'normal', group: 'channel',
+const WALL_VIEW_DEFAULTS = { devicePresent: 'on', siteAddress: '', deviceHeight: 'real', protoStyle: 'legacy', protoPresent: 'auto', bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, outside: 'fade', edgeLine: true, spacing: 'normal', group: 'channel',
   subChannel: 'file', subFile: 'channel', subNone: 'off' }   // how frames cluster inside each row, per grouping
 // Inside a row, frames can cluster by the other dimension: by file (and page) in channel rows,
 // by channel (or page) in file rows. Each choice: [value, button label].
@@ -1461,8 +1480,16 @@ function clusterOf(it, mode) {
   return { key: '', label: '' }
 }
 function wallView() {
-  const v = Object.assign({}, WALL_VIEW_DEFAULTS, S.prefs.wallView || {})
-  if (S.prefs.wallView && S.prefs.wallView.edges === false && !S.prefs.wallView.edge) v.edge = 'none'   // older on/off setting
+  const saved = S.prefs.wallView || {}
+  const v = Object.assign({}, WALL_VIEW_DEFAULTS, saved)
+  // Content outside a frame: show, fade or hide it, plus an optional dashed line on the frame's edge.
+  // Older builds kept one "edge" setting (both, fade, line, none); read that if it's all there is.
+  if (!saved.outside && (saved.edge || saved.edges === false)) {
+    const e = saved.edge || 'none'
+    v.outside = e === 'both' || e === 'fade' ? 'fade' : 'show'
+    v.edgeLine = e === 'both' || e === 'line'
+  }
+  v.edge = v.outside === 'hide' ? 'hide' : v.outside === 'fade' ? (v.edgeLine ? 'both' : 'fade') : (v.edgeLine ? 'line' : 'none')
   return v
 }
 function applyWallView() {
@@ -1483,7 +1510,7 @@ function setWallView(change) {
   applyWallView()
   // Spacing, grouping and labels change where frames sit, so lay the wall out again and re-fit.
   const v = wallView()
-  if (v.spacing !== before.spacing || v.group !== before.group || v.names !== before.names || subMode(v) !== subMode(before) || (v.devicePresent === 'wall') !== (before.devicePresent === 'wall') || (v.siteAddress !== before.siteAddress && v.devicePresent === 'wall')) { S.wall.fitted = S.wall.touched; renderWall() }
+  if (v.spacing !== before.spacing || v.group !== before.group || v.names !== before.names || subMode(v) !== subMode(before) || (v.devicePresent === 'wall') !== (before.devicePresent === 'wall') || (v.outside === 'hide') !== (before.outside === 'hide') || (v.siteAddress !== before.siteAddress && v.devicePresent === 'wall')) { S.wall.fitted = S.wall.touched; renderWall() }
   if (v.protoStyle !== before.protoStyle && S.wall.live) playInPlace(S.wall.live.id, { noZoom: true })
   renderViewOptions()
 }
@@ -1500,30 +1527,47 @@ function renderViewOptions() {
   const v = wallView()
   const seg = (key, options, tips) => '<div class="seg" role="radiogroup">' + options.map((o) =>
     '<button role="radio" aria-checked="' + (v[key] === o[0]) + '" class="' + (v[key] === o[0] ? 'on' : '') + '" data-vo="' + key + '" data-val="' + o[0] + '"' + (tips && tips[o[0]] ? ' title="' + esc(tips[o[0]]) + '"' : '') + '>' + o[1] + '</button>').join('') + '</div>'
-  const toggle = (key, label) => '<label class="vo-toggle"><span>' + label + '</span><input type="checkbox" data-vo-toggle="' + key + '"' + (v[key] ? ' checked' : '') + '></label>'
+  const toggle = (key, label, off) => '<label class="vo-toggle' + (off ? ' off' : '') + '"><span>' + label + '</span><input type="checkbox" data-vo-toggle="' + key + '"' + (v[key] ? ' checked' : '') + (off ? ' disabled' : '') + '></label>'
+  const field = (title, body) => '<div class="vo-field"><div class="vo-title">' + title + '</div>' + body + '</div>'
+  const tab = S.voTab || 'look'
+  const tabs = [['look', 'Look'], ['layout', 'Layout'], ['present', 'Present']]
+  let html = '<div class="seg vo-tabs" role="tablist">' + tabs.map((t) => '<button role="tab" aria-selected="' + (tab === t[0]) + '" class="' + (tab === t[0] ? 'on' : '') + '" data-vo-tab="' + t[0] + '">' + t[1] + '</button>').join('') + '</div>'
+  // Look: how the wall and frames are drawn.
   const bgs = [['auto', 'Match Figma'], ['light', 'Light'], ['gray', 'Mid grey'], ['dark', 'Dark'], ['black', 'Black']]
   const swatch = { light: '#f0f0f0', gray: '#9e9e9e', dark: '#1e1e1e', black: '#000000' }
-  let html = '<div><div class="vo-title">Background</div><div class="swatches">' + bgs.map((b) =>
+  html += '<div class="vo-pane' + (tab === 'look' ? '' : ' hidden') + '" data-pane="look">'
+  html += field('Background', '<div class="swatches">' + bgs.map((b) =>
     '<button class="' + (b[0] === 'auto' ? 'auto ' : '') + (v.bg === b[0] ? 'on' : '') + '" data-vo="bg" data-val="' + b[0] + '" title="' + b[1] + '" aria-label="' + b[1] + '"' +
-    (swatch[b[0]] ? ' style="background:' + swatch[b[0]] + '"' : '') + '></button>').join('') + '</div></div>'
-  html += '<div><div class="vo-title">Frames</div>' + seg('frame', [['border', 'Border'], ['shadow', 'Shadow'], ['none', 'None']]) + '</div>'
-  html += '<div><div class="vo-title">Group rows by</div>' + seg('group', [['channel', 'Channel'], ['file', 'File'], ['none', 'Nothing']]) + '</div>'
+    (swatch[b[0]] ? ' style="background:' + swatch[b[0]] + '"' : '') + '></button>').join('') + '</div>')
+  html += field('Frames', seg('frame', [['border', 'Border'], ['shadow', 'Shadow'], ['none', 'None']]))
+  html += field('Content outside a frame', seg('outside', [['show', 'Show'], ['fade', 'Fade'], ['hide', 'Hide']], { show: 'Show everything Figma renders, as it is', fade: 'Fade what spills outside the frame', hide: 'Crop each frame to its own edge' }) +
+    toggle('edgeLine', 'Dashed line on the frame’s edge', v.outside === 'hide'))
+  html += field('Show', '<div class="vo-grid">' + toggle('names', 'Frame names') + toggle('meta', 'File info') + toggle('headings', 'Row headings') + toggle('grid', 'Dot grid') + '</div>')
+  html += '</div>'
+  // Layout: where frames sit.
   const so = SUB_OPTIONS[v.group] || SUB_OPTIONS.channel
-  html += '<div><div class="vo-title">Cluster within rows by</div>' + seg(so.key, so.options) + '</div>'
-  html += '<div><div class="vo-title">Spacing</div>' + seg('spacing', [['tight', 'Tight'], ['normal', 'Normal'], ['roomy', 'Roomy']]) + '</div>'
-  html += '<div><div class="vo-title">Content outside a frame’s edge</div>' + seg('edge', [['both', 'Both'], ['fade', 'Fade'], ['line', 'Line'], ['none', 'Off']], { both: 'Fade it and draw the frame’s edge', fade: 'Fade content outside the frame', line: 'Draw the frame’s edge as a dashed line', none: 'Show everything as rendered' }) + '</div>'
-  html += '<div><div class="vo-title">Live prototypes</div>' + seg('protoStyle', [['legacy', 'Clean'], ['kit2', 'With controls']], { legacy: 'Just the prototype, no Figma controls', kit2: 'Adds Figma’s back, forward and restart buttons under the prototype' }) +
-    '<div style="height:6px"></div>' + seg('protoPresent', [['auto', 'Play in Present'], ['click', 'Only with ▶']], { auto: 'Prototype frames start playing when you reach them in Present', click: 'Prototypes only play when you press ▶' }) + '</div>'
-  html += '<div><div class="vo-title">Device frames</div>' + seg('devicePresent', [['on', 'In Present'], ['wall', 'Wall too'], ['off', 'Off']], { on: 'Site pages show in a browser window or phone when you present them', wall: 'Also show browser and phone chrome around Site pages on the wall', off: 'Present frames on their own' }) +
-    '<div class="muted small" style="margin:8px 0 4px">Screen-sized frames in Present</div>' +
-    seg('deviceHeight', [['real', 'Real screen'], ['frame', 'Whole frame']], { real: 'The device is a normal size; the frame fills its screen under the bars and the rest scrolls', frame: 'The device grows so the whole frame shows between the bars' }) +
-    '<input class="field" id="vo-site" style="margin-top:6px;height:28px" placeholder="Address in the browser bar, e.g. www.merrell.com" value="' + esc(v.siteAddress || '') + '" aria-label="Address shown in the browser bar"></div>'
-  html += '<div>' + toggle('grid', 'Dot grid') + toggle('names', 'Frame names') + toggle('meta', 'File and edit info') + toggle('headings', 'Row headings') + '</div>'
-  html += '<div class="row" style="justify-content:space-between"><button class="btn ghost" id="vo-reset" style="height:26px;padding:0 6px">Reset to defaults</button>' +
-    '<button class="btn ghost" id="vo-keys" style="height:26px;padding:0 6px">' + icon('keys', 14) + 'Shortcuts</button></div>'
+  const rowWord = { channel: 'channel rows', file: 'file rows', none: 'the row' }[v.group] || 'rows'
+  html += '<div class="vo-pane' + (tab === 'layout' ? '' : ' hidden') + '" data-pane="layout">'
+  html += field('Group rows by', seg('group', [['channel', 'Channel'], ['file', 'File'], ['none', 'Nothing']]))
+  html += field('Cluster within ' + rowWord + ' by', seg(so.key, so.options))
+  html += field('Spacing', seg('spacing', [['tight', 'Tight'], ['normal', 'Normal'], ['roomy', 'Roomy']]))
+  html += '</div>'
+  // Present: devices and prototypes.
+  const devOff = v.devicePresent === 'off'
+  html += '<div class="vo-pane' + (tab === 'present' ? '' : ' hidden') + '" data-pane="present">'
+  html += field('Device frames for Site pages', seg('devicePresent', [['off', 'Off'], ['on', 'In Present'], ['wall', 'Wall too']], { on: 'Site pages show in a browser window or phone when you present them', wall: 'Also show the browser bar or phone around Site pages on the wall', off: 'Present frames on their own' }) +
+    '<div class="vo-sub' + (devOff ? ' off' : '') + '"><div class="vo-note">Screen-sized frames</div>' +
+    seg('deviceHeight', [['real', 'Real screen'], ['frame', 'Whole frame']], { real: 'The device is a normal size; the frame fills its screen and the rest scrolls', frame: 'The device grows so the whole frame shows between the bars' }) +
+    '<input class="field" id="vo-site" style="margin-top:6px;height:28px" placeholder="Address bar, e.g. www.merrell.com" value="' + esc(v.siteAddress || '') + '" aria-label="Address shown in the browser bar"></div>')
+  html += field('Live prototypes', seg('protoStyle', [['legacy', 'Clean'], ['kit2', 'With controls']], { legacy: 'Just the prototype, no Figma controls', kit2: 'Adds Figma’s back, forward and restart buttons under the prototype' }) +
+    '<label class="vo-toggle"><span>Play automatically in Present</span><input type="checkbox" id="vo-autoplay"' + (v.protoPresent === 'auto' ? ' checked' : '') + '></label>')
+  html += '</div>'
+  html += '<div class="vo-foot"><button class="btn ghost" id="vo-reset">Reset to defaults</button><button class="btn ghost" id="vo-keys">' + icon('keys', 14) + 'Shortcuts</button></div>'
   box.innerHTML = html
+  box.querySelectorAll('[data-vo-tab]').forEach((el) => el.addEventListener('click', () => { S.voTab = el.dataset.voTab; renderViewOptions() }))
   box.querySelectorAll('[data-vo]').forEach((el) => el.addEventListener('click', () => setWallView({ [el.dataset.vo]: el.dataset.val })))
   box.querySelectorAll('[data-vo-toggle]').forEach((el) => el.addEventListener('change', () => setWallView({ [el.dataset.voToggle]: el.checked })))
+  $('vo-autoplay').addEventListener('change', (e) => setWallView({ protoPresent: e.target.checked ? 'auto' : 'click' }))
   const site = $('vo-site'); if (site) site.addEventListener('change', () => setWallView({ siteAddress: site.value.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '') }))
   $('vo-reset').addEventListener('click', () => setWallView(Object.assign({}, WALL_VIEW_DEFAULTS)))
   $('vo-keys').addEventListener('click', () => { toggleViewOptions(false); toggleShortcuts(true) })
@@ -1793,7 +1837,7 @@ function presentGo(i) {
   }
   const what = $('hud-what')
   if (what && p) what.innerHTML = (pr.index + 1) + ' / ' + pr.list.length + '<em>' + esc((nodeInfo(p.it) || {}).name || p.it.name) + ' · ' + esc(p.it.channel) + (p.it.status ? ' · ' + statusName(p.it.status) : '') +
-    (hasProto(p.it) ? ' · <span id="hud-live"></span>' : '') + '</em>'
+    '<span id="hud-live"></span></em>'
   hudSync()
   wakeHud()
 }
@@ -1805,18 +1849,18 @@ function presentPlaying() {
 function hudSync() {
   const pr = S.wall.present, b = $('hud-play'); if (!pr || !b) return
   const p = placementOf(pr.id)
-  const can = !!(p && hasProto(p.it)), on = can && presentPlaying()
+  const can = !!p, on = can && presentPlaying()
   b.classList.toggle('hidden', !can)
   b.classList.toggle('on', on)
   b.innerHTML = icon(on ? 'stop' : 'play', 14)
-  b.title = (on ? 'Stop the prototype' : 'Play the prototype') + ' (K)'
+  b.title = (on ? 'Stop the prototype' : hasProto(p.it) ? 'Play the prototype' : 'Play it in Figma’s prototype player (no prototype connections found)') + ' (K)'
   b.setAttribute('aria-label', on ? 'Stop the prototype' : 'Play the prototype')
-  const hl = $('hud-live'); if (hl) hl.textContent = on ? 'Live prototype' : 'Prototype'
+  const hl = $('hud-live'); if (hl) hl.textContent = on ? ' · Live prototype' : hasProto(p.it) ? ' · Prototype' : ''
 }
 // Plays (or stops) the current frame's prototype: inside its device if it has one, else on the wall.
 function presentTogglePlay() {
   const pr = S.wall.present; if (!pr) return
-  const p = placementOf(pr.id); if (!p || !hasProto(p.it)) return
+  const p = placementOf(pr.id); if (!p) return
   clearTimeout(S.wall.autoplayTimer)
   const kind = wallView().devicePresent !== 'off' ? deviceFor(p.it) : 'none'
   if (S.wall.dev && S.wall.dev.id === pr.id && S.wall.dev.proto) showDevice(p, { proto: false })
@@ -1984,7 +2028,7 @@ function showDevice(p, opts) {
   let stage = $('dev')
   const kind = p && wallView().devicePresent !== 'off' ? deviceFor(p.it) : 'none'   // 'on' (Present) or 'wall' (wall + Present)
   if (!p || kind === 'none') { if (stage) stage.remove(); S.wall.dev = null; return }
-  const n = p.n || nodeInfo(p.it) || {}
+  const n = nodeInfo(p.it) || p.n || {}
   const g = pageBox(n, p), W = g.W, H = g.H, PH = g.PH
   const VH = deviceView(kind, W, H, PH, !!opts.proto, wallView().deviceHeight)
   if (!stage) { stage = document.createElement('div'); stage.id = 'dev'; vp.appendChild(stage) }
@@ -2970,7 +3014,7 @@ function layout(c, zRef) {
     let x = 0, rowY = y + above, rowH = 0, seg = null, prevKey = null
     const close = () => { if (seg) { g.segments.push(seg); seg = null } }
     for (const it of items) {
-      const n = nodeInfo(it)
+      const n = wallGeo(nodeInfo(it), view)
       const w = Math.max(40, (n && (n.viewW || n.width)) || it.width || 400)
       const h = Math.max(40, (n && (n.viewH || n.height)) || it.height || 300)
       // Device frames on the wall: the frame keeps its place inside a bigger block (its chrome around it).
@@ -2999,6 +3043,13 @@ function layout(c, zRef) {
   }
   const lastGap = groups.length && groups[groups.length - 1].segments.length ? Math.max(ROW_GAP * 0.6, px(36)) : ROW_GAP
   return { groups: groups, width: maxX, height: Math.max(0, y - lastGap), zRef: z }
+}
+// With "Hide" content outside a frame, the wall uses the frame's own box: a copy of the node whose
+// render is cropped (n.cropped keeps where the full render sits, for the image inside the tile).
+function wallGeo(n, view) {
+  if (!n || view.outside !== 'hide' || !n.viewW || !n.width) return n
+  if (Math.abs(n.viewW - n.width) <= 1 && Math.abs(n.viewH - n.height) <= 1) return n
+  return Object.assign({}, n, { viewW: n.width, viewH: n.height, offX: 0, offY: 0, cropped: { x: n.offX || 0, y: n.offY || 0, w: n.viewW, h: n.viewH } })
 }
 // The zoom fit() would pick for a layout.
 function fitZoomFor(b) {
@@ -3085,11 +3136,13 @@ function renderWall() {
       else body = S.token ? skeleton(PHASE_TEXT[S.wall.phase[it.id]] || PHASE_TEXT.queued) : '<div class="ph">Connect Figma to see this</div>'
       // While the rendered image downloads, keep the skeleton underneath and fade the image in.
       if (n && n.url && !n.missing && !S.wall.loaded[n.url]) body = skeleton(PHASE_TEXT.image) + body.replace('<img ', '<img class="ld" ')
+      // Hidden outside content: the full render sits inside a window the size of the frame.
+      if (n && n.cropped && n.url) body = '<div class="crop">' + body.replace('<img ', '<img style="left:' + (-n.cropped.x) + 'px;top:' + (-n.cropped.y) + 'px;width:' + n.cropped.w + 'px;height:' + n.cropped.h + 'px" ') + '</div>'
       const meta = (fc.name || it.fileName) + (fc.lastTouchedAt ? ' · file edited ' + ago(fc.lastTouchedAt) + (fc.lastTouchedBy ? ' by ' + fc.lastTouchedBy : '') : '')
       const edge = n && n.url && n.viewW && (Math.abs(n.viewW - n.width) > 1 || Math.abs(n.viewH - n.height) > 1)
         ? '<div class="edgewrap">' + fadeBands(p.w, p.h, n.offX, n.offY, n.width, n.height) + '<div class="edge" style="left:' + n.offX + 'px;top:' + n.offY + 'px;width:' + n.width + 'px;height:' + n.height + 'px"></div></div>' : ''
       // Round the tile like the frame, unless content spills past the frame's edges (then the tile is bigger than the frame).
-      const play = n && n.proto && !n.missing ? '<button class="pb" data-play="' + esc(it.id) + '" title="Play the live prototype" aria-label="Play the live prototype">' + icon('play', 13) + '</button>' : ''
+      const play = hasProto(it) ? '<button class="pb" data-play="' + esc(it.id) + '" title="Play the live prototype" aria-label="Play the live prototype">' + icon('play', 13) + '</button>' : ''
       const dvc = p.db ? wallDeviceHTML(p.dev, it, n, p.db, p.w, p.h) : ''
       const dvs = dvc ? ';--dvt:' + p.ins.t + 'px;--dvl:' + p.ins.l + 'px;--dvr:' + p.ins.r + 'px' : ''
       // In a device the page has square corners (the device's screen shapes it).
@@ -3263,7 +3316,7 @@ function renderInspector() {
     html += deviceControl(items)
     html += '<div class="row" style="margin-top:10px"><button class="btn primary grow" id="insp-open">' + icon('ext', 14) + 'Open in Figma</button><button class="btn" id="insp-refresh" title="Reload this frame from its file now"' + busy + '>' + icon('refresh', 14) + 'Refresh</button></div>'
     const live = S.wall.live && S.wall.live.id === it.id
-    html += '<div class="row" style="margin-top:4px"><button class="btn grow" id="insp-play" title="' + (n.proto ? 'Play the live prototype right here on the wall' : 'No prototype connections found in this frame. It will play as a still frame.') + '">' + icon(live ? 'x' : 'play', 14) + (live ? 'Stop prototype' : 'Play prototype') + '</button>' +
+    html += '<div class="row" style="margin-top:4px"><button class="btn grow" id="insp-play" title="' + (hasProto(items[0]) ? 'Play the live prototype right here on the wall' : 'No prototype connections or scrolling found in this frame. It still plays in Figma’s player, with any component interactions.') + '">' + icon(live ? 'x' : 'play', 14) + (live ? 'Stop prototype' : 'Play prototype') + '</button>' +
       '<button class="btn" id="insp-play-large" title="Play the prototype in a large window over the wall">' + icon('fit', 14) + 'Large</button></div>'
     html += '<div class="row" style="margin-top:4px"><button class="btn ghost" id="insp-history" style="padding:0 4px">' + icon('clock', 14) + 'History</button><span class="grow"></span><button class="btn ghost danger" id="insp-remove" style="padding:0 4px">' + (editable ? 'Remove from campaign' : 'Hide on my wall') + '</button></div>'
   } else {
@@ -3356,7 +3409,16 @@ function closePlayer() {
 // sits. The embed lives in #live, a layer that pans and zooms with the wall but is never redrawn, so
 // wall updates (Team sync, other windows) don't reload it. Only one plays at a time: each embed is a
 // full Figma viewer. In Present, prototype frames play by themselves (View options › Prototypes).
-function hasProto(it) { const n = it && nodeInfo(it); return !!(n && n.proto && !n.missing) }
+function hasProto(it) { const n = it && nodeInfo(it); return !!(n && !n.missing && (n.proto || isFlowStart(it))) }
+// Frames set as a prototype flow's starting point in Figma. Each file's manifest lists its campaign
+// frames that are (written by code.js), the current file reports its own, and folder searches read them.
+function isFlowStart(it) {
+  if (!it) return false
+  if (it.fileKey === S.file.key && S.file.flows) return S.file.flows.indexOf(it.nodeId) >= 0
+  const f = (S.scan.files || {})[it.fileKey] || {}
+  const list = (f.manifest && f.manifest.flows) || f.flows || []
+  return list.indexOf(it.nodeId) >= 0
+}
 function protoStyle() { return wallView().protoStyle || 'legacy' }
 // Where the live prototype sits: the frame's own box, not the render bounds (content outside it isn't part of the prototype).
 function liveBox(p) {
