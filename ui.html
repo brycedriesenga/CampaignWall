@@ -1499,13 +1499,14 @@ async function syncItems(list, opts) {
 
 // ---------- wall view options (saved per person in prefs.wallView) ----------
 const WALL_VIEW_DEFAULTS = { devicePresent: 'on', siteAddress: '', deviceHeight: 'real', protoStyle: 'legacy', protoPresent: 'auto', bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, outside: 'fade', edgeLine: true, spacing: 'normal', group: 'channel',
-  subChannel: 'file', subFile: 'channel', subNone: 'off' }   // how frames cluster inside each row, per grouping
+  subChannel: 'file', subFile: 'channel', subNone: 'off', subTag: 'channel' }   // how frames cluster inside each row, per grouping
 // Inside a row, frames can cluster by the other dimension: by file (and page) in channel rows,
 // by channel (or page) in file rows. Each choice: [value, button label].
 const SUB_OPTIONS = {
   channel: { key: 'subChannel', options: [['file', 'File'], ['filepage', 'File + page'], ['off', 'Off']] },
   file: { key: 'subFile', options: [['channel', 'Channel'], ['page', 'Page'], ['off', 'Off']] },
   none: { key: 'subNone', options: [['channel', 'Channel'], ['file', 'File'], ['off', 'Off']] },
+  tag: { key: 'subTag', options: [['channel', 'Channel'], ['file', 'File'], ['off', 'Off']] },
 }
 function subMode(view) { const so = SUB_OPTIONS[view.group] || SUB_OPTIONS.channel; return view[so.key] || 'off' }
 function clusterOf(it, mode) {
@@ -1583,9 +1584,9 @@ function renderViewOptions() {
   html += '</div>'
   // Layout: where frames sit.
   const so = SUB_OPTIONS[v.group] || SUB_OPTIONS.channel
-  const rowWord = { channel: 'channel rows', file: 'file rows', none: 'the row' }[v.group] || 'rows'
+  const rowWord = { channel: 'channel rows', file: 'file rows', tag: 'tag rows', none: 'the row' }[v.group] || 'rows'
   html += '<div class="vo-pane' + (tab === 'layout' ? '' : ' hidden') + '" data-pane="layout">'
-  html += field('Group rows by', seg('group', [['channel', 'Channel'], ['file', 'File'], ['none', 'Nothing']]))
+  html += field('Group rows by', seg('group', [['channel', 'Channel'], ['file', 'File'], ['tag', 'Tag'], ['none', 'Nothing']], { tag: 'A row per tag. A frame with several tags shows in each of their rows' }))
   html += field('Cluster within ' + rowWord + ' by', seg(so.key, so.options))
   html += field('Spacing', seg('spacing', [['tight', 'Tight'], ['normal', 'Normal'], ['roomy', 'Roomy']]))
   html += '</div>'
@@ -1842,7 +1843,7 @@ function renderFilterPill(c) {
 function startPresent() {
   if (S.view !== 'wall' || S.wall.present) return
   stopLive()
-  const list = orderedPlacements().map((p) => p.it.id)
+  const list = Array.from(new Set(orderedPlacements().map((p) => p.it.id)))   // once each, even if grouped by tag
   if (!list.length) { toast('No frames to present.', true); return }
   const startId = S.wall.selected.find((id) => list.indexOf(id) >= 0)
   toggleViewOptions(false); toggleFilters(false); toggleShortcuts(false)
@@ -2276,7 +2277,7 @@ function endArrange(d, e) {
 }
 function saveOrder(order) {
   const c = campaign(); if (!c) return
-  const entry = { order: order, at: Date.now(), by: (S.prefs.me && S.prefs.me.handle) || '' }
+  const entry = { order: Array.from(new Set(order)), at: Date.now(), by: (S.prefs.me && S.prefs.me.handle) || '' }
   S.prefs.layouts = Object.assign({}, S.prefs.layouts || {}, { [c.id]: entry })
   send('save-prefs', { prefs: { layouts: S.prefs.layouts } })
   send('save-layout', { campaignId: c.id, layout: entry })
@@ -3091,6 +3092,20 @@ function wallGroups(c, by) {
 function wallGroupsRaw(c, by) {
   c = Object.assign({}, c, { items: orderItems(c) })
   if (by === 'none') return [{ label: '', items: c.items.slice() }]
+  // A row per tag (in a tag's own wall: per *other* tag). A frame with several tags appears in each
+  // of their rows; frames with no other tag get a row of their own at the end.
+  if (by === 'tag') {
+    const names = {}; allCampaigns().forEach((t) => { names[t.id] = t.name })
+    const order = [], byKey = {}
+    for (const it of c.items) {
+      const tags = (it.tags || []).filter((t) => c.all || t !== c.id)
+      for (const t of (tags.length ? tags : [''])) {
+        if (!byKey[t]) { byKey[t] = { key: t, label: t ? names[t] || 'Tag' : (c.all ? 'No tag' : 'Only ' + c.name), items: [] }; order.push(byKey[t]) }
+        byKey[t].items.push(it)
+      }
+    }
+    return order.sort((a, b) => (a.key ? 0 : 1) - (b.key ? 0 : 1) || a.label.localeCompare(b.label))
+  }
   if (by === 'file') {
     const order = []
     const byKey = {}
@@ -3305,7 +3320,7 @@ function renderWall() {
   animateWall(L, c)
   if (!S.wall.fitted) { if (!restorePosition(c.id)) fit(); S.wall.fitted = true } else applyTransform()
   // Opened for one frame (from Figma's properties panel): select it and zoom to it.
-  if (S.wall.focusId && placementOf(S.wall.focusId)) { const id = S.wall.focusId; S.wall.focusId = null; setSelection([id]); zoomToSelection() }
+  if (S.wall.focusId && placementOf(S.wall.focusId)) { const id = S.wall.focusId; S.wall.focusId = null; setSelection([id]); zoomToSelection(); S.wall.refocusUntil = Date.now() + 2500 }
   syncLive()
   renderInspector()
   renderWallBar()
@@ -3345,7 +3360,13 @@ function bindImageEvents(world) {
   }, true)
 }
 
-window.addEventListener('resize', () => { if (S.view === 'wall' && !S.wall.touched) fit() })
+// The plugin window grows to wall size just after the wall opens: keep a frame opened from Figma's
+// properties panel centred while it does (otherwise the zoom was worked out for the small panel).
+window.addEventListener('resize', () => {
+  if (S.view !== 'wall') return
+  if (S.wall.refocusUntil > Date.now() && S.wall.selected.length) zoomToSelection()
+  else if (!S.wall.touched) fit()
+})
 // Clicking into a live prototype moves the keyboard into it. Say once how to get Showroom's keys back.
 window.addEventListener('blur', () => {
   setTimeout(() => {
@@ -3762,7 +3783,7 @@ function bindWall() {
     const pan = !target || e.button === 1 || S.wall.spaceDown || !!S.wall.present || target.classList.contains('dim')
     drag = { x: e.clientX, y: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, tx: S.wall.tx, ty: S.wall.ty, moved: false,
       target: target, heading: e.target.closest('.ch, .sec-t'), additive: e.shiftKey || e.metaKey || e.ctrlKey,
-      box: e.shiftKey && !target && !S.wall.present, arrange: !pan && !(e.shiftKey || e.metaKey || e.ctrlKey) }
+      box: e.shiftKey && !target && !S.wall.present, arrange: !pan && !(e.shiftKey || e.metaKey || e.ctrlKey) && wallView().group !== 'tag' }   // (rows by tag can repeat a frame)
     vp.setPointerCapture(e.pointerId)
   })
   vp.addEventListener('pointermove', (e) => {
