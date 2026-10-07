@@ -140,7 +140,7 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 .fr .crop { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; }
 .fr .crop img { position: absolute; max-width: none; border-radius: 0; }
 .fr .wsb { position: absolute; top: 4px; bottom: 4px; right: calc(4px * var(--inv)); width: calc(5px * var(--inv)); z-index: 4; pointer-events: none; opacity: 0; transition: opacity .2s; }
-.fr.sel .wsb { opacity: 1; }
+.fr.sel .wsb.on { opacity: 1; }
 .fr .wsb i { position: absolute; left: 0; right: 0; border-radius: 99px; background: rgba(0,0,0,.4); box-shadow: 0 0 0 1px rgba(255,255,255,.5); }
 .fr .edgewrap { position: absolute; inset: 0; overflow: hidden; z-index: 2; pointer-events: none; }   /* above the image */
 .fr .edge { position: absolute; pointer-events: none; }
@@ -174,7 +174,8 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 .lv iframe { position: absolute; border: 0; opacity: 0; transition: opacity .3s; }
 .lv iframe.in { opacity: 1; }
 .lv-wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg2) 85%, transparent); }
-.lv-bar { position: absolute; left: 0; bottom: 100%; transform-origin: 0 100%; transform: scale(var(--inv)); padding-bottom: 6px; display: flex; gap: 4px; white-space: nowrap; }
+.lv.indev { box-shadow: none; }
+.lv-bar { position: absolute; left: 0; bottom: calc(100% + var(--lvt, 0px)); transform-origin: 0 100%; transform: scale(var(--inv)); padding-bottom: 6px; display: flex; gap: 4px; white-space: nowrap; }
 .lv-bar span, .lv-bar button { height: 24px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; border-radius: 99px; font-size: 11px; font-weight: 600; border: 0; }
 .lv-bar span { background: var(--brand); color: var(--onbrand); max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
 .lv-bar span::before { flex-shrink: 0; content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: lv-pulse 1.4s ease-in-out infinite; }
@@ -192,7 +193,7 @@ body.presenting .lv-bar span, body.presenting .lv-bar .lv-large { display: none;
 .fr.sel .pb:hover { color: var(--onbrand); }
 .fr.hasproto .lbl { max-width: max(24px, calc(var(--w) * var(--z) * 1px - 28px)); }
 #viewport.no-names .pb { margin-bottom: 2px; }
-body.presenting .pb, .fr.playing .pb { display: none; }
+body.presenting .pb, .fr.playing .pb, .fr.playing .lbl { display: none; }   /* the live bar takes the name's place */
 .fr { cursor: default; }
 .fr.dim { opacity: .12; }
 .fr.dragging { z-index: 5; opacity: .85; pointer-events: none; box-shadow: 0 calc(12px * var(--inv)) calc(40px * var(--inv)) rgba(0,0,0,.3); }
@@ -439,17 +440,24 @@ body.presenting .sec { display: none; }
 .dv-mnav { display: flex; justify-content: space-around; color: #0a7aff; margin-top: 8px; }
 .dv-home { display: none; }
 .dv-home i { display: block; width: 134px; height: 5px; border-radius: 3px; background: #1f1f1f; margin: 0 auto; }
-#player { position: absolute; inset: 52px 12px 12px; z-index: 8; display: flex; flex-direction: column; border-radius: 12px; overflow: hidden;
-  background: var(--bg); box-shadow: 0 0 0 1px var(--line), 0 18px 60px rgba(0,0,0,.35); animation: pop .18s ease-out; }
+/* Large prototype window: a clean full-window stage like Present, with a floating toolbar at the bottom. */
+#player { position: absolute; inset: 0; z-index: 9; background: #161616; animation: pop .18s ease-out; }
 #player.hidden { display: none; }
-.pl-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--line); }
-.pl-bar .seg { flex-shrink: 0; }
-.pl-bar .seg button { padding: 0 10px; flex: none; overflow: visible; }
-.pl-name { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pl-stage { position: relative; flex: 1; background: #1e1e1e; }
+.pl-stage { position: absolute; inset: 20px 20px 68px; }
 .pl-stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; opacity: 0; transition: opacity .25s; }
 .pl-stage iframe.in { opacity: 1; }
-.pl-wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 12px; padding: 20px; text-align: center; }
+.pl-wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #8a8a8a; font-size: 12px; padding: 20px; text-align: center; }
+.pl-hud { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 12px; max-width: calc(100% - 32px);
+  background: rgba(38,38,38,.92); color: #fff; font-size: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.35); opacity: .7; transition: opacity .2s; }
+.pl-hud:hover, .pl-hud:focus-within { opacity: 1; }
+.pl-hud button { height: 30px; min-width: 30px; border: 0; border-radius: 8px; background: transparent; color: #fff; font: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; }
+.pl-hud button:hover { background: rgba(255,255,255,.14); }
+.pl-hud .what { padding: 0 8px 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pl-hud .what em { font-style: normal; opacity: .6; margin-left: 6px; }
+.pl-hud .pl-seg { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: rgba(255,255,255,.08); flex-shrink: 0; }
+.pl-hud .pl-seg button { height: 26px; border-radius: 6px; color: rgba(255,255,255,.65); white-space: nowrap; }
+.pl-hud .pl-seg button.on { background: rgba(255,255,255,.18); color: #fff; }
+.pl-hud .sep { width: 1px; height: 18px; background: rgba(255,255,255,.16); margin: 0 2px; flex-shrink: 0; }
 #inspector { position: absolute; left: 12px; bottom: 12px; width: 290px; z-index: 4; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
 #grip { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 5;
   background: linear-gradient(135deg, transparent 50%, var(--muted) 50%, var(--muted) 56%, transparent 56%, transparent 70%, var(--muted) 70%, var(--muted) 76%, transparent 76%); opacity: .6; }
@@ -3074,15 +3082,22 @@ function wallGeo(n, view, dev) {
   return Object.assign({}, n, { viewW: n.width, viewH: h, offX: 0, offY: 0, cropped: { x: fx, y: fy, w: n.viewW, h: n.viewH }, scrollMax: Math.max(0, below - h) })
 }
 function wallThumb(n, sy) { const t = n.viewH + n.scrollMax; return 'top:' + (sy / t * 100) + '%;height:' + (n.viewH / t * 100) + '%' }
-// Scrolls a selected frame's hidden page inside its window. Returns false when there's nothing to
-// scroll that way (then the wheel pans the wall as usual).
+// The thin scrollbar shows while you scroll (and briefly when the frame is selected), then fades.
+function flashScrollbar(tile) {
+  const sb = tile && tile.querySelector('.wsb'); if (!sb) return
+  sb.classList.add('on')
+  clearTimeout(sb._t); sb._t = setTimeout(() => sb.classList.remove('on'), 1200)
+}
+// Scrolls a selected frame's hidden page inside its window. Returns false when it isn't scrollable or
+// the scroll is sideways (then the wheel pans the wall); at the ends it holds still.
 function wallScroll(tile, e) {
   const p = placementOf(tile.dataset.id), n = p && p.n
   if (!n || !n.scrollMax || !n.cropped || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return false
+  flashScrollbar(tile)
   const dy = e.deltaY * (e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 400 : 1) / (S.wall.zoom || 1)
   const cur = Math.min(n.scrollMax, S.wall.scrollY[p.it.id] || 0)
   const next = Math.max(0, Math.min(n.scrollMax, cur + dy))
-  if (next === cur) return false
+  if (next === cur) return true   // at the top or bottom: hold still rather than pan the wall
   S.wall.scrollY[p.it.id] = next
   const img = tile.querySelector('.crop img'); if (img) img.style.top = (-n.cropped.y - next) + 'px'
   const th = tile.querySelector('.wsb i'); if (th) th.setAttribute('style', wallThumb(n, next))
@@ -3326,6 +3341,7 @@ function selectedItems() {
 function setSelection(ids) {
   S.wall.selected = ids
   document.querySelectorAll('#world .fr').forEach((el) => el.classList.toggle('sel', ids.indexOf(el.dataset.id) >= 0))
+  if (ids.length === 1) flashScrollbar(document.querySelector('#world .fr[data-id="' + ids[0].replace(/"/g, '\\"') + '"]'))
   renderInspector()
 }
 
@@ -3421,14 +3437,14 @@ function openPlayer(it, style) {
   S.player = { it: it, style: style, at: Date.now() }
   const name = (nodeInfo(it) || {}).name || it.name
   const tab = (v, label) => '<button class="' + (style === v ? 'on' : '') + '" data-pstyle="' + v + '">' + label + '</button>'
-  box.innerHTML = '<div class="pl-bar"><div class="grow" style="min-width:0"><div class="pl-name">' + icon('play', 12) + esc(name) + '</div>' +
-      '<div class="muted small">Live prototype from Figma. Click through it as you would in Figma’s presentation view.</div></div>' +
-      '<div class="seg" style="width:auto" title="Clean: no Figma controls. With controls: Figma’s back, forward and restart buttons.">' + tab('legacy', 'Clean') + tab('kit2', 'With controls') + '</div>' +
-      '<button class="icon" id="pl-restart" title="Restart the prototype" aria-label="Restart the prototype">' + icon('refresh') + '</button>' +
-      '<button class="icon" id="pl-browser" title="Open the prototype in your browser" aria-label="Open the prototype in your browser">' + icon('ext') + '</button>' +
-      '<button class="icon" id="pl-close" title="Close (Esc)" aria-label="Close">' + icon('x') + '</button></div>' +
-    '<div class="pl-stage"><div class="pl-wait" id="pl-wait">Loading the prototype from Figma…</div>' +
-      '<iframe id="pl-frame" src="' + esc(protoUrl(it, style)) + '" allow="fullscreen; clipboard-write" allowfullscreen referrerpolicy="origin"></iframe></div>'
+  box.innerHTML = '<div class="pl-stage"><div class="pl-wait" id="pl-wait">Loading the prototype from Figma…</div>' +
+      '<iframe id="pl-frame" src="' + esc(protoUrl(it, style)) + '" allow="fullscreen; clipboard-write" allowfullscreen referrerpolicy="origin" title="Live prototype"></iframe></div>' +
+    '<div class="pl-hud" role="toolbar" aria-label="Prototype controls"><div class="what">' + esc(name) + '<em>Live prototype</em></div>' +
+      '<div class="pl-seg" title="Clean: no Figma controls. With controls: Figma’s back, forward and restart buttons.">' + tab('legacy', 'Clean') + tab('kit2', 'With controls') + '</div>' +
+      '<span class="sep"></span>' +
+      '<button id="pl-restart" title="Restart the prototype" aria-label="Restart the prototype">' + icon('refresh', 14) + '</button>' +
+      '<button id="pl-browser" title="Open the prototype in your browser" aria-label="Open the prototype in your browser">' + icon('ext', 14) + '</button>' +
+      '<button id="pl-close" title="Close (Esc)" aria-label="Close">' + icon('x', 14) + '</button></div>'
   box.classList.remove('hidden')
   $('pl-frame').addEventListener('load', () => { const w = $('pl-wait'); if (w) w.textContent = 'Loaded. If nothing shows, try the other embed style.'; $('pl-frame').classList.add('in') })
   // The embed's own page never tells the plugin whether it worked, so say so if it's slow.
@@ -3466,7 +3482,11 @@ function protoStyle() { return wallView().protoStyle || 'legacy' }
 // Where the live prototype sits: the frame's own box, not the render bounds (content outside it isn't part of the prototype).
 function liveBox(p) {
   const n = p.n || nodeInfo(p.it) || {}
-  return { x: p.x + (n.offX || 0), y: p.y + (n.offY || 0), w: n.width || p.w, h: n.height || p.h }
+  const b = { x: p.x + (n.offX || 0), y: p.y + (n.offY || 0), w: n.width || p.w, h: n.height || p.h }
+  // In a device on the wall, the prototype plays inside the device's screen (between its bars);
+  // a frame taller than the screen starts at the top and scrolls in Figma's player.
+  if (p.db) { b.dev = p.dev; b.top = p.dev === 'phone' ? 68 : 88; b.frameH = b.h; b.h = devScreen(p.dev, b.w).full }
+  return b
 }
 function playInPlace(id, opts) {
   opts = opts || {}
@@ -3474,14 +3494,15 @@ function playInPlace(id, opts) {
   if (!p || !layer) return
   stopLive(true)
   const b = liveBox(p)
-  if (!opts.noZoom) zoomToRect(b.x, b.y, b.w, b.h, { maxZoom: 1, pad: 56 })
+  if (!opts.noZoom) zoomToRect(b.x, b.y - (b.top || 0), b.w, b.h + (b.top || 0) + (b.dev === 'phone' ? 126 : 0), { maxZoom: 1, pad: 56 })
   const box = document.createElement('div')
-  box.className = 'lv'; box.dataset.id = id
-  box.style.cssText = 'left:' + b.x + 'px;top:' + b.y + 'px;width:' + b.w + 'px;height:' + b.h + 'px'
+  box.className = 'lv' + (b.dev ? ' indev' : ''); box.dataset.id = id
+  box.style.cssText = 'left:' + b.x + 'px;top:' + b.y + 'px;width:' + b.w + 'px;height:' + b.h + 'px;--lvt:' + (b.top || 0) + 'px'
+  const tall = b.frameH > b.h + 1, M = LIVE_MARGIN
   box.innerHTML = '<div class="lv-bar"><span title="Live prototype">Live · ' + esc((p.n && p.n.name) || p.it.name) + '</span><button class="lv-restart" title="Restart">' + icon('refresh', 12) + '</button>' +
     '<button class="lv-large" title="Play in a large window">' + icon('fit', 12) + 'Large</button><button class="lv-stop" title="Stop (Esc)">' + icon('x', 12) + 'Stop</button></div>' +
     '<div class="lv-wait" style="font-size:calc(14px * var(--inv))">' + skeleton('Loading the prototype…') + '</div>' +
-    '<div class="lv-crop"><iframe src="' + esc(protoUrl(p.it, protoStyle(), 'min-zoom')) + '" style="left:' + (-LIVE_MARGIN) + 'px;top:' + (-LIVE_MARGIN) + 'px;width:' + (b.w + LIVE_MARGIN * 2) + 'px;height:' + (b.h + LIVE_MARGIN * 2) + 'px" allow="fullscreen; clipboard-write" allowfullscreen referrerpolicy="origin" title="Live prototype"></iframe></div>'
+    '<div class="lv-crop"><iframe src="' + esc(protoUrl(p.it, protoStyle(), 'min-zoom')) + '" style="left:' + (-M) + 'px;top:' + (tall ? 0 : -M) + 'px;width:' + (b.w + M * 2) + 'px;height:' + (tall ? b.h : b.h + M * 2) + 'px" allow="fullscreen; clipboard-write" allowfullscreen referrerpolicy="origin" title="Live prototype"></iframe></div>'
   layer.appendChild(box)
   const frame = box.querySelector('iframe')
   frame.addEventListener('load', () => { frame.classList.add('in'); setTimeout(() => { const w = box.querySelector('.lv-wait'); if (w) w.remove() }, 320) })
@@ -3508,7 +3529,7 @@ function syncLive() {
   const box = document.querySelector('#live .lv')
   if (!p || !box || !matchesFilter(p.it)) { stopLive(true); return }
   const b = liveBox(p)
-  box.style.left = b.x + 'px'; box.style.top = b.y + 'px'; box.style.width = b.w + 'px'; box.style.height = b.h + 'px'
+  box.style.left = b.x + 'px'; box.style.top = b.y + 'px'; box.style.width = b.w + 'px'; box.style.height = b.h + 'px'; box.style.setProperty('--lvt', (b.top || 0) + 'px')
   const fr = box.querySelector('iframe'); if (fr) { fr.style.width = (b.w + LIVE_MARGIN * 2) + 'px'; fr.style.height = (b.h + LIVE_MARGIN * 2) + 'px' }
   const tile = document.querySelector('#world .fr[data-id="' + live.id.replace(/"/g, '') + '"]'); if (tile) tile.classList.add('playing')
 }
@@ -3771,7 +3792,7 @@ window.onmessage = (event) => {
   if (msg.type === 'error') { toast(msg.message, true); if (S.boardJob) { S.boardJob = null; render() } }
 }
 
-window.showroomTest = { discover: discover, pollIndex: pollIndex, renderWall: renderWall, autoDevice: autoDevice, pageParts: pageParts, deviceView: deviceView }
+window.showroomTest = { discover: discover, pollIndex: pollIndex, renderWall: renderWall, autoDevice: autoDevice, pageParts: pageParts, deviceView: deviceView, liveBox: liveBox, placementOf: placementOf }
 setInterval(() => { pollIndex() }, INDEX_POLL)   // lets the automated tests run a search directly
 send('init')
 </script>

@@ -6,7 +6,8 @@ Newest first. Each line is one build on GitHub, with its commit ID.
 
 | Version | Commit | What changed |
 | --- | --- | --- |
-| 0.14.1 | latest on `main` | Play controls only on real prototypes; devices on the wall are a real screen and count as the frame for Show/Fade/Hide; scroll a selected frame's hidden page on the wall |
+| 0.14.2 | latest on `main` | Scrolling a frame on the wall no longer pans at the ends; its scrollbar fades; prototypes on the wall play inside their device's screen; cleaner Large window |
+| 0.14.1 | `f3f3f01` | Play controls only on real prototypes; devices on the wall are a real screen and count as the frame for Show/Fade/Hide; scroll a selected frame's hidden page on the wall |
 | 0.14.0 | `b0e55a1` | View options in three tabs (Look, Layout, Present); Hide content outside a frame; ▶ in Present on any frame; prototypes also detected from scrolling and flow starting points |
 | 0.13.1 | `ec10645` | Device frames in Present are a real screen size by default (option: Whole frame for screen-sized frames); sticky header removed |
 | 0.13.0 | `91e1932` | Play/stop button for prototypes in Present (▶ on the toolbar, or K); Shift-drag box highlights frames as it goes; device frames: mouse-wheel scrolling anywhere in Present, pages that spill out below a screen-sized frame scroll, whole frame shown for prototypes in a device, phone on the wall is a normal height lying over the page, no more rounded/cropped corners |
