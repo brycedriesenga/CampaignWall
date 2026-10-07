@@ -34,5 +34,69 @@
   ],
   "permissions": [
     "currentuser"
+  ],
+  "menu": [
+    {
+      "name": "Open Showroom",
+      "command": "open-panel"
+    },
+    {
+      "name": "Show selection in Showroom",
+      "command": "open"
+    },
+    {
+      "separator": true
+    },
+    {
+      "name": "Tag selection…",
+      "command": "qa-tag",
+      "parameters": [
+        {
+          "name": "Tag",
+          "key": "tag",
+          "description": "Pick a tag (new tags are offered last)"
+        }
+      ]
+    },
+    {
+      "name": "Remove tag from selection…",
+      "command": "qa-untag",
+      "parameters": [
+        {
+          "name": "Tag",
+          "key": "tag",
+          "description": "One of the selected frames’ tags"
+        }
+      ]
+    },
+    {
+      "name": "Set status…",
+      "command": "qa-status",
+      "parameters": [
+        {
+          "name": "Status",
+          "key": "status",
+          "description": "Draft, In review, Approved or No status"
+        }
+      ]
+    },
+    {
+      "name": "Update tagged frames",
+      "command": "qa-update"
+    },
+    {
+      "separator": true
+    },
+    {
+      "name": "Open wall…",
+      "command": "qa-wall",
+      "parameters": [
+        {
+          "name": "Tag",
+          "key": "tag",
+          "description": "A tag, or All tagged frames"
+        }
+      ]
+    }
   ]
 }

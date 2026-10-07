@@ -346,6 +346,10 @@ body.presenting .sec { display: none; }
 .fr.wdv-on.willsel { outline: none; }
 .fr.wdv-on.willsel .wdv { box-shadow: 0 0 0 calc(2px * var(--inv)) color-mix(in srgb, var(--brand) 80%, transparent), 0 18px 50px rgba(0,0,0,.28); }
 /* Tags on the selection (panel) and on a frame (wall details) */
+.ch-list { display: flex; flex-direction: column; gap: 4px; }
+.ch-row { display: flex; gap: 2px; align-items: center; }
+.ch-row .field { flex: 1; height: 28px; }
+.ch-row .icon[disabled] { opacity: .3; }
 .tagbox { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .tagchip { display: inline-flex; align-items: center; height: 24px; border-radius: 6px; background: var(--bg2); border: 1px solid var(--border); overflow: hidden; max-width: 100%; }
 .tagchip.cur { border-color: var(--brand); }
@@ -559,6 +563,7 @@ function icon(name, size) {
     grid: '<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/>',
     search: '<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3 3"/>',
     filter: '<path d="M2.5 3.5h11L9.3 8.6v3.9l-2.6 1.2V8.6z"/>', play: '<path d="M5 3.3v9.4L12.5 8z"/>', stop: '<rect x="4.5" y="4.5" width="7" height="7" rx="1.2"/>', right: '<path d="M6.5 4.5L10 8l-3.5 3.5"/>',
+    up: '<path d="M4.5 9.5L8 6l3.5 3.5"/>', down: '<path d="M4.5 6.5L8 10l3.5-3.5"/>',
     tag: '<path d="M2.5 8.2V3.3a.8.8 0 0 1 .8-.8h4.9l5.3 5.3a.8.8 0 0 1 0 1.1l-4.8 4.8a.8.8 0 0 1-1.1 0z"/><circle cx="5.5" cy="5.5" r="1"/>',
     keys: '<rect x="1.5" y="4" width="13" height="8" rx="1.5"/><path d="M4 6.5h.01M6.5 6.5h.01M9 6.5h.01M11.5 6.5h.01M5 9.5h6"/>',
   }
@@ -592,7 +597,7 @@ function allCampaigns() {
       for (const nodeId of Object.keys(mc.items || {})) {
         const it = mc.items[nodeId]
         c.items.push({ id: src.key + '|' + nodeId, fileKey: src.key, fileName: src.fileName, nodeId: nodeId, name: it.name,
-          width: it.w, height: it.h, pageName: it.pageName, channel: it.channel || 'Other', addedBy: it.addedBy,
+          width: it.w, height: it.h, pageName: it.pageName, channel: canonChannel(it.channel || 'Other'), addedBy: it.addedBy,
           addedAt: it.addedAt || 0, updatedAt: it.updatedAt || it.addedAt || 0, shared: true })
         if (it.addedBy && it.addedByPhoto) PHOTOS[it.addedBy] = it.addedByPhoto
       }
@@ -722,6 +727,35 @@ function teamInfo() {
   if (TEAM.teamId) return { id: String(TEAM.teamId), name: '', builtIn: true }
   const cfg = indexConfig()
   return cfg && cfg.team && cfg.team.id ? { id: String(cfg.team.id), name: cfg.team.name || '', builtIn: true, fromIndex: true } : null
+}
+// Channels: the team's list (saved with the team settings in the Team sync file) when there is one,
+// otherwise your own. Renames (old name → new) keep frames saved with an old name in the renamed channel.
+function channelCfg() {
+  const cfg = indexConfig()
+  if (cfg && Array.isArray(cfg.channels) && cfg.channels.length) return { list: cfg.channels, renames: cfg.channelRenames || {}, team: true }
+  return { list: (S.data && S.data.channels) || [], renames: (S.data && S.data.channelRenames) || {}, team: false }
+}
+function channels() { return channelCfg().list }
+function canonChannel(name) {
+  const r = channelCfg().renames
+  for (let i = 0; i < 5 && r[name]; i++) name = r[name]
+  return name
+}
+// Keeps the sandbox's copy (used for guessing a frame's channel, also from quick actions) in step with the team's list.
+function syncChannels() {
+  const cc = channelCfg()
+  if (!cc.team || !S.data) return
+  const same = JSON.stringify(cc.list) === JSON.stringify(S.data.channels || []) && JSON.stringify(cc.renames) === JSON.stringify(S.data.channelRenames || {})
+  if (!same) { S.data.channels = cc.list.slice(); S.data.channelRenames = Object.assign({}, cc.renames); send('save-channels', { channels: cc.list, renames: cc.renames, quiet: true }) }
+}
+// Saves an edited list: into the team settings when the team has one, otherwise just for you.
+function saveChannels(list, renames) {
+  if (channelCfg().team) {
+    S.index.config = Object.assign({}, S.index.config, { channels: list, channelRenames: renames })
+    syncChannels()
+    saveTeamSettings().then(() => { if (S.view === 'setup') renderSetup() })
+  } else send('save-channels', { channels: list, renames: renames })
+  if (S.view === 'setup') renderSetup()
 }
 function hasCampaigns(m) { return !!(m && m.campaigns && Object.keys(m.campaigns).length) }
 // Campaign frames or a saved frame order: either is worth sharing through Team sync.
@@ -1132,6 +1166,7 @@ async function readIndex() {
   S.index.vars = vars
   S.index.config = config && typeof config === 'object' ? config : null
   S.index.configVar = configVar
+  syncChannels()
   S.index.colId = cols[0] ? cols[0].id : ''
   S.index.modeId = cols[0] ? modeOf(cols[0]) : ''
   S.index.readAt = Date.now()
@@ -1200,6 +1235,7 @@ function teamSettingsToShare() {
   const folders = (S.prefs.folders || []).concat(((S.index.config || {}).folders || []).filter((f) => !(S.prefs.folders || []).some((x) => x.id === f.id)))
   return { v: 1, team: team ? { id: String(team.id), name: team.name || '' } : null, folders: folders.map((f) => ({ id: String(f.id), name: f.name || '' })),
     lookBackDays: Number(S.prefs.lookBackDays) || (S.index.config && S.index.config.lookBackDays) || TEAM.lookBackDays || 30,
+    channels: channels().slice(), channelRenames: Object.assign({}, channelCfg().renames),
     by: (S.prefs.me && S.prefs.me.handle) || '', at: Date.now() }
 }
 function saveTeamSettings() {
@@ -2523,7 +2559,7 @@ function renderPanel() {
   c.items.forEach((it) => { byChannel[it.channel] = (byChannel[it.channel] || 0) + 1 })
   const files = new Set(c.items.map((it) => it.fileKey)).size
   const updated = c.items.filter(isUpdated).length
-  const channelOrder = S.data.channels.concat(Object.keys(byChannel).filter((ch) => S.data.channels.indexOf(ch) < 0))
+  const channelOrder = channels().concat(Object.keys(byChannel).filter((ch) => channels().indexOf(ch) < 0))
   html += '<div class="card stack" style="padding:14px;gap:10px">'
   html += '<div class="row" style="align-items:baseline"><span style="font-size:22px;font-weight:600;letter-spacing:-0.02em">' + c.items.length + '</span><span class="muted">frame' + (c.items.length === 1 ? '' : 's') + ' from ' + files + ' file' + (files === 1 ? '' : 's') + '</span>' + (updated ? '<span class="pill warn" style="margin-left:auto">' + updated + ' updated</span>' : '') + '</div>'
   if (c.items.length) html += '<div class="chips">' + channelOrder.filter((ch) => byChannel[ch]).map((ch) => '<span class="pill">' + esc(ch) + ' ' + byChannel[ch] + '</span>').join('') + '</div>'
@@ -2588,7 +2624,7 @@ function selectionCard(c, tags) {
   const suggest = tags.filter((t) => (count[t.id] || 0) < n)
   html += '<input class="field tag-input" id="tag-add" list="tag-list" placeholder="' + (ids.length ? 'Add a tag…' : 'Add a tag, e.g. ' + esc((suggest[0] && suggest[0].name) || 'Holiday 2026')) + '" maxlength="80" aria-label="Add a tag"' + (S.file.key ? '' : ' disabled') + '>' +
     '<datalist id="tag-list">' + suggest.map((t) => '<option value="' + esc(t.name) + '">').join('') + '</datalist></div></div>'
-  html += '<div><label class="label" for="channel">Channel</label><select class="field" id="channel"><option value="auto"' + (S.channelChoice === 'auto' ? ' selected' : '') + '>Auto (guess from size)</option>' + S.data.channels.map((ch) => '<option' + (S.channelChoice === ch ? ' selected' : '') + '>' + esc(ch) + '</option>').join('') + '</select></div>'
+  html += '<div><label class="label" for="channel">Channel</label><select class="field" id="channel"><option value="auto"' + (S.channelChoice === 'auto' ? ' selected' : '') + '>Auto (guess from size)</option>' + channels().map((ch) => '<option' + (S.channelChoice === ch ? ' selected' : '') + '>' + esc(ch) + '</option>').join('') + '</select></div>'
   const frames = n === 1 ? 'frame' : n + ' frames'
   const inActive = c && !c.all ? (count[c.id] || 0) : 0
   html += '<div class="row">'
@@ -2986,6 +3022,16 @@ function renderSetup() {
   html += '<div class="row"><span class="muted small grow" id="search-status">' + esc(searchSummary()) + '</span><button class="btn" id="search-all"' + (S.search.busy || !canSearch() ? ' disabled' : '') + '>Search now</button></div>'
   html += '</div>'
 
+  // Channels: rename, reorder, add, remove. The team's list when Team sync has one.
+  const cc = channelCfg()
+  const chLocked = cc.team && S.index.canWrite === false
+  html += '<div class="sep"></div><div class="stack">' + h2('Channels')
+  html += '<div class="muted small">' + (cc.team ? 'Your team’s list, from Team sync' + (chLocked ? '. Only people who can edit the Team sync file can change it.' : '. Changes save for everyone.') : 'Your own list.' + (indexInfo() ? ' Save team settings (above) to share it with your team.' : '')) + ' Renaming keeps frames in the channel; removing one only takes it off the list.</div>'
+  html += '<div class="ch-list">' + cc.list.map((ch, i) => '<div class="ch-row"><input class="field" data-ch-name="' + i + '" value="' + esc(ch) + '" aria-label="Channel name"' + (chLocked ? ' disabled' : '') + '>' +
+    (chLocked ? '' : '<button class="icon" data-ch-move="' + i + ':-1" aria-label="Move up" title="Move up"' + (i ? '' : ' disabled') + '>' + icon('up', 13) + '</button><button class="icon" data-ch-move="' + i + ':1" aria-label="Move down" title="Move down"' + (i < cc.list.length - 1 ? '' : ' disabled') + '>' + icon('down', 13) + '</button><button class="icon" data-ch-del="' + i + '" aria-label="Remove ' + esc(ch) + '" title="Remove from the list"' + (cc.list.length > 1 ? '' : ' disabled') + '>' + icon('x', 13) + '</button>') + '</div>').join('') + '</div>'
+  if (!chLocked) html += '<div class="row"><input class="field" id="ch-add" placeholder="Add a channel, e.g. Paid social" maxlength="40"><button class="btn" id="ch-add-btn">Add</button></div>'
+  html += '</div>'
+
   html += '<div class="sep"></div><div class="stack">' + h2('This file')
   if (S.file.keyFromApi) html += '<div class="muted small">Figma provides this file’s ID automatically.</div>'
   else {
@@ -3012,6 +3058,35 @@ function renderSetup() {
   $('app').innerHTML = html
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn) }
   on('back', 'click', () => { S.view = 'panel'; S.tokenResult = ''; render() })
+  {
+    const cc2 = channelCfg(), list = cc2.list.slice(), ren = Object.assign({}, cc2.renames)
+    document.querySelectorAll('[data-ch-name]').forEach((el) => el.addEventListener('change', () => {
+      const i = Number(el.dataset.chName), from = list[i], to = el.value.trim()
+      if (!to || to === from) { el.value = from; return }
+      if (list.some((x, j) => j !== i && x.toLowerCase() === to.toLowerCase())) { toast('There’s already a channel called “' + to + '”.', true); el.value = from; return }
+      list[i] = to
+      Object.keys(ren).forEach((k) => { if (ren[k] === from) ren[k] = to })   // older names follow along
+      ren[from] = to; delete ren[to]
+      saveChannels(list, ren)
+    }))
+    document.querySelectorAll('[data-ch-move]').forEach((el) => el.addEventListener('click', () => {
+      const [i, d] = el.dataset.chMove.split(':').map(Number), j = i + d
+      if (j < 0 || j >= list.length) return
+      const t = list[i]; list[i] = list[j]; list[j] = t
+      saveChannels(list, ren)
+    }))
+    document.querySelectorAll('[data-ch-del]').forEach((el) => el.addEventListener('click', () => { list.splice(Number(el.dataset.chDel), 1); saveChannels(list, ren) }))
+    const addCh = () => {
+      const v = ($('ch-add').value || '').trim(); if (!v) return
+      if (list.some((x) => x.toLowerCase() === v.toLowerCase())) { toast('That channel is already on the list.', true); return }
+      const other = list.findIndex((x) => /^other$/i.test(x))
+      if (other >= 0) list.splice(other, 0, v); else list.push(v)   // keep "Other" last
+      delete ren[v]
+      saveChannels(list, ren)
+    }
+    on('ch-add-btn', 'click', addCh)
+    on('ch-add', 'keydown', (e) => { if (e.key === 'Enter') addCh() })
+  }
   on('open-guide', 'click', () => { S.view = 'welcome'; render(); if (S.token && !S.ob.checks) checkAccess() })
   on('test-token', 'click', async () => {
     const token = $('token').value.trim()
@@ -3092,6 +3167,8 @@ function renderSetup() {
 // frame on its tag's wall; "Edit tags" opens the panel ready to add a tag.
 function handleLaunch(cmd) {
   S.view = 'panel'
+  // Quick action "Open wall…": the tag was made active before the window opened.
+  if (cmd === 'wall') { if (S.token && campaign() && campaign().items.length) setTimeout(openWall, 0); return }
   const it = S.selection && S.selection.items[0]
   const tag = it && (it.inCampaigns || [])[0]
   if (cmd === 'open' && tag && S.token && S.file.key) {
@@ -3169,9 +3246,9 @@ function wallGroupsRaw(c, by) {
     }
     return order.sort((a, b) => a.label.localeCompare(b.label))
   }
-  const channels = S.data.channels.slice()
-  c.items.forEach((it) => { if (channels.indexOf(it.channel) < 0) channels.push(it.channel) })
-  return channels.map((ch) => ({ label: ch, items: c.items.filter((it) => it.channel === ch) })).filter((g) => g.items.length)
+  const list = channels().slice()
+  c.items.forEach((it) => { if (list.indexOf(it.channel) < 0) list.push(it.channel) })
+  return list.map((ch) => ({ label: ch, items: c.items.filter((it) => it.channel === ch) })).filter((g) => g.items.length)
 }
 
 const SPACING = { tight: [32, 120], normal: [80, 240], roomy: [200, 480] }   // [gap between frames, gap between rows]
@@ -3521,7 +3598,7 @@ function renderInspector() {
   if (!items.length) { box.classList.add('hidden'); return }
   const busy = S.wall.busy ? ' disabled' : ''
   const channelSelect = (current) => '<select class="field" id="insp-channel">' + (current ? '' : '<option value="" selected>Move to channel…</option>') +
-    S.data.channels.map((ch) => '<option' + (ch === current ? ' selected' : '') + '>' + esc(ch) + '</option>').join('') + '</select>'
+    channels().map((ch) => '<option' + (ch === current ? ' selected' : '') + '>' + esc(ch) + '</option>').join('') + '</select>'
   let html = ''
   if (items.length === 1) {
     const it = items[0]
@@ -3985,6 +4062,8 @@ window.onmessage = (event) => {
       if (!S.data.activeCampaignId && allCampaigns().length > 1) S.view = 'home'
       if (!S.prefs.onboarded) { S.view = 'welcome'; if (S.token) setTimeout(checkAccess, 400) }
       else if (msg.command) handleLaunch(msg.command)
+      // Run invisibly after a quick action: just publish this file's change to Team sync, then close.
+      if (msg.command === 'publish') { S.publishOnly = true; setTimeout(async () => { try { await pollIndex() } catch (e) { /* closes anyway */ } send('close') }, 50); return }
       // Team sync first (one quick read), then the full search if it's due.
       setTimeout(async () => { await pollIndex(); if (S.token && canSearch() && searchIsStale()) discover() }, 300)
     }

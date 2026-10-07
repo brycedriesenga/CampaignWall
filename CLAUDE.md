@@ -22,6 +22,22 @@ The owner is a designer who vibe-codes. Keep the code plain JavaScript with no b
 - **Wall details (`inspectorTags`):** chips with × and an add field for frames in the current file (`add-selection` with `nodeIds`, so it works from the wall's selection, not Figma's); read-only chips for other files' frames.
 - **Figma's properties panel:** `manifest.json` `relaunchButtons`: `open` "Open in Showroom" and `tags` "Edit tags" (multipleSelection). code.js `setRelaunch(node, tagIds)` sets `{open: '<tag names>', tags: ''}` (names shown under the button). `figma.command` is sent once as `state.command`; `handleLaunch` opens the wall at the frame (`S.wall.focusId`, selected and zoomed in `renderWall`; the window grows to wall size just after, so the `resize` handler re-zooms to the selection until `S.wall.refocusUntil`, 2.5 s) for `open`, or focuses the panel's tag field for `tags`.
 
+## Channels (v0.16)
+
+- A frame has exactly one channel (unlike tags). It drives the default rows, the guess when tagging, device frames (Site only) and FigJam sections.
+- **The list is editable** in Settings › Channels: rename, reorder (↑/↓), add (goes before "Other"), remove (only takes it off the list; frames keep the name until moved).
+- `channelCfg()` = the team's list from the Team sync `config` (`channels`, `channelRenames`) when it has one, else your own (`S.data.channels`, `S.data.channelRenames`). `teamSettingsToShare()` includes them, so saving team settings shares your list. Editing a team list saves straight into Team sync (`saveChannels` → `saveTeamSettings`); people whose token can't write it (`S.index.canWrite === false`) see it read-only.
+- **Renames** are kept as old → new (`channelRenames`): `canonChannel()` maps frames saved with an old name (in `allCampaigns`), and older names follow a later rename. Manifests aren't rewritten.
+- code.js keeps a copy (`save-channels`, stored in `showroom.data`; `syncChannels()` sends the team's list when it differs) in `CH`, so `guessChannel()` → `mapChannel()` lands on a channel that's in the list (renames, else "Other", else the last one), also for quick actions.
+
+## Quick actions (v0.16)
+
+`manifest.json` `menu` adds commands to the plugin menu and Figma's Quick Actions bar (⌘/ or Ctrl+/): Open Showroom (`open-panel`), Show selection in Showroom (`open`), Tag selection… (`qa-tag`), Remove tag from selection… (`qa-untag`), Set status… (`qa-status`), Update tagged frames (`qa-update`), Open wall… (`qa-wall`).
+- `qa-*` commands don't open the window: code.js waits for `figma.on('run')` (`runQuick`). Typed parameters get suggestions from `figma.parameters.on('input')` (`quickInput`), with tags from `knownTags()` (this file, the folder-search cache, your drafts; hidden ones left out).
+- **New tags are deliberate:** suggestions only (no free text). A "+ New tag “…”" item comes last, and only when no existing tag matches after `norm()` (lowercase, letters and digits only), so near-duplicates can't be made. Remove tag… only lists the selection's tags; Set status… only changes tagged frames (saved under `'__all'`); Open wall… lists All tagged frames first, sets it active and opens the window with `launchCommand = 'wall'`.
+- After a change: `figma.notify`, then `figma.showUI(…, {visible: false})` with `launchCommand = 'publish'`. The UI only runs `pollIndex()` (which publishes this file's manifest to Team sync) and sends `close`. A 10 s timeout closes it regardless.
+- Tests drive it with a mock `figma.parameters` and `handlers.run`.
+
 ## Architecture
 
 - `manifest.json`
@@ -85,7 +101,7 @@ Campaign membership lives **inside each design file**, so it's shared with no se
 
 ## Storage (clientStorage, per user and machine)
 
-- `showroom.data`: `{ activeCampaignId, channels[], campaigns: [{ id, name, createdAt, renamedAt }] (drafts and names), seen: { itemId: hash }, hidden: [campaignId], hiddenItems: { campaignId: [itemId] }, rev, savedAt }`
+- `showroom.data`: `{ activeCampaignId, channels[], channelRenames {old: new}, campaigns: [{ id, name, createdAt, renamedAt }] (drafts and names), seen: { itemId: hash }, hidden: [campaignId], hiddenItems: { campaignId: [itemId] }, rev, savedAt }`
 - `showroom.token`: the personal access token.
 - `showroom.cache`: `{ savedAt, files: { [fileKey]: { name, version, stamp, lastTouchedAt, lastTouchedBy, checkedAt, error, nodes: { [nodeId]: { name, width, height, viewW, viewH, offX, offY, hash, url, urlAt, changedAt, missing, renderFailed } } } } }`
 - `showroom.scan`: `{ savedAt, checkedAt, team: { id, name, checkedAt, folders: [{ id, name }], error }, folders: { id: { name, checkedAt, listedAt, count, error } }, files: { key: { name, lastModified, touched, scannedAt, indexAt, manifest|null, error, gone } } }`
@@ -284,7 +300,7 @@ Rate limits: tier 1 is about 15 requests/min on an Organization plan with a Full
 
 ## Messages (UI → code)
 
-`init`, `save-token`, `add-selection {campaignId|'' (new tag), campaignName, channel, keepActive?, nodeIds?}`, `update-selection {channel}`, `create-campaign`, `rename-campaign`, `hide-campaign {shared}`, `unhide-campaign`, `unhide-items`, `set-active {campaignId, campaignName}`, `remove-item {campaignId|'__all', itemIds}`, `set-channel {itemIds, channel}`, `mark-seen {seen}`, `set-file-key {url}`, `save-links {links}`, `save-layout {campaignId, layout}`, `save-status {campaignId, changes}`, `save-device {campaignId, changes}`, `board-place {campaignId, campaignName, items, embeds, scale}`, `board-sync {campaignId, items}`, `save-cache`, `save-scan`, `save-prefs`, `resize`, `open-item {fileKey, nodeId, versionId?}`, `notify`.
+`init`, `close`, `save-channels {channels, renames, quiet?}`, `save-token`, `add-selection {campaignId|'' (new tag), campaignName, channel, keepActive?, nodeIds?}`, `update-selection {channel}`, `create-campaign`, `rename-campaign`, `hide-campaign {shared}`, `unhide-campaign`, `unhide-items`, `set-active {campaignId, campaignName}`, `remove-item {campaignId|'__all', itemIds}`, `set-channel {itemIds, channel}`, `mark-seen {seen}`, `set-file-key {url}`, `save-links {links}`, `save-layout {campaignId, layout}`, `save-status {campaignId, changes}`, `save-device {campaignId, changes}`, `board-place {campaignId, campaignName, items, embeds, scale}`, `board-sync {campaignId, items}`, `save-cache`, `save-scan`, `save-prefs`, `resize`, `open-item {fileKey, nodeId, versionId?}`, `notify`.
 
 Code → UI: `state` (full), `selection`, `error`.
 
@@ -300,7 +316,7 @@ Code → UI: `state` (full), `selection`, `error`.
 
 ## Next steps (not built)
 
-1. Editable channel list and statuses.
+1. Editable statuses (the channel list is editable since v0.16).
 2. Review notes posted as real Figma comments (`POST /v1/files/:key/comments` with `client_meta` for the node).
 3. Export the wall (PNG or PDF) for stakeholders without Full seats.
 4. Show "this frame changed in this version" in History. That needs node reads per version, which is expensive, so it's opt-in at most.

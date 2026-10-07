@@ -34,6 +34,16 @@ const DEFAULT_CHANNELS = ['Site', 'Email', 'Social', 'Display ads', 'Amazon', 'R
 const AD_SIZES = ['300x250', '728x90', '160x600', '300x600', '320x50', '320x100', '970x250', '970x90',
   '336x280', '468x60', '250x250', '200x200', '300x50', '120x600'];
 
+// The channel list in use (the team's, from Team sync, or your own; the UI keeps it in your storage)
+// and renamed channels (old name → new), so guesses land on a channel that's actually in the list.
+const CH = { list: DEFAULT_CHANNELS.slice(), renames: {} };
+function mapChannel(name) {
+  for (let i = 0; i < 5 && CH.renames[name]; i++) name = CH.renames[name];
+  if (CH.list.indexOf(name) >= 0) return name;
+  const other = CH.list.find((c) => /^other$/i.test(c));
+  return other || CH.list[CH.list.length - 1] || name;
+}
+
 // ---------- personal storage ----------
 function emptyData() {
   return { version: 1, campaigns: [], activeCampaignId: '', channels: DEFAULT_CHANNELS.slice(), seen: {}, hidden: [], hiddenItems: {} };
@@ -42,6 +52,8 @@ async function loadData() {
   const d = await figma.clientStorage.getAsync(DATA_KEY);
   if (!d || !Array.isArray(d.campaigns)) return emptyData();
   if (!Array.isArray(d.channels) || !d.channels.length) d.channels = DEFAULT_CHANNELS.slice();
+  if (!d.channelRenames) d.channelRenames = {};
+  CH.list = d.channels; CH.renames = d.channelRenames;
   if (!d.seen) d.seen = {};
   if (!Array.isArray(d.hidden)) d.hidden = [];
   if (!d.hiddenItems) d.hiddenItems = {};
@@ -74,7 +86,8 @@ function parseFileKey(url) {
   return main ? main[1] : '';
 }
 
-function guessChannel(width, height) {
+function guessChannel(width, height) { return mapChannel(guessDefaultChannel(width, height)); }
+function guessDefaultChannel(width, height) {
   const w = Math.round(width);
   const h = Math.round(height);
   if (AD_SIZES.indexOf(w + 'x' + h) >= 0) return 'Display ads';
@@ -318,6 +331,18 @@ async function addSelection(msg) {
   return { message: (parts.join(', ') || 'Nothing to add') + ' in ' + campaignName + '. Your team will see ' + (added + updated === 1 ? 'it' : 'them') + ' too.' };
 }
 
+// Review statuses for frames (from any file). Saved in this file's manifest under the tag they were
+// set from; the newest change per frame wins across tags and files. Keeps the 50 most recent tags.
+function saveStatuses(campaignId, changes) {
+  const manifest = readManifest();
+  const statuses = Object.assign({}, manifest.statuses || {});
+  statuses[campaignId] = Object.assign({}, statuses[campaignId] || {}, changes || {});
+  const newest = (cid) => Math.max.apply(null, [0].concat(Object.values(statuses[cid] || {}).map((e) => (e && e.at) || 0)));
+  Object.keys(statuses).sort((a, b) => newest(b) - newest(a)).slice(50).forEach((k) => { delete statuses[k]; });
+  manifest.statuses = statuses;
+  writeManifest(manifest);
+}
+
 // Re-reads the selected frames' names and sizes into every tag they have (the panel's Update button).
 async function updateSelection(msg) {
   const manifest = readManifest();
@@ -433,6 +458,18 @@ async function handle(msg) {
       syncFlows();
       refreshRelaunch();
       return sendState();
+    case 'close':
+      figma.closePlugin();
+      return null;
+    case 'save-channels': {
+      // The channel list in use (your own, or the team's from Team sync) and renames (old → new).
+      const data = await loadData();
+      data.channels = (msg.channels || []).map((c) => String(c).trim()).filter(Boolean);
+      if (!data.channels.length) data.channels = DEFAULT_CHANNELS.slice();
+      data.channelRenames = msg.renames || {};
+      await saveData(data);
+      return msg.quiet ? null : sendState();
+    }
     case 'save-token':
       await figma.clientStorage.setAsync(TOKEN_KEY, String(msg.token || '').trim());
       return sendState({ message: msg.token ? 'Token saved on this computer.' : 'Token removed.' });
@@ -539,15 +576,7 @@ async function handle(msg) {
     case 'board-sync':
       return sendState(await boardSync(msg));
     case 'save-status': {
-      // Review statuses for frames in a campaign (from any file). Saved in this file's manifest;
-      // the newest change per frame wins across files. Keeps the 50 most recent campaigns.
-      const manifest = readManifest();
-      const statuses = Object.assign({}, manifest.statuses || {});
-      statuses[msg.campaignId] = Object.assign({}, statuses[msg.campaignId] || {}, msg.changes || {});
-      const newest = (cid) => Math.max.apply(null, [0].concat(Object.values(statuses[cid] || {}).map((e) => (e && e.at) || 0)));
-      Object.keys(statuses).sort((a, b) => newest(b) - newest(a)).slice(50).forEach((k) => { delete statuses[k]; });
-      manifest.statuses = statuses;
-      try { writeManifest(manifest); } catch (e) { return sendState({ message: 'Status saved for you only: this file can’t be edited.' }); }
+      try { saveStatuses(msg.campaignId, msg.changes); } catch (e) { return sendState({ message: 'Status saved for you only: this file can’t be edited.' }); }
       return sendState({ external: true });
     }
     case 'save-device': {
@@ -871,5 +900,100 @@ setInterval(() => {
   }).catch(() => {});
 }, 3000);
 
+// ---------- quick actions (Figma's Quick Actions bar and the plugin menu) ----------
+// Tag, untag, set a status or update the selection without opening Showroom's window. Typed input gets
+// suggestions; a new tag is only made by picking the "+ New tag" suggestion, and never when the text
+// matches an existing tag apart from case, spaces or punctuation (so near-duplicates aren't made).
+const QUICK = ['qa-tag', 'qa-untag', 'qa-status', 'qa-update', 'qa-wall'];
+const STATUS_CHOICES = [['draft', 'Draft'], ['review', 'In review'], ['approved', 'Approved'], ['', 'No status']];
+function norm(t) { return String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+// Every tag this computer knows: this file's, the ones found in other files, and your drafts.
+async function knownTags() {
+  const data = await loadData();
+  const scan = (await figma.clientStorage.getAsync(SCAN_KEY)) || {};
+  const byId = {};
+  const take = (cid, name, at) => { if (name && (!byId[cid] || at > byId[cid].at)) byId[cid] = { id: cid, name: name, at: at }; };
+  for (const f of Object.values(scan.files || {})) for (const cid of Object.keys((f.manifest && f.manifest.campaigns) || {})) { const c = f.manifest.campaigns[cid]; take(cid, c.name, c.updatedAt || 0); }
+  const m = readManifest();
+  for (const cid of Object.keys(m.campaigns)) take(cid, m.campaigns[cid].name, (m.campaigns[cid].updatedAt || 0) + 1);
+  for (const c of data.campaigns) take(c.id, c.name, -1);
+  return Object.values(byId).filter((t) => data.hidden.indexOf(t.id) < 0).sort((a, b) => a.name.localeCompare(b.name));
+}
+function selectedFrames() { return figma.currentPage.selection.filter(isEligible); }
+function rank(list, q) {
+  const nq = norm(q), lq = String(q || '').toLowerCase().trim();
+  if (!lq) return list;
+  return list.filter((t) => t.name.toLowerCase().indexOf(lq) >= 0 || norm(t.name).indexOf(nq) >= 0)
+    .sort((a, b) => (a.name.toLowerCase().indexOf(lq) === 0 ? 0 : 1) - (b.name.toLowerCase().indexOf(lq) === 0 ? 0 : 1) || a.name.localeCompare(b.name));
+}
+async function quickInput(ev) {
+  const cmd = figma.command, q = ev.query || '', result = ev.result;
+  if (ev.key === 'status') {
+    result.setSuggestions(STATUS_CHOICES.filter((x) => !q || x[1].toLowerCase().indexOf(q.toLowerCase()) >= 0).map((x) => ({ name: x[1], data: x[0] })));
+    return;
+  }
+  if (ev.key !== 'tag') return;
+  if ((cmd === 'qa-tag' || cmd === 'qa-untag') && !selectedFrames().length) { result.setError('Select frames first'); return; }
+  let tags = await knownTags();
+  if (cmd === 'qa-untag') {
+    const m = readManifest(), ids = {};
+    selectedFrames().forEach((n) => { for (const cid of Object.keys(m.campaigns)) if (m.campaigns[cid].items[n.id]) ids[cid] = true; });
+    tags = tags.filter((t) => ids[t.id]);
+    if (!tags.length) { result.setError('None of the selected frames have tags'); return; }
+  }
+  const items = rank(tags, q).map((t) => ({ name: t.name, data: { id: t.id, name: t.name } }));
+  if (cmd === 'qa-wall' && (!q || 'all tagged frames'.indexOf(q.toLowerCase().trim()) >= 0)) items.unshift({ name: 'All tagged frames', data: { id: ALL_TAGS, name: 'All tagged frames' } });
+  const clean = q.trim();
+  if (cmd === 'qa-tag' && clean && !tags.some((t) => norm(t.name) === norm(clean))) items.push({ name: '+ New tag “' + clean + '”', data: { id: '', name: clean } });
+  result.setSuggestions(items);
+}
+async function runQuick(cmd, params) {
+  await loadData();   // the channel list, for guessing new frames' channels
+  const frames = selectedFrames();
+  const key = currentFileKey();
+  let res = null;
+  if (cmd === 'qa-wall') {
+    const t = params.tag || {};
+    const data = await loadData();
+    data.activeCampaignId = t.id || data.activeCampaignId;
+    await saveData(data);
+    launchCommand = 'wall';
+    figma.showUI(__html__, { width: PANEL_SIZE.width, height: PANEL_SIZE.height, themeColors: true, title: 'Showroom' });
+    return;
+  }
+  if (!frames.length && cmd !== 'qa-update') throw new Error('Select frames first.');
+  if (cmd === 'qa-tag') {
+    const t = params.tag || {};
+    res = await addSelection({ campaignId: t.id || '', campaignName: t.name || '', channel: 'auto', keepActive: true });
+  } else if (cmd === 'qa-untag') {
+    const t = params.tag || {};
+    res = await removeItems({ campaignId: t.id, itemIds: frames.map((n) => key + '|' + n.id) });
+  } else if (cmd === 'qa-status') {
+    const m = readManifest();
+    const tagged = frames.filter((n) => Object.values(m.campaigns).some((c) => c.items[n.id]));
+    if (!tagged.length) throw new Error('Tag the frames first: statuses belong to tagged frames.');
+    const changes = {}, at = Date.now(), by = whoAmI();
+    tagged.forEach((n) => { changes[key + '|' + n.id] = { s: params.status || '', by: by, at: at }; });
+    saveStatuses(ALL_TAGS, changes);
+    const label = (STATUS_CHOICES.find((x) => x[0] === (params.status || '')) || ['', 'No status'])[1];
+    res = { message: (tagged.length === 1 ? 'Status' : tagged.length + ' frames') + ' set to ' + label + (tagged.length < frames.length ? ' (' + (frames.length - tagged.length) + ' untagged skipped)' : '') + '.' };
+  } else if (cmd === 'qa-update') {
+    res = await updateSelection({});
+  }
+  if (res && res.needFileKey) throw new Error('Open Showroom in this file once to link it first.');
+  figma.notify((res && (res.message || res.error)) || 'Done.');
+  // Hand the change to Team sync: run Showroom's window invisibly so it can publish, then close.
+  launchCommand = 'publish';
+  figma.showUI(__html__, { visible: false, width: 10, height: 10 });
+  setTimeout(() => figma.closePlugin(), 10000);
+}
+if (figma.parameters) figma.parameters.on('input', (ev) => { quickInput(ev).catch(() => ev.result.setSuggestions([])); });
+
 launchCommand = figma.command || '';
-figma.showUI(__html__, { width: PANEL_SIZE.width, height: PANEL_SIZE.height, themeColors: true, title: 'Showroom' });
+if (QUICK.indexOf(launchCommand) >= 0) {
+  figma.on('run', (ev) => {
+    runQuick(ev.command, ev.parameters || {}).catch((e) => { figma.notify(e && e.message ? e.message : String(e), { error: true }); figma.closePlugin(); });
+  });
+} else {
+  figma.showUI(__html__, { width: PANEL_SIZE.width, height: PANEL_SIZE.height, themeColors: true, title: 'Showroom' });
+}

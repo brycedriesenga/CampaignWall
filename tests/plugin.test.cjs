@@ -46,7 +46,7 @@ function makeEnv({ fileKey, fileName = 'Holiday Emails', user = 'Bryce', store }
       async keysAsync() { await tick(1); return [...store.keys()] },
     },
     ui: { onmessage: null, postMessage: null, resize(w, h) { env.size = [w, h] } },
-    showUI() {}, notify() {}, on(ev, fn) { handlers[ev] = fn },
+    showUI(h, o) { env.shown = o || {} }, notify(m) { (env.notes = env.notes || []).push(m) }, closePlugin() { env.closed = true }, on(ev, fn) { handlers[ev] = fn },
     openExternal(u) { opened.push(u) },
     getNodeByIdAsync: async (id) => nodes.get(id) || null,
     setCurrentPageAsync: async () => {},
@@ -986,6 +986,13 @@ function pointer(w, type, target, extra) {
     const cfg = cfgVar && JSON.parse(Object.values(cfgVar.valuesByMode)[0])
     check('team settings are saved as a “config” variable', cfg && cfg.team && cfg.team.id === '9001' && cfg.lookBackDays === 90 && cfg.folders.length >= 1, JSON.stringify(cfg))
     check('Settings shows what’s saved', /Team settings in this file:/.test(text(wl)) && !!$(wl, '#save-team-settings') && /Update/.test($(wl, '#save-team-settings').textContent))
+    check('the channel list is saved with the team settings', Array.isArray(cfg.channels) && cfg.channels.indexOf('Email') >= 0)
+    const em = [...wl.document.querySelectorAll('[data-ch-name]')].find((el) => el.value === 'Email')
+    em.value = 'CRM'; em.dispatchEvent(new wl.Event('change')); await tick(300)
+    const cfg2 = JSON.parse(Object.values(Object.values(api.vars.INDEXFILE0099.variables).find((v) => v.name === 'config').valuesByMode)[0])
+    check('editing the team’s channel list updates it in Team sync for everyone', cfg2.channels.indexOf('CRM') >= 0 && cfg2.channelRenames.Email === 'CRM' && /Your team’s list/.test(text(wl)), JSON.stringify(cfg2.channels))
+    const crm = [...wl.document.querySelectorAll('[data-ch-name]')].find((el) => el.value === 'CRM')
+    crm.value = 'Email'; crm.dispatchEvent(new wl.Event('change')); await tick(300)
     click(wl, '#back'); await tick(10)
 
     // Nia: new, the plugin has the team listed as a preset.
@@ -1045,6 +1052,30 @@ function pointer(w, type, target, extra) {
   await tick(3300)
   check('window B picks up a campaign created in window A', /Shared/.test(($(wB, '#campaign') || {}).textContent || ''))
 
+  // ===== editable channel list =====
+  {
+    if ($(wb, '#wall-back')) { click(wb, '#wall-back'); await tick(40) }
+    if ($(wb, '#back')) { click(wb, '#back'); await tick(40) }
+    click(wb, '#settings'); await tick(40)
+    const nameInputs = () => [...wb.document.querySelectorAll('[data-ch-name]')]
+    const site = nameInputs().find((el) => el.value === 'Site')
+    check('Settings lists the channels', !!site && nameInputs().length >= 5)
+    site.value = 'Web'; site.dispatchEvent(new wb.Event('change')); await tick(200)
+    const cfgVar = Object.values((api.vars.INDEXFILE0099 || {}).variables || {}).find((v) => v.name === 'config')
+    const cfg = cfgVar ? JSON.parse(Object.values(cfgVar.valuesByMode)[0]) : {}
+    const local = bryce.store.get('showroom.data')
+    check('renaming a channel saves it, with the old name remembered (for the team when Team sync has a list)', ((cfg.channels || []).indexOf('Web') >= 0 && cfg.channelRenames && cfg.channelRenames.Site === 'Web') || ((local.channels || []).indexOf('Web') >= 0 && local.channelRenames.Site === 'Web'), JSON.stringify(cfg).slice(0, 300))
+    $(wb, '#ch-add').value = 'Paid social'; click(wb, '#ch-add-btn'); await tick(200)
+    const list = nameInputs().map((el) => el.value)
+    check('a new channel goes in before “Other”', list.indexOf('Paid social') >= 0 && list.indexOf('Paid social') < list.indexOf('Other'), list.join(', '))
+    click(wb, '#back'); await tick(40)
+    click(wb, '#open-wall'); await tick(300)
+    const heads3 = [...wb.document.querySelectorAll('#world .ch')].map((h) => h.firstChild.textContent)
+    check('frames saved as “Site” now show under “Web”', heads3.indexOf('Web') >= 0 && heads3.indexOf('Site') < 0, heads3.join(', '))
+    check('the sandbox’s copy of the list follows (for guessing channels)', (bryce.store.get('showroom.data').channels || []).indexOf('Web') >= 0 && bryce.store.get('showroom.data').channelRenames.Site === 'Web')
+    click(wb, '#wall-back'); await tick(40)
+  }
+
   // ===== network failure =====
   api.fail = 'network'
   click(wb, '#open-wall'); await tick(200)
@@ -1058,6 +1089,51 @@ function pointer(w, type, target, extra) {
   bryce.figma.command = 'tags'
   const wt = await boot(bryce, api); await tick(200)
   check('“Edit tags” opens the panel ready to add a tag', !wt.document.body.classList.contains('walling') && wt.document.activeElement && wt.document.activeElement.id === 'tag-add')
+
+  // ===== quick actions (Figma's Quick Actions bar), run without Showroom's window =====
+  {
+    const runCode = (env) => { const ctx = vm.createContext({ figma: env.figma, __html__: '', setTimeout, clearTimeout, setInterval, clearInterval, console, JSON, Promise, Date, Math, String, Object, Array, Error, encodeURIComponent }); vm.runInContext(fs.readFileSync(path.join(ROOT, 'code.js'), 'utf8'), ctx) }
+    const suggest = async (query, key) => { let out = null, err = null; bryce.qaInput({ key: key || 'tag', query: query, parameters: {}, result: { setSuggestions(x) { out = x }, setError(e) { err = e }, setLoadingMessage() {} } }); await tick(30); return { out: out, err: err } }
+    bryce.figma.parameters = { on(ev, fn) { bryce.qaInput = fn } }
+    bryce.figma.ui.postMessage = () => {}
+    bryce.shown = null; bryce.notes = []; bryce.closed = false
+    bryce.figma.command = 'qa-tag'
+    runCode(bryce)
+    check('a quick action doesn’t open Showroom’s window', !bryce.shown)
+    bryce.setSel([]); let r = await suggest('')
+    check('Tag selection… asks for a selection first', /Select frames/.test(r.err || ''))
+    bryce.setSel([a])
+    r = await suggest('holi')
+    check('Tag selection… suggests existing tags first as you type', r.out && r.out[0].name === 'Holiday 2026' && /New tag/.test(r.out[r.out.length - 1].name), JSON.stringify(r.out))
+    r = await suggest('holiday-2026 ')
+    check('…and won’t offer a near-duplicate as a new tag', r.out && !r.out.some((x) => /New tag/.test(x.name)), JSON.stringify(r.out))
+    r = await suggest('Summer')
+    const nt = r.out && r.out[r.out.length - 1]
+    check('a new tag is offered last, as “+ New tag”', nt && nt.name === '+ New tag “Summer”' && nt.data.id === '' && nt.data.name === 'Summer', JSON.stringify(r.out))
+    bryce.handlers.run({ command: 'qa-tag', parameters: { tag: nt.data } }); await tick(150)
+    let mq = JSON.parse(bryce.root._d['showroom/manifest'])
+    const sumId = Object.keys(mq.campaigns).find((k) => mq.campaigns[k].name === 'Summer')
+    check('…picking it tags the selection, says so, and publishes invisibly', sumId && mq.campaigns[sumId].items['1:2'] && bryce.notes.some((n) => /Summer/.test(n)) && bryce.shown && bryce.shown.visible === false, JSON.stringify(bryce.notes))
+    bryce.shown = null; bryce.figma.command = 'qa-untag'; runCode(bryce)
+    r = await suggest('')
+    check('Remove tag… only suggests the selection’s tags', r.out && r.out.some((x) => x.name === 'Summer') && r.out.every((x) => ['Summer', 'Holiday 2026'].indexOf(x.name) >= 0), JSON.stringify(r.out))
+    bryce.handlers.run({ command: 'qa-untag', parameters: { tag: { id: sumId, name: 'Summer' } } }); await tick(150)
+    mq = JSON.parse(bryce.root._d['showroom/manifest'])
+    check('…and takes it off', !mq.campaigns[sumId] || !mq.campaigns[sumId].items['1:2'])
+    bryce.figma.command = 'qa-status'; runCode(bryce)
+    r = await suggest('app', 'status')
+    check('Set status… suggests statuses', r.out && r.out.length === 1 && r.out[0].data === 'approved')
+    bryce.handlers.run({ command: 'qa-status', parameters: { status: 'approved' } }); await tick(150)
+    mq = JSON.parse(bryce.root._d['showroom/manifest'])
+    check('…and sets it on the selected tagged frames', mq.statuses.__all && mq.statuses.__all['EMAILFILE0001|1:2'].s === 'approved')
+    bryce.figma.command = 'qa-wall'; runCode(bryce)
+    r = await suggest('')
+    check('Open wall… offers All tagged frames first', r.out && r.out[0].data.id === '__all')
+    // The invisible window: publishes to Team sync, then closes.
+    bryce.closed = false; bryce.figma.command = 'publish'
+    const wp = await boot(bryce, api); await tick(400)
+    check('the invisible run closes itself once it has published', bryce.closed === true && wp)
+  }
   api.fail = null
 
   console.log(`\n${pass}/${pass + fail} passed`)
