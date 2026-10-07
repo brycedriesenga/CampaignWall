@@ -6,7 +6,8 @@ Newest first. Each line is one build on GitHub, with its commit ID.
 
 | Version | Commit | What changed |
 | --- | --- | --- |
-| 0.16.1 | latest on `main` | “Open Showroom” button in Figma's properties panel when nothing is selected (appears after Showroom has run once in a file). Re-import the plugin if it doesn't show |
+| 0.17.0 | latest on `main` | Tag picker with All tagged frames always first and tick boxes to view several tags together (also from home); new frames list with previews, grouped by file; Row width setting (Auto, Narrow, Wide, One line), and a file's section is never split across lines |
+| 0.16.1 | `ec4617d` | “Open Showroom” button in Figma's properties panel when nothing is selected (appears after Showroom has run once in a file). Re-import the plugin if it doesn't show |
 | 0.16.0 | `2e20042` | Quick actions (tag, untag, status, update, open wall) from Figma's Quick Actions bar; editable channel list, shared through Team sync. Re-import the plugin if the new menu doesn't appear |
 | 0.15.2 | `f99751b` | Arranging: frames stay inside their own section; sections can be dragged by their name |
 | 0.15.1 | `2093cd9` | Group wall rows by tag; Open in Showroom stays centred on the frame while the window grows |

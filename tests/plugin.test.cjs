@@ -189,7 +189,7 @@ function pointer(w, type, target, extra) {
   check('first run: start with a tag', /Start with a tag/.test(text(wb)))
   $(wb, '#campaign-name').value = 'Holiday 2026'
   click(wb, '#create'); await tick(60)
-  check('tag created', /Holiday 2026/.test($(wb, '#campaign').textContent))
+  check('tag created', /Holiday 2026/.test($(wb, '#view-pick').textContent))
 
   const a = bryce.mk('1:2', 'Email hero', 'FRAME', 600, 1800)
   const b = bryce.mk('1:3', 'Homepage hero', 'FRAME', 1440, 720)
@@ -214,7 +214,7 @@ function pointer(w, type, target, extra) {
   $(wb, '#tag-add').dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await tick(120)
   const m2 = JSON.parse(bryce.root._d['showroom/manifest'])
   const bf = Object.keys(m2.campaigns).find((k) => m2.campaigns[k].name === 'Black Friday')
-  check('typing a new tag adds it to the selection, keeping the channel and the active tag', bf && m2.campaigns[bf].items['1:2'] && m2.campaigns[bf].items['1:2'].channel === 'Email' && /Holiday 2026/.test($(wb, '#campaign').selectedOptions[0].textContent) && a._r.open === 'Holiday 2026, Black Friday', JSON.stringify(a._r))
+  check('typing a new tag adds it to the selection, keeping the channel and the active tag', bf && m2.campaigns[bf].items['1:2'] && m2.campaigns[bf].items['1:2'].channel === 'Email' && /Holiday 2026/.test($(wb, '#view-pick').textContent) && a._r.open === 'Holiday 2026, Black Friday', JSON.stringify(a._r))
   check('the panel shows both tags on the frame', wb.document.querySelectorAll('.tagbox .tagchip').length === 2)
   click(wb, '.tagchip [data-tag-del="' + bf + '"]'); await tick(120)
   const m3 = JSON.parse(bryce.root._d['showroom/manifest'])
@@ -317,9 +317,9 @@ function pointer(w, type, target, extra) {
   const ws = await boot(sam, api, { folders: [{ id: '111', name: 'Email' }, { id: '222', name: 'Ads' }] })
   $(ws, '#campaign-name') && ($(ws, '#campaign-name').value = '')
   await connect(ws); await tick(200)
-  check('Sam’s search finds Bryce’s campaign', $(ws, '#campaign') && /Holiday 2026/.test($(ws, '#campaign').textContent), text(ws).slice(0, 300))
+  check('Sam’s search finds Bryce’s campaign', $(ws, '#view-pick') && /Holiday 2026/.test($(ws, '#view-pick').textContent), text(ws).slice(0, 300))
   check('search opened only the file with changes (1 read)', api.calls.filter((x) => /\/v1\/files\/EMAILFILE0001\?depth=1/.test(x)).length === 1)
-  check('Sam sees Bryce’s 4 frames with who added them', /4\s*frames from 1 file/.test(text(ws)) && /added by Bryce/.test(text(ws)))
+  check('Sam sees Bryce’s 4 frames with who added them', /4\s*frames from 1 file/.test(text(ws)) && [...ws.document.querySelectorAll('.fr-mt')].some((el) => /by Bryce/.test(el.textContent)))
   const mpu = sam.mk('7:1', 'MPU', 'FRAME', 300, 250)
   sam.setSel([mpu]); await tick(150)
   check('Sam can add to the same campaign', /Add frame to Holiday 2026/.test(text(ws)))
@@ -341,7 +341,7 @@ function pointer(w, type, target, extra) {
   click(wb, '#add-folder'); await tick(200)
   check('folders added from links, names read from the link', /Email/.test(text(wb)) && /Holiday Ads/.test(text(wb)))
   click(wb, '#back'); await tick(20)
-  check('Bryce now sees Sam’s frame', /5\s*frames from 2 files/.test(text(wb)) && /added by Sam/.test(text(wb)), text(wb).slice(0, 400))
+  check('Bryce now sees Sam’s frame', /5\s*frames from 2 files/.test(text(wb)) && [...wb.document.querySelectorAll('.fr-mt')].some((el) => /by Sam/.test(el.textContent)) && ![...wb.document.querySelectorAll('.fr-mt')].some((el) => /by Bryce/.test(el.textContent)), text(wb).slice(0, 400))
 
   // Bryce removes Sam's frame → hidden only for Bryce; removes his own → removed for everyone
   const samItem = [...wb.document.querySelectorAll('[data-remove]')].find((el) => /ADFILE00002/.test(el.dataset.remove))
@@ -362,7 +362,7 @@ function pointer(w, type, target, extra) {
   cards.find((c) => /Holiday 2026/.test(c.textContent)).click(); await tick(30)
   check('activity shows people’s Figma profile pictures', !!wb.document.querySelector('.activity img[src*="profile/Sam"]'))
   check('panel shows recent activity', /Activity/.test(text(wb)) && /Sam\s*added/.test(text(wb)), text(wb).slice(0, 600))
-  check('picking a card opens that tag', $(wb, '#campaign') && /Holiday 2026/.test($(wb, '#campaign').selectedOptions[0].textContent))
+  check('picking a card opens that tag', $(wb, '#view-pick') && /Holiday 2026/.test($(wb, '#view-pick').textContent))
 
   // ===== links between campaign files =====
   const bryceLinks = JSON.parse(bryce.root._d['showroom/manifest']).links || {}
@@ -742,7 +742,7 @@ function pointer(w, type, target, extra) {
     check('…and shows another file’s frame’s tags read-only', !$(wb, '#itag-add') && /from its own file/.test($(wb, '#inspector').textContent))
     await esc2()
     click(wb, '#wall-back'); await tick(60)
-    const pickTag = async (id) => { const sel = $(wb, '#campaign'); sel.value = id; sel.dispatchEvent(new wb.Event('change')); await tick(100) }
+    const pickTag = async (id) => { click(wb, '#view-pick'); await tick(20); const el = wb.document.querySelector('[data-view="' + id + '"]'); el.click(); await tick(100) }
     await pickTag('__all')
     click(wb, '#open-wall'); await tick(400)
     const ids = [...wb.document.querySelectorAll('#world .fr')].map((t) => t.dataset.id)
@@ -763,8 +763,69 @@ function pointer(w, type, target, extra) {
     check('× in the details takes the tag off', !JSON.parse(bryce.root._d['showroom/manifest']).campaigns[sp])
     await esc2()
     click(wb, '#wall-back'); await tick(60)
+    // ===== several tags viewed together =====
+    const promo = bryce.mk('1:20', 'Promo banner', 'FRAME', 600, 300)
+    bryce.setSel([promo]); await tick(150)
+    $(wb, '#tag-add').value = 'Spring 2027'
+    $(wb, '#tag-add').dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await tick(150)
+    const mSp = JSON.parse(bryce.root._d['showroom/manifest'])
+    const sp2 = Object.keys(mSp.campaigns).find((k) => mSp.campaigns[k].name === 'Spring 2027')
+    await pickTag(cid)
+    const holidayCount = Number(($(wb, '.card.stack span') || {}).textContent)
+    click(wb, '#view-pick'); await tick(20)
+    const rows = [...wb.document.querySelectorAll('#view-menu [data-view]')]
+    check('the tag picker lists All tagged frames first, then every tag with a tick box', rows[0].dataset.view === '__all' && wb.document.querySelectorAll('#view-menu [data-view-toggle]').length >= 2, rows.map((r) => r.dataset.view).join(','))
+    click(wb, '#view-menu [data-view-toggle="' + sp2 + '"]'); await tick(120)
+    check('ticking a second tag views both together, and the menu stays open', /Holiday 2026 \+ Spring 2027/.test($(wb, '#view-pick').textContent) && !!$(wb, '#view-menu') && /^__tags:/.test(bryce.store.get('showroom.data').activeCampaignId), $(wb, '#view-pick').textContent)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)
+    const multiCount = Number(($(wb, '.card.stack span') || {}).textContent)
+    check('…showing frames with either tag, each once', multiCount === holidayCount + 1 && !$(wb, '#view-menu'), holidayCount + ' → ' + multiCount)
+    check('the summary counts frames per tag, and a tag chip narrows the view', wb.document.querySelectorAll('.tagpill').length === 2)
+    check('with several tags, the selection offers which tag to add it to', !!$(wb, '[data-add-to="' + cid + '"]') && !$(wb, '#add'))
+    click(wb, '[data-add-to="' + cid + '"]'); await tick(150)
+    const mSp2 = JSON.parse(bryce.root._d['showroom/manifest'])
+    check('…and adding keeps the view of both tags', mSp2.campaigns[cid].items['1:20'] && /Spring 2027/.test($(wb, '#view-pick').textContent))
+    check('the frames list groups by file, this file first, with previews and sizes', /This file/.test($(wb, '.fl-file').textContent) && wb.document.querySelectorAll('.frow .fr-th').length === multiCount && [...wb.document.querySelectorAll('.fr-mt')].some((el) => /600 × 300/.test(el.textContent)))
+    click(wb, '#open-wall'); await tick(400)
+    const headsM = [...wb.document.querySelectorAll('#world .ch')].map((h) => h.firstChild.textContent)
+    check('a wall of several tags groups rows by tag, without changing your usual grouping', headsM.indexOf('Holiday 2026') >= 0 && headsM.indexOf('Spring 2027') >= 0 && (bryce.store.get('showroom.prefs').wallView || {}).group !== 'tag', headsM.join(', '))
+    click(wb, '#wall-back'); await tick(60)
+    // home: tick two cards, open them together
+    await pickTag(cid)
+    click(wb, '#home'); await tick(40)
+    check('home shows All tagged frames first', wb.document.querySelector('.ccard').dataset.campaign === '__all')
+    click(wb, '[data-pick="' + cid + '"]'); await tick(20)
+    click(wb, '[data-pick="' + sp2 + '"]'); await tick(20)
+    check('ticking cards on home shows a bar to open them together', /2 tags/.test(($(wb, '.home-bar') || {}).textContent || '') && wb.document.querySelectorAll('.ccard.picked').length === 2)
+    click(wb, '#pick-open'); await tick(120)
+    check('…which opens a view of both tags', /\+ Spring 2027|Spring 2027 \+/.test($(wb, '#view-pick').textContent), $(wb, '#view-pick').textContent)
+    // removing from a view of several tags takes each of them off the frame
+    click(wb, '[data-remove="EMAILFILE0001|1:20"]'); await tick(150)
+    const mSp3 = JSON.parse(bryce.root._d['showroom/manifest'])
+    check('× in a view of several tags removes each of them from the frame', !(mSp3.campaigns[cid] || { items: {} }).items['1:20'] && !(mSp3.campaigns[sp2] || { items: {} }).items['1:20'])
     await pickTag(cid)
     click(wb, '#open-wall'); await tick(400)
+  }
+  {
+    // ===== row width: sections stay whole =====
+    const T = wb.showroomTest
+    const mkItem = (file, i) => ({ id: file + '|' + i, fileKey: file, fileName: file === 'FA' ? 'File A' : 'File B', nodeId: String(i), name: 'F' + i, width: 1440, height: 900, channel: 'Site', tags: [] })
+    const fake = { id: 'rowtest', name: 'Row test', items: [1, 2, 3, 4, 5].map((i) => mkItem('FA', i)).concat([6, 7, 8].map((i) => mkItem('FB', i))) }
+    const L1 = T.layout(fake, 0.25, 4000)
+    const segs = L1.groups[0].segments
+    const inside = segs.every((sg) => sg.ids.every((id) => { const p = L1.groups[0].items.find((q) => q.it.id === id); return p.x >= sg.box.x && p.x + p.w <= sg.box.x + sg.box.w && p.y >= sg.box.y && p.y + p.h <= sg.box.y + sg.box.h }))
+    check('a narrow row keeps each file in one section (wrapping inside it), never split in two', segs.length === 2 && inside && new Set(L1.groups[0].items.map((q) => q.oy)).size > 2, JSON.stringify(segs.map((s) => [s.label, s.ids.length])))
+    const L2 = T.layout(fake, 0.25, 1e9)
+    check('“One line” keeps a row on a single line', new Set(L2.groups[0].items.map((q) => q.oy)).size === 1)
+    const wFit = T.fitRowWidth(fake)
+    check('“Fit window” picks a row width that shows the wall at least as big as one long line', T.fitZoomFor(T.layout(fake, 0.25, wFit)) >= T.fitZoomFor(L2), wFit)
+    click(wb, '#view-opts'); await tick(10)
+    click(wb, '#viewopts [data-tab], #viewopts [data-vo-tab="layout"]'); await tick(10)
+    check('View options › Layout has Row width', !!$(wb, '#viewopts [data-vo="rows"][data-val="fit"]') && $(wb, '#viewopts [data-vo="rows"][data-val="fit"]').classList.contains('on'))
+    click(wb, '#viewopts [data-vo="rows"][data-val="line"]'); await tick(60)
+    check('…and changing it is saved', (bryce.store.get('showroom.prefs').wallView || {}).rows === 'line')
+    click(wb, '#viewopts [data-vo="rows"][data-val="fit"]'); await tick(60)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(20)
   }
   {
   // ===== shortcuts, filters, present, remembered position, arranging =====
@@ -1052,7 +1113,7 @@ function pointer(w, type, target, extra) {
   $(wA, '#campaign-name').value = 'Shared'; click(wA, '#create'); await tick(80)
   const wB = await boot(winB, api)
   await tick(3300)
-  check('window B picks up a campaign created in window A', /Shared/.test(($(wB, '#campaign') || {}).textContent || ''))
+  check('window B picks up a campaign created in window A', /Shared/.test(($(wB, '#view-pick') || {}).textContent || ''))
 
   // ===== editable channel list =====
   {

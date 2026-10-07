@@ -77,6 +77,65 @@ textarea.field { height: 90px; padding: 8px 10px; resize: vertical; font: 11px/1
 .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 
+/* ---------- view picker (top of the panel) ---------- */
+.vp-btn { flex: 1; min-width: 0; height: 34px; border: 0; background: transparent; display: flex; align-items: center; gap: 6px; padding: 0 6px; border-radius: 7px; font-size: 14px; font-weight: 600; text-align: left; }
+.vp-btn:hover, .vp-btn[aria-expanded="true"] { background: var(--bg2); }
+.vp-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.vp-btn svg { color: var(--muted); flex-shrink: 0; margin-left: auto; }
+.vmenu { position: absolute; top: 48px; left: 8px; right: 8px; z-index: 40; max-height: min(440px, calc(100% - 64px)); display: flex; flex-direction: column; padding: 4px; box-shadow: 0 14px 36px rgba(0,0,0,.22); animation: pop .14s ease-out; }
+.vm-list { overflow: auto; min-height: 0; }
+.vm-row { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 8px; border-radius: 6px; width: 100%; border: 0; background: transparent; text-align: left; }
+.vm-row:hover { background: var(--bg2); }
+.vm-row.on .vm-nm { font-weight: 600; }
+.vm-check { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid color-mix(in srgb, var(--text) 35%, transparent); background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--onbrand); }
+.vm-check:hover { border-color: var(--brand); }
+.vm-row.on .vm-check { background: var(--brand); border-color: var(--brand); }
+.vm-nm { flex: 1; min-width: 0; height: 100%; border: 0; background: transparent; padding: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; line-height: 32px; }
+.vm-ico { width: 16px; display: inline-flex; justify-content: center; color: var(--muted); flex-shrink: 0; }
+.vm-all.on .vm-ico { color: var(--brand); }
+.vm-n { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.vm-search { display: flex; align-items: center; gap: 6px; padding: 2px 8px 6px; color: var(--muted); border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.vm-search input { border: 0; outline: none; background: transparent; flex: 1; height: 26px; }
+.vm-foot { font-size: 10.5px; padding: 7px 8px 3px; border-top: 1px solid var(--border); margin-top: 4px; }
+.vm-empty { padding: 8px; }
+.tagpill { border: 0; cursor: pointer; font: inherit; font-size: 10.5px; }
+.tagpill:hover { background: color-mix(in srgb, var(--text) 14%, var(--bg)); color: var(--text); }
+.tagpill b { color: var(--text); font-weight: 600; }
+
+/* ---------- frames list (panel) ---------- */
+.flist { display: flex; flex-direction: column; gap: 12px; }
+.flist > .label { margin-bottom: -4px; }
+.fl-count { font-weight: 500; margin-left: 2px; opacity: .8; }
+.fl-file { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 500; color: var(--muted); padding: 0 4px 4px; }
+.fl-file em { font-style: normal; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.frow { display: flex; align-items: center; gap: 0; border-radius: 8px; padding-right: 4px; }
+.frow:hover { background: var(--bg2); }
+.frow.new { animation: row-new 2.4s ease-out; }
+.fr-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; border: 0; background: transparent; text-align: left; padding: 5px 4px 5px 5px; border-radius: 8px; }
+.fr-th { width: 40px; height: 40px; flex-shrink: 0; border-radius: 6px; background: var(--bg2); overflow: hidden; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 1px var(--border); }
+.frow:hover .fr-th { background: var(--bg3); }
+.fr-th img { width: 100%; height: 100%; object-fit: cover; object-position: center top; display: block; }
+.fr-ph { font-size: 13px; font-weight: 600; color: var(--muted); }
+.fr-txt { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.fr-nm { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fr-mt, .fr-tags { display: block; font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fr-mt .st { height: 15px; }
+.fr-tags svg { vertical-align: -1px; margin-right: 4px; }
+.fr-act { width: 26px; height: 26px; opacity: 0; }
+.frow:hover .fr-act, .frow:focus-within .fr-act { opacity: 1; }
+.fl-more { border: 0; background: transparent; color: var(--muted); font-size: 11px; padding: 4px 8px; margin: 2px 0 0 50px; border-radius: 6px; }
+.fl-more:hover { color: var(--text); background: var(--bg2); }
+
+/* ---------- home: pick several tags ---------- */
+.cc-check { position: absolute; top: 8px; left: 8px; z-index: 2; width: 22px; height: 22px; border-radius: 6px; border: 1.5px solid rgba(255,255,255,.95); background: rgba(20,20,20,.38); box-shadow: 0 1px 4px rgba(0,0,0,.3);
+  opacity: 0; transition: opacity .12s; display: flex; align-items: center; justify-content: center; color: #fff; padding: 0; }
+.ccard:hover .cc-check, .ccard:focus-within .cc-check, .picking .cc-check, .cc-check.on { opacity: 1; }
+.cc-check.on { background: var(--brand); border-color: var(--brand); }
+.ccard.picked { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+.home-bar { flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 10px 10px 10px 14px; border-top: 1px solid var(--border); background: var(--bg); animation: pop .14s ease-out; }
+.hb-n { font-size: 10.5px; color: var(--muted); }
+.hb-names { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* ---------- wall ---------- */
 .wallbar { height: 48px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-bottom: 1px solid var(--border); background: var(--bg); position: relative; z-index: 3; }
 .wallbar .title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -632,13 +691,43 @@ function allFramesView(list) {
   const skip = ((S.data && S.data.hiddenItems) || {})[ALL_TAGS] || []
   return { id: ALL_TAGS, name: 'All tagged frames', all: true, shared: true, hiddenCount: items.filter((it) => skip.indexOf(it.id) >= 0).length, items: items.filter((it) => skip.indexOf(it.id) < 0) }
 }
+// Several tags viewed together: saved as the active "tag" '__tags:<id>,<id>'. It shows frames that have
+// any of them (each once). Statuses, devices and the arrangement it shares with All tagged frames
+// (saved under ALL_TAGS); hiding or removing a frame applies to each of its tags in the view.
+const MULTI_TAGS = '__tags:'
+function viewTagIds(id) { return String(id || '').indexOf(MULTI_TAGS) === 0 ? String(id).slice(MULTI_TAGS.length).split(',').filter(Boolean) : [] }
+function viewIdFor(ids) {
+  ids = Array.from(new Set(ids || [])).sort()
+  return !ids.length ? ALL_TAGS : ids.length === 1 ? ids[0] : MULTI_TAGS + ids.join(',')
+}
+function tagsView(list, ids) {
+  const tags = ids.map((id) => list.find((c) => c.id === id)).filter(Boolean)
+  if (tags.length < 2) return tags[0] || null
+  const seen = {}, items = []
+  for (const c of tags) for (const it of c.items) if (!seen[it.id]) { seen[it.id] = true; items.push(Object.assign({}, it)) }
+  const names = tags.map((t) => t.name)
+  return { id: viewIdFor(tags.map((t) => t.id)), name: names.length === 2 ? names.join(' + ') : names[0] + ' + ' + (names.length - 1) + ' more', fullName: names.join(' + '),
+    multi: true, tagIds: tags.map((t) => t.id), shared: true, hiddenCount: tags.reduce((n, t) => n + (t.hiddenCount || 0), 0), items: items }
+}
+// The tags a view covers: one tag, several, or (All tagged frames) every tag.
+function viewTags(c) { return !c ? [] : c.all ? allCampaigns().map((t) => t.id) : c.multi ? c.tagIds.slice() : [c.id] }
+// Where statuses, devices and the arrangement are saved for a view (several tags share All's).
+function saveKey(c) { return c && c.multi ? ALL_TAGS : c ? c.id : '' }
 function tagName(id) { const c = allCampaigns().find((x) => x.id === id); return c ? c.name : '' }
 
 function campaign() {
   if (!S.data) return null
   const list = allCampaigns()
   if (S.data.activeCampaignId === ALL_TAGS && list.length) return allFramesView(list)
+  const multi = viewTagIds(S.data.activeCampaignId)
+  if (multi.length) { const v = tagsView(list, multi); if (v) return v }
   return list.find((c) => c.id === S.data.activeCampaignId) || list[0] || null
+}
+// Switches the panel (and wall) to a view: a tag's id, ALL_TAGS or a several-tags id.
+function setView(id) {
+  S.data.activeCampaignId = id
+  const t = allCampaigns().find((x) => x.id === id)
+  send('set-active', { campaignId: id, campaignName: t ? t.name : '' })
 }
 function nodeInfo(item) {
   const f = S.cache.files[item.fileKey]
@@ -1536,7 +1625,7 @@ async function syncItems(list, opts) {
 }
 
 // ---------- wall view options (saved per person in prefs.wallView) ----------
-const WALL_VIEW_DEFAULTS = { devicePresent: 'on', siteAddress: '', deviceHeight: 'real', protoStyle: 'legacy', protoPresent: 'auto', bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, outside: 'fade', edgeLine: true, spacing: 'normal', group: 'channel',
+const WALL_VIEW_DEFAULTS = { devicePresent: 'on', siteAddress: '', deviceHeight: 'real', protoStyle: 'legacy', protoPresent: 'auto', bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, outside: 'fade', edgeLine: true, spacing: 'normal', group: 'channel', groupMulti: 'tag', rows: 'fit',
   subChannel: 'file', subFile: 'channel', subNone: 'off', subTag: 'channel' }   // how frames cluster inside each row, per grouping
 // Inside a row, frames can cluster by the other dimension: by file (and page) in channel rows,
 // by channel (or page) in file rows. Each choice: [value, button label].
@@ -1565,6 +1654,8 @@ function wallView() {
     v.outside = e === 'both' || e === 'fade' ? 'fade' : 'show'
     v.edgeLine = e === 'both' || e === 'line'
   }
+  // A view of several tags has its own "Group rows by" (rows per tag, unless you pick otherwise).
+  if (S.wall && S.wall.multi) v.group = v.groupMulti || 'tag'
   v.edge = v.outside === 'hide' ? 'hide' : v.outside === 'fade' ? (v.edgeLine ? 'both' : 'fade') : (v.edgeLine ? 'line' : 'none')
   return v
 }
@@ -1581,12 +1672,18 @@ function applyWallView() {
 }
 function setWallView(change) {
   const before = wallView()
-  S.prefs.wallView = Object.assign({}, before, change)
+  const base = Object.assign({}, before)
+  // In a view of several tags, "Group rows by" is its own setting (and the usual one stays as it was).
+  if (S.wall.multi) {
+    base.group = (S.prefs.wallView || {}).group || WALL_VIEW_DEFAULTS.group
+    if ('group' in change && !('groupMulti' in change)) { change = Object.assign({}, change, { groupMulti: change.group }); delete change.group }
+  }
+  S.prefs.wallView = Object.assign(base, change)
   send('save-prefs', { prefs: { wallView: S.prefs.wallView } })
   applyWallView()
   // Spacing, grouping and labels change where frames sit, so lay the wall out again and re-fit.
   const v = wallView()
-  if (v.spacing !== before.spacing || v.group !== before.group || v.names !== before.names || subMode(v) !== subMode(before) || (v.devicePresent === 'wall') !== (before.devicePresent === 'wall') || (v.outside === 'hide') !== (before.outside === 'hide') || (v.siteAddress !== before.siteAddress && v.devicePresent === 'wall')) { S.wall.fitted = S.wall.touched; renderWall() }
+  if (v.spacing !== before.spacing || v.group !== before.group || v.names !== before.names || subMode(v) !== subMode(before) || v.rows !== before.rows || (v.devicePresent === 'wall') !== (before.devicePresent === 'wall') || (v.outside === 'hide') !== (before.outside === 'hide') || (v.siteAddress !== before.siteAddress && v.devicePresent === 'wall')) { S.wall.fitted = S.wall.touched; renderWall() }
   if (v.protoStyle !== before.protoStyle && S.wall.live) playInPlace(S.wall.live.id, { noZoom: true })
   renderViewOptions()
 }
@@ -1624,9 +1721,11 @@ function renderViewOptions() {
   const so = SUB_OPTIONS[v.group] || SUB_OPTIONS.channel
   const rowWord = { channel: 'channel rows', file: 'file rows', tag: 'tag rows', none: 'the row' }[v.group] || 'rows'
   html += '<div class="vo-pane' + (tab === 'layout' ? '' : ' hidden') + '" data-pane="layout">'
-  html += field('Group rows by', seg('group', [['channel', 'Channel'], ['file', 'File'], ['tag', 'Tag'], ['none', 'Nothing']], { tag: 'A row per tag. A frame with several tags shows in each of their rows' }))
+  html += field('Group rows by' + (S.wall.multi ? ' <span style="font-weight:400">· for several tags</span>' : ''), seg('group', [['channel', 'Channel'], ['file', 'File'], ['tag', 'Tag'], ['none', 'Nothing']], { tag: 'A row per tag. A frame with several tags shows in each of their rows' }))
   html += field('Cluster within ' + rowWord + ' by', seg(so.key, so.options))
   html += field('Spacing', seg('spacing', [['tight', 'Tight'], ['normal', 'Normal'], ['roomy', 'Roomy']]))
+  html += field('Row width', seg('rows', [['fit', 'Auto'], ['narrow', 'Narrow'], ['wide', 'Wide'], ['line', 'One line']], { fit: 'Rows wrap wherever lets the whole wall show biggest in this window', narrow: 'Rows wrap after about 6,000 px (four desktop pages)', wide: 'Rows wrap after about 16,000 px (eleven desktop pages)', line: 'Each row stays on one line, however long' }) +
+    '<div class="vo-note" style="margin-top:6px">Sections (a file or page) are never split across lines.</div>')
   html += '</div>'
   // Present: devices and prototypes.
   const devOff = v.devicePresent === 'off'
@@ -2024,7 +2123,7 @@ function setDevice(ids, d) {
   all[c.id] = Object.assign({}, all[c.id] || {}, changes)
   S.prefs.devices = all
   send('save-prefs', { prefs: { devices: all } })
-  send('save-device', { campaignId: c.id, changes: changes })
+  send('save-device', { campaignId: saveKey(c), changes: changes })
   if (S.view === 'wall') renderWall(); else render()
 }
 // The address in the browser bar: the address from View options (or a placeholder) + a path from the frame or page name.
@@ -2227,7 +2326,7 @@ function setStatus(ids, s) {
   all[c.id] = Object.assign({}, all[c.id] || {}, changes)
   S.prefs.statuses = all
   send('save-prefs', { prefs: { statuses: all } })
-  send('save-status', { campaignId: c.id, changes: changes })
+  send('save-status', { campaignId: saveKey(c), changes: changes })
   if (S.view === 'wall') renderWall(); else render()
 }
 // A thin bar: approved, in review, draft, then the rest.
@@ -2254,7 +2353,7 @@ function campaignOrder(campaignId) {
   return best ? best.order : []
 }
 function orderItems(c) {
-  const order = campaignOrder(c.id)
+  const order = campaignOrder(saveKey(c))
   if (!order.length) return c.items.slice()
   const rank = {}
   order.forEach((id, i) => { rank[id] = i })
@@ -2367,10 +2466,22 @@ function endSecArrange(d, e) {
 }
 function saveOrder(order) {
   const c = campaign(); if (!c) return
-  const entry = { order: Array.from(new Set(order)), at: Date.now(), by: (S.prefs.me && S.prefs.me.handle) || '' }
-  S.prefs.layouts = Object.assign({}, S.prefs.layouts || {}, { [c.id]: entry })
+  order = Array.from(new Set(order))
+  // Several tags share All tagged frames' arrangement: their frames take their new order in the slots
+  // they had there, and every other frame stays put.
+  if (c.multi) {
+    const base = campaignOrder(ALL_TAGS).slice(), mine = {}
+    order.forEach((id) => { mine[id] = true })
+    const queue = order.slice()
+    const merged = base.map((id) => mine[id] ? null : id)
+    base.forEach((id, i) => { if (mine[id]) merged[i] = queue.shift() })
+    order = merged.filter(Boolean).concat(queue)
+  }
+  const key = saveKey(c)
+  const entry = { order: order, at: Date.now(), by: (S.prefs.me && S.prefs.me.handle) || '' }
+  S.prefs.layouts = Object.assign({}, S.prefs.layouts || {}, { [key]: entry })
   send('save-prefs', { prefs: { layouts: S.prefs.layouts } })
-  send('save-layout', { campaignId: c.id, layout: entry })
+  send('save-layout', { campaignId: key, layout: entry })
   renderWall()
 }
 
@@ -2528,8 +2639,7 @@ function renderPanel() {
   html += '<div class="top">'
   if (campaigns.length) {
     html += '<button class="icon" id="home" aria-label="All tags" title="All tags">' + icon('grid') + '</button>'
-    html += '<select id="campaign" aria-label="Tag">' + (campaigns.length > 1 ? '<option value="' + ALL_TAGS + '"' + (c && c.all ? ' selected' : '') + '>All tagged frames</option>' : '') +
-      campaigns.map((x) => '<option value="' + esc(x.id) + '"' + (c && x.id === c.id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select>'
+    html += viewPicker(c, campaigns)
     html += '<button class="icon" id="new-campaign" aria-label="New tag" title="New tag">' + icon('plus') + '</button>'
   } else html += '<div class="grow" style="font-size:14px;font-weight:600;padding-left:4px">Showroom</div>'
   html += '<button class="icon" id="settings" aria-label="Settings" title="Settings">' + icon('gear') + '</button></div>'
@@ -2563,6 +2673,7 @@ function renderPanel() {
   html += '<div class="card stack" style="padding:14px;gap:10px">'
   html += '<div class="row" style="align-items:baseline"><span style="font-size:22px;font-weight:600;letter-spacing:-0.02em">' + c.items.length + '</span><span class="muted">frame' + (c.items.length === 1 ? '' : 's') + ' from ' + files + ' file' + (files === 1 ? '' : 's') + '</span>' + (updated ? '<span class="pill warn" style="margin-left:auto">' + updated + ' updated</span>' : '') + '</div>'
   if (c.items.length) html += '<div class="chips">' + channelOrder.filter((ch) => byChannel[ch]).map((ch) => '<span class="pill">' + esc(ch) + ' ' + byChannel[ch] + '</span>').join('') + '</div>'
+  if (c.items.length && (c.all || c.multi)) html += viewTagChips(c, campaigns)
   if (c.items.length) html += progressBar(c.items)
   html += '<button class="btn primary block" id="open-wall"' + (c.items.length ? '' : ' disabled') + '>' + icon('wall') + (S.token ? 'Open wall' : 'Connect Figma to open the wall') + '</button>'
   html += '</div>'
@@ -2571,24 +2682,110 @@ function renderPanel() {
 
   if (c.hiddenCount) html += '<div class="notice small row" style="gap:8px"><span class="grow">' + c.hiddenCount + ' frame' + (c.hiddenCount === 1 ? ' is' : 's are') + ' hidden on your wall.</span><button class="btn ghost" id="unhide-items" style="height:26px">Show</button></div>'
 
-  // Items
-  if (c.items.length) {
-    html += '<div><div class="label">' + (c.all ? 'Every tagged frame' : 'Frames with this tag') + '</div><div>'
-    const sorted = c.items.slice().sort((a, b) => channelOrder.indexOf(a.channel) - channelOrder.indexOf(b.channel) || String(a.name).localeCompare(String(b.name)))
-    sorted.forEach((it) => {
-      const n = nodeInfo(it)
-      const name = n && n.name ? n.name : it.name
-      const here = it.fileKey === S.file.key
-      const where = here ? 'this file' : esc((S.cache.files[it.fileKey] || {}).name || it.fileName)
-      html += '<div class="item' + (S.freshIds && S.freshIds[it.id] && Date.now() - S.freshIds[it.id] < 2500 ? ' new' : '') + '"><button class="open" data-open="' + esc(it.id) + '" title="' + (here ? 'Select in this file' : 'Open in its file') + '"><div class="nm">' + statusBadge(it.status) + esc(name) + (isUpdated(it) ? ' <span class="upd">Updated</span>' : '') + '</div><div class="mt">' + esc(it.channel) + ' · ' + where + (it.addedBy ? ' · added by ' + esc(it.addedBy) : '') + '</div>' + otherTags(it, c) + '</button>'
-      html += '<button class="icon" data-remove="' + esc(it.id) + '" aria-label="' + (c.all ? 'Remove all tags from ' : 'Remove the tag from ') + esc(name) + '" title="' + (here ? (c.all ? 'Remove all its tags' : 'Remove the tag from this frame') : 'Hide on my wall (it lives in another file)') + '">' + icon('x', 14) + '</button></div>'
-    })
-    html += '</div></div>'
-  }
+  if (c.items.length) html += framesList(c, channelOrder)
   html += '</div>' + footer() + '</div>'
   $('app').innerHTML = html
   bindPanel()
 }
+
+// In All tagged frames or a view of several tags: how many of its frames have each tag. Click one to
+// narrow the view to it.
+function viewTagChips(c, campaigns) {
+  const ids = c.multi ? c.tagIds : campaigns.map((t) => t.id)
+  const count = {}
+  c.items.forEach((it) => (it.tags || []).forEach((t) => { count[t] = (count[t] || 0) + 1 }))
+  const list = ids.filter((t) => count[t]).sort((a, b) => count[b] - count[a])
+  const name = {}; campaigns.forEach((t) => { name[t.id] = t.name })
+  const more = list.length > 8 && !S.allTagChips
+  return '<div class="chips">' + list.slice(0, more ? 7 : list.length).map((t) => '<button class="pill tagpill" data-view="' + esc(t) + '" title="Show only ' + esc(name[t]) + '">' + icon('tag', 10) + esc(name[t]) + ' <b>' + count[t] + '</b></button>').join('') +
+    (more ? '<button class="pill tagpill" id="more-tag-chips">+' + (list.length - 7) + ' more</button>' : '') + '</div>'
+}
+
+// The frames in a view, grouped by file (this file first), in the wall's order. Each row has a small
+// preview, the name, size and status; clicking selects it in this file, or shows it on the wall.
+const FLIST_MAX = 8
+function framesList(c, channelOrder) {
+  const names = {}; allCampaigns().forEach((t) => { names[t.id] = t.name })
+  const groups = {}, order = []
+  orderItems(c).forEach((it) => {
+    if (!groups[it.fileKey]) { groups[it.fileKey] = []; order.push(it.fileKey) }
+    groups[it.fileKey].push(it)
+  })
+  const fileName = (k) => k === S.file.key ? 'This file' : (S.cache.files[k] || {}).name || groups[k][0].fileName || 'File'
+  order.sort((a, b) => (a === S.file.key ? -1 : b === S.file.key ? 1 : fileName(a).localeCompare(fileName(b))))
+  const single = !c.all && !c.multi
+  const removeWord = c.all ? 'Remove all its tags' : c.multi ? 'Remove the tags in this view' : 'Remove the tag'
+  let html = '<div class="flist"><div class="label">' + (c.all ? 'Every tagged frame' : 'Frames') + ' <span class="fl-count">' + c.items.length + '</span></div>'
+  for (const key of order) {
+    const list = groups[key], here = key === S.file.key
+    const chans = new Set(list.map((it) => it.channel)).size
+    const open = S.flistMore && S.flistMore[key]
+    html += '<div class="fl-group"><div class="fl-file" title="' + esc(here ? S.file.name || 'This file' : fileName(key)) + '">' + icon(here ? 'pointer' : 'wall', 12) + '<span class="grow">' + esc(fileName(key)) + '</span><em>' + list.length + '</em></div>'
+    list.slice(0, open ? list.length : FLIST_MAX).forEach((it) => {
+      const n = nodeInfo(it) || {}
+      const name = n.name || it.name
+      const w = Math.round(n.width || it.width || 0), h = Math.round(n.height || it.height || 0)
+      const meta = []
+      if (w && h) meta.push(w + ' × ' + h)
+      if (chans > 1) meta.push(esc(it.channel))
+      if (it.addedBy && S.me && it.addedBy !== S.me) meta.push('by ' + esc(it.addedBy.split(' ')[0]))
+      const tags = (it.tags || []).filter((t) => !single || t !== c.id).map((t) => names[t]).filter(Boolean)
+      const th = n.url ? '<img src="' + esc(n.url) + '" alt="" loading="lazy" draggable="false">' : '<span class="fr-ph">' + esc((it.channel || '?').slice(0, 1)) + '</span>'
+      const fresh = S.freshIds && S.freshIds[it.id] && Date.now() - S.freshIds[it.id] < 2500
+      html += '<div class="frow' + (fresh ? ' new' : '') + '"><button class="fr-open" data-frame-go="' + esc(it.id) + '" title="' + (here ? 'Select it in this file' : 'Show it on the wall') + '">' +
+        '<span class="fr-th">' + th + '</span><span class="fr-txt"><span class="fr-nm">' + esc(name) + (isUpdated(it) ? ' <span class="upd">Updated</span>' : '') + '</span>' +
+        '<span class="fr-mt">' + statusBadge(it.status) + meta.join(' · ') + '</span>' +
+        (tags.length ? '<span class="fr-tags">' + icon('tag', 10) + esc(tags.join(', ')) + '</span>' : '') + '</span></button>' +
+        (here ? '' : '<button class="icon fr-act" data-open="' + esc(it.id) + '" aria-label="Open ' + esc(name) + ' in its file" title="Open in its file">' + icon('right', 14) + '</button>') +
+        '<button class="icon fr-act" data-remove="' + esc(it.id) + '" aria-label="' + (here ? removeWord : 'Hide') + ': ' + esc(name) + '" title="' + (here ? removeWord : 'Hide on my wall (it lives in another file)') + '">' + icon('x', 14) + '</button></div>'
+    })
+    if (list.length > FLIST_MAX) html += '<button class="fl-more" data-flist-more="' + esc(key) + '">' + (open ? 'Show fewer' : 'Show all ' + list.length) + '</button>'
+    html += '</div>'
+  }
+  return html + '</div>'
+}
+
+// The picker at the top of the panel: All tagged frames, one tag, or several ticked together.
+function viewPicker(c, campaigns) {
+  let html = '<button class="vp-btn" id="view-pick" aria-haspopup="true" aria-expanded="' + !!S.viewMenu + '" title="' + esc(c ? c.fullName || c.name : '') + '">' +
+    '<span class="vp-name">' + esc(c ? c.name : '') + '</span>' + icon('down', 14) + '</button>'
+  if (S.viewMenu) html += viewMenu(c, campaigns)
+  return html
+}
+function viewMenu(c, campaigns) {
+  const cur = c && c.multi ? c.tagIds : c && !c.all ? [c.id] : []
+  const q = (S.viewQuery || '').trim().toLowerCase()
+  let h = '<div class="vmenu card" id="view-menu" role="menu" aria-label="Choose what to view">'
+  if (campaigns.length > 8) h += '<div class="vm-search">' + icon('search', 13) + '<input id="vm-q" placeholder="Find a tag" value="' + esc(S.viewQuery || '') + '" aria-label="Find a tag"></div>'
+  h += '<div class="vm-list">'
+  if (!q) h += '<button class="vm-row vm-all' + (c && c.all ? ' on' : '') + '" data-view="' + ALL_TAGS + '" role="menuitemradio" aria-checked="' + !!(c && c.all) + '">' +
+    '<span class="vm-ico">' + icon('grid', 13) + '</span><span class="vm-nm">All tagged frames</span><span class="vm-n">' + allFramesView(campaigns).items.length + '</span></button><div class="sep" style="margin:4px 0"></div>'
+  const shown = campaigns.filter((t) => !q || t.name.toLowerCase().indexOf(q) >= 0)
+  shown.forEach((t) => {
+    const on = cur.indexOf(t.id) >= 0
+    h += '<div class="vm-row' + (on ? ' on' : '') + '"><button class="vm-check" data-view-toggle="' + esc(t.id) + '" role="menuitemcheckbox" aria-checked="' + on + '" aria-label="' + (on ? 'Take ' + esc(t.name) + ' out of this view' : 'Add ' + esc(t.name) + ' to this view') + '" title="' + (on ? 'Take it out of this view' : 'View it together with the ticked tags') + '">' + (on ? icon('check', 11) : '') + '</button>' +
+      '<button class="vm-nm" data-view="' + esc(t.id) + '" title="Show only ' + esc(t.name) + '">' + esc(t.name) + '</button><span class="vm-n">' + t.items.length + '</span></div>'
+  })
+  if (!shown.length) h += '<div class="vm-empty muted small">No tag matches “' + esc(S.viewQuery) + '”</div>'
+  h += '</div><div class="vm-foot muted">' + (cur.length > 1 ? 'Showing frames with any of the ' + cur.length + ' ticked tags' : 'Tick tags to view them together') + '</div>'
+  return h + '</div>'
+}
+function closeViewMenu() { if (!S.viewMenu) return; S.viewMenu = false; S.viewQuery = ''; if (S.view === 'panel') renderPanel() }
+function bindViewMenu() {
+  const btn = $('view-pick')
+  if (btn) btn.addEventListener('click', () => { S.viewMenu = !S.viewMenu; S.viewQuery = ''; renderPanel(); const qi = $('vm-q'); if (qi) qi.focus() })
+  document.querySelectorAll('[data-view]').forEach((el) => el.addEventListener('click', () => { S.viewMenu = false; S.viewQuery = ''; setView(el.dataset.view); renderPanel() }))
+  document.querySelectorAll('[data-view-toggle]').forEach((el) => el.addEventListener('click', () => {
+    const c = campaign(), id = el.dataset.viewToggle
+    const cur = c && c.multi ? c.tagIds.slice() : c && !c.all ? [c.id] : []
+    const next = cur.indexOf(id) >= 0 ? cur.filter((x) => x !== id) : cur.concat(id)
+    setView(viewIdFor(next)); renderPanel()
+  }))
+  const qi = $('vm-q')
+  if (qi) qi.addEventListener('input', () => { S.viewQuery = qi.value; const pos = qi.selectionStart; renderPanel(); const el = $('vm-q'); if (el) { el.focus(); el.setSelectionRange(pos, pos) } })
+}
+document.addEventListener('pointerdown', (e) => { if (S.viewMenu && !e.target.closest('#view-menu, #view-pick')) closeViewMenu() }, true)
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && S.viewMenu) { e.stopPropagation(); closeViewMenu() } }, true)
 
 // The selection in this file, with its tags: remove a tag (×), add one by name (new or existing), or
 // update the frames' names and sizes everywhere they're tagged. No need to open the wall.
@@ -2596,7 +2793,7 @@ function selectionCard(c, tags) {
   const sel = S.selection
   let html = '<div class="stack"><div class="label" style="margin:0">Selection</div>'
   if (!sel.items.length) {
-    html += '<div class="hint"><span class="ico">' + icon('pointer') + '</span><div><div style="font-weight:600">Tag frames</div><div class="muted small">Select frames in this file to tag them' + (c && !c.all ? ', or add them to ' + esc(c.name) : '') + '.</div></div></div>'
+    html += '<div class="hint"><span class="ico">' + icon('pointer') + '</span><div><div style="font-weight:600">Tag frames</div><div class="muted small">Select frames in this file to tag them' + (c && !c.all && !c.multi ? ', or add them to ' + esc(c.name) : '') + '.</div></div></div>'
     if (sel.skipped) html += '<div class="notice small">' + sel.skipped + ' selected layer' + (sel.skipped === 1 ? ' isn’t a frame' : 's aren’t frames') + '. Select top-level frames, components or sections.</div>'
     return html + '</div>'
   }
@@ -2618,7 +2815,8 @@ function selectionCard(c, tags) {
   const nameOf = (id) => { const t = tags.find((x) => x.id === id); return t ? t.name : 'Tag' }
   const ids = Object.keys(count).sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
   html += '<div><div class="label">Tags</div><div class="tagbox">'
-  html += ids.map((t) => '<span class="tagchip' + (c && t === c.id ? ' cur' : '') + '"><button class="tc-name" data-tag-go="' + esc(t) + '" title="Show this tag">' + esc(nameOf(t)) + '</button>' +
+  const curTags = c && c.multi ? c.tagIds : c && !c.all ? [c.id] : []
+  html += ids.map((t) => '<span class="tagchip' + (curTags.indexOf(t) >= 0 ? ' cur' : '') + '"><button class="tc-name" data-tag-go="' + esc(t) + '" title="Show this tag">' + esc(nameOf(t)) + '</button>' +
     (count[t] < n ? '<button class="tc-part" data-tag-all="' + esc(t) + '" title="' + count[t] + ' of ' + n + ' selected frames have it. Add it to all">' + count[t] + '/' + n + ' ' + icon('plus', 10) + '</button>' : '') +
     '<button class="tc-x" data-tag-del="' + esc(t) + '" aria-label="Remove ' + esc(nameOf(t)) + '" title="Remove this tag from the selected frames">' + icon('x', 10) + '</button></span>').join('')
   const suggest = tags.filter((t) => (count[t.id] || 0) < n)
@@ -2626,16 +2824,18 @@ function selectionCard(c, tags) {
     '<datalist id="tag-list">' + suggest.map((t) => '<option value="' + esc(t.name) + '">').join('') + '</datalist></div></div>'
   html += '<div><label class="label" for="channel">Channel</label><select class="field" id="channel"><option value="auto"' + (S.channelChoice === 'auto' ? ' selected' : '') + '>Auto (guess from size)</option>' + channels().map((ch) => '<option' + (S.channelChoice === ch ? ' selected' : '') + '>' + esc(ch) + '</option>').join('') + '</select></div>'
   const frames = n === 1 ? 'frame' : n + ' frames'
-  const inActive = c && !c.all ? (count[c.id] || 0) : 0
+  // Add to the tag you're viewing; with several tags, pick which (or all of them).
+  const missing = curTags.filter((t) => (count[t] || 0) < n)
+  const canAdd = missing.length > 0
+  if (c && c.multi && canAdd) {
+    html += '<div><div class="label">Add ' + frames + ' to</div><div class="chips">' + missing.map((t) => '<button class="btn" data-add-to="' + esc(t) + '" style="height:28px"' + (S.file.key ? '' : ' disabled') + '>' + icon('plus', 12) + esc(nameOf(t)) + '</button>').join('') +
+      (missing.length > 1 ? '<button class="btn primary" data-add-to="' + esc(missing.join(',')) + '" style="height:28px"' + (S.file.key ? '' : ' disabled') + '>' + (missing.length === 2 ? 'Both' : 'All ' + missing.length) + '</button>' : '') + '</div></div>'
+  }
   html += '<div class="row">'
-  if (c && !c.all && inActive < n) html += '<button class="btn primary grow" id="add"' + (S.file.key ? '' : ' disabled') + '>Add ' + frames + ' to ' + esc(c.name) + '</button>'
-  if (ids.length) html += '<button class="btn' + (c && !c.all && inActive < n ? '' : ' primary grow') + '" id="update-sel" title="Save the frames’ current names and sizes (and channel, if you picked one) in all their tags"' + (S.file.key ? '' : ' disabled') + '>' + icon('refresh', 14) + 'Update' + (c && !c.all && inActive < n ? '' : ' ' + frames) + '</button>'
+  if (c && !c.multi && canAdd) html += '<button class="btn primary grow" id="add"' + (S.file.key ? '' : ' disabled') + '>Add ' + frames + ' to ' + esc(c.name) + '</button>'
+  const addBtn = c && !c.multi && canAdd
+  if (ids.length) html += '<button class="btn' + (addBtn ? '' : ' primary grow') + '" id="update-sel" title="Save the frames’ current names and sizes (and channel, if you picked one) in all their tags"' + (S.file.key ? '' : ' disabled') + '>' + icon('refresh', 14) + 'Update' + (addBtn ? '' : ' ' + frames) + '</button>'
   return html + '</div></div>'
-}
-// A frame's other tags, as a quiet line in lists.
-function otherTags(it, c) {
-  const others = (it.tags || []).filter((t) => t !== c.id).map(tagName).filter(Boolean)
-  return others.length ? '<div class="mt">' + icon('tag', 10) + ' ' + esc(others.join(', ')) + '</div>' : ''
 }
 // Adds the selected frames to a tag by name: an existing one (any letter case), or a new one.
 function addTagByName(name) {
@@ -2661,7 +2861,7 @@ function footer() {
 
 function bindPanel() {
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn) }
-  on('campaign', 'change', (e) => { const c = allCampaigns().find((x) => x.id === e.target.value); S.data.activeCampaignId = e.target.value; send('set-active', { campaignId: e.target.value, campaignName: c ? c.name : '' }) })
+  bindViewMenu()
   on('new-campaign', 'click', () => { S.creating = true; render() })
   on('cancel-create', 'click', () => { S.creating = false; render() })
   on('create', 'click', () => {
@@ -2682,6 +2882,9 @@ function bindPanel() {
   on('channel', 'change', (e) => { S.channelChoice = e.target.value; render() })
   on('add', 'click', () => { const c = campaign(); send('add-selection', { campaignId: c.id, campaignName: c.name, channel: S.channelChoice }) })
   on('update-sel', 'click', () => send('update-selection', { channel: S.channelChoice }))
+  document.querySelectorAll('[data-add-to]').forEach((el) => el.addEventListener('click', () => {
+    el.dataset.addTo.split(',').forEach((t) => send('add-selection', { campaignId: t, campaignName: tagName(t), channel: S.channelChoice, keepActive: true }))
+  }))
   on('tag-add', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addTagByName(e.target.value) } })
   on('tag-add', 'change', (e) => { const v = e.target.value.trim(); if (v && allCampaigns().some((x) => x.name.toLowerCase() === v.toLowerCase())) addTagByName(v) })   // picked from the list
   document.querySelectorAll('[data-tag-del]').forEach((el) => el.addEventListener('click', () => send('remove-item', { campaignId: el.dataset.tagDel, itemIds: selectedItemIds(el.dataset.tagDel) })))
@@ -2697,6 +2900,13 @@ function bindPanel() {
   }))
   on('open-wall', 'click', () => { if (!S.token) { S.view = 'setup'; render(); return } openWall() })
   document.querySelectorAll('[data-open]').forEach((el) => el.addEventListener('click', () => openItem(el.dataset.open)))
+  document.querySelectorAll('[data-frame-go]').forEach((el) => el.addEventListener('click', () => {
+    const id = el.dataset.frameGo
+    if (id.split('|')[0] === S.file.key || !S.token) return openItem(id)
+    S.wall.focusId = id; openWall()
+  }))
+  document.querySelectorAll('[data-flist-more]').forEach((el) => el.addEventListener('click', () => { S.flistMore = Object.assign({}, S.flistMore, { [el.dataset.flistMore]: !(S.flistMore || {})[el.dataset.flistMore] }); renderPanel() }))
+  on('more-tag-chips', 'click', () => { S.allTagChips = true; renderPanel() })
   document.querySelectorAll('[data-remove]').forEach((el) => el.addEventListener('click', () => send('remove-item', { campaignId: campaign().id, itemIds: [el.dataset.remove] })))
 }
 
@@ -2909,27 +3119,44 @@ function renderHome() {
   const q = (S.homeQuery || '').trim().toLowerCase()
   const list = campaigns.filter((c) => !q || c.name.toLowerCase().indexOf(q) >= 0)
     .sort((a, b) => campaignStats(b).last - campaignStats(a).last || a.name.localeCompare(b.name))
-  let html = '<div class="view"><div class="top"><div class="brand grow"><span class="mark">' + icon('wall', 14) + '</span>Showroom</div>'
+  // Ticking cards (the box in each corner) picks several tags to open together.
+  const picked = (S.homePick || []).filter((id) => campaigns.some((c) => c.id === id))
+  S.homePick = picked
+  let html = '<div class="view' + (picked.length ? ' picking' : '') + '"><div class="top"><div class="brand grow"><span class="mark">' + icon('wall', 14) + '</span>Showroom</div>'
   html += '<button class="icon" id="home-new" aria-label="New tag" title="New tag">' + icon('plus') + '</button>'
   html += '<button class="icon" id="settings" aria-label="Settings" title="Settings">' + icon('gear') + '</button></div><div class="scroll">'
   if (campaigns.length > 4) html += '<div class="home-search">' + icon('search', 14) + '<input class="field" id="home-q" placeholder="Search tags" value="' + esc(S.homeQuery || '') + '" aria-label="Search tags"></div>'
   if (!campaigns.length) html += '<div class="hint"><span class="ico">' + icon('wall') + '</span><div><div style="font-weight:600">No tags yet</div><div class="muted small">Start one, or connect your team in Settings to see theirs.</div></div></div>'
-  const cards = campaigns.length > 1 && !q ? [allFramesView(campaigns)].concat(list) : list
+  const cards = campaigns.length && !q ? [allFramesView(campaigns)].concat(list) : list
   for (const c of cards) {
     const st = campaignStats(c)
     const n = st.thumbs.length
-    html += '<div class="ccard' + (S.data.activeCampaignId === c.id ? ' active' : '') + '" role="button" tabindex="0" data-campaign="' + esc(c.id) + '">'
+    const on = picked.indexOf(c.id) >= 0
+    html += '<div class="ccard' + (S.data.activeCampaignId === c.id ? ' active' : '') + (on ? ' picked' : '') + '" role="button" tabindex="0" data-campaign="' + esc(c.id) + '">'
+    if (!c.all) html += '<button class="cc-check' + (on ? ' on' : '') + '" data-pick="' + esc(c.id) + '" aria-pressed="' + on + '" aria-label="' + (on ? 'Untick ' : 'Tick ') + esc(c.name) + ' to open it with other tags" title="Tick to open several tags together">' + (on ? icon('check', 12) : '') + '</button>'
     html += n ? '<div class="collage n' + n + '">' + st.thumbs.map((u) => '<div class="t" style="background-image:url(\'' + esc(u) + '\')"></div>').join('') + '</div>'
       : '<div class="collage empty">' + icon('wall', 14) + (c.items.length ? 'Open the wall to load previews' : 'No frames yet') + '</div>'
     if (c.items.length) html += '<button class="wallbtn" data-wall="' + esc(c.id) + '">' + icon('wall', 12) + 'Wall</button>'
     html += '<div class="body"><div class="row" style="gap:8px"><div class="name grow">' + (c.all ? icon('tag', 12) + ' ' : '') + esc(c.name) + '</div><div class="meta">' + (st.last ? esc(ago(st.last)) : '') + '</div></div>'
-    html += '<div class="meta">' + c.items.length + ' frame' + (c.items.length === 1 ? '' : 's') + ' · ' + st.files + ' file' + (st.files === 1 ? '' : 's') + (st.channels.length ? ' · ' + esc(st.channels.join(', ')) : '') + '</div>'
+    html += '<div class="meta">' + c.items.length + ' frame' + (c.items.length === 1 ? '' : 's') + ' · ' + st.files + ' file' + (st.files === 1 ? '' : 's') + (c.all ? ' · ' + campaigns.length + ' tag' + (campaigns.length === 1 ? '' : 's') : st.channels.length ? ' · ' + esc(st.channels.join(', ')) : '') + '</div>'
     if (c.items.length) html += '<div class="row" style="gap:10px"><div class="avatars">' + st.people.slice(0, 4).map(avatar).join('') + '</div><div class="grow">' + progressBar(c.items) + '</div></div>'
     html += '</div></div>'
   }
-  html += '</div>' + footer() + '</div>'
+  html += '</div>'
+  if (picked.length) {
+    const names = picked.map((id) => (campaigns.find((c) => c.id === id) || {}).name || '')
+    html += '<div class="home-bar"><div class="grow"><div class="hb-n">' + picked.length + ' tag' + (picked.length === 1 ? '' : 's') + '</div><div class="hb-names">' + esc(names.join(' + ')) + '</div></div>' +
+      '<button class="btn ghost" id="pick-clear" style="height:28px;padding:0 8px">Clear</button><button class="btn" id="pick-open" style="height:28px">Open</button>' +
+      '<button class="btn primary" id="pick-wall" style="height:28px"' + (S.token ? '' : ' disabled') + '>' + icon('wall', 13) + 'Wall</button></div>'
+  }
+  html += footer() + '</div>'
   $('app').innerHTML = html
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn) }
+  const togglePick = (id) => { S.homePick = picked.indexOf(id) >= 0 ? picked.filter((x) => x !== id) : picked.concat(id); renderHome() }
+  document.querySelectorAll('[data-pick]').forEach((el) => el.addEventListener('click', (e) => { e.stopPropagation(); togglePick(el.dataset.pick) }))
+  on('pick-clear', 'click', () => { S.homePick = []; renderHome() })
+  on('pick-open', 'click', () => { setView(viewIdFor(picked)); S.homePick = []; S.view = 'panel'; render() })
+  on('pick-wall', 'click', () => { setView(viewIdFor(picked)); S.homePick = []; openWall() })
   on('settings', 'click', () => { S.view = 'setup'; render() })
   on('connect', 'click', () => { S.view = 'setup'; render() })
   on('search-now', 'click', () => discover({ manual: true }))
@@ -2938,12 +3165,13 @@ function renderHome() {
   on('home-q', 'input', (e) => { S.homeQuery = e.target.value; const pos = e.target.selectionStart; renderHome(); const el = $('home-q'); if (el) { el.focus(); el.setSelectionRange(pos, pos) } })
   const pick = (id) => { const c = campaigns.find((x) => x.id === id); S.data.activeCampaignId = id; send('set-active', { campaignId: id, campaignName: c ? c.name : '' }) }
   document.querySelectorAll('[data-campaign]').forEach((el) => {
-    const go = () => { pick(el.dataset.campaign); S.view = 'panel'; render() }
-    el.addEventListener('click', (e) => { if (!e.target.closest('[data-wall]')) go() })
+    const go = () => { pick(el.dataset.campaign); S.homePick = []; S.view = 'panel'; render() }
+    // While picking several tags, clicking a tag's card ticks it.
+    el.addEventListener('click', (e) => { if (e.target.closest('[data-wall]')) return; if (picked.length && el.dataset.campaign !== ALL_TAGS) togglePick(el.dataset.campaign); else go() })
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go() } })
   })
   document.querySelectorAll('[data-wall]').forEach((el) => el.addEventListener('click', () => {
-    pick(el.dataset.wall)
+    pick(el.dataset.wall); S.homePick = []
     if (!S.token) { S.view = 'setup'; render(); return }
     openWall()
   }))
@@ -3040,7 +3268,7 @@ function renderSetup() {
   }
   html += '</div>'
 
-  if (c && !c.all) {
+  if (c && !c.all && !c.multi) {
     html += '<div class="sep"></div><div class="stack">' + h2('Tag')
     html += '<div class="row"><input class="field" id="rename" value="' + esc(c.name) + '" aria-label="Tag name"><button class="btn" id="do-rename">Rename</button></div>'
     html += '<button class="btn danger" id="hide">' + (c.shared ? 'Hide “' + esc(c.name) + '” from my list' : 'Delete “' + esc(c.name) + '”') + '</button></div>'
@@ -3172,7 +3400,8 @@ function handleLaunch(cmd) {
   const it = S.selection && S.selection.items[0]
   const tag = it && (it.inCampaigns || [])[0]
   if (cmd === 'open' && tag && S.token && S.file.key) {
-    if ((it.inCampaigns || []).indexOf(S.data.activeCampaignId) < 0 && S.data.activeCampaignId !== ALL_TAGS) { S.data.activeCampaignId = tag; send('set-active', { campaignId: tag, campaignName: tagName(tag) }) }
+    const inView = (it.inCampaigns || []).some((t) => t === S.data.activeCampaignId || viewTagIds(S.data.activeCampaignId).indexOf(t) >= 0)
+    if (!inView && S.data.activeCampaignId !== ALL_TAGS) { S.data.activeCampaignId = tag; send('set-active', { campaignId: tag, campaignName: tagName(tag) }) }
     S.wall.focusId = S.file.key + '|' + it.id
     setTimeout(openWall, 0)
     return
@@ -3180,6 +3409,7 @@ function handleLaunch(cmd) {
   S.focusTag = true
 }
 function openWall() {
+  S.wall.multi = !!(campaign() || {}).multi
   S.view = 'wall'; S.wall.fitted = false; S.wall.selected = []; S.wall.touched = false
   S.wall.synced = false; S.wall.tried = {}; S.wall.retried = {}; S.wall.present = null
   S.wall.known = null; S.wall.lastPos = null; S.wall.arriving = {}
@@ -3229,7 +3459,7 @@ function wallGroupsRaw(c, by) {
     const names = {}; allCampaigns().forEach((t) => { names[t.id] = t.name })
     const order = [], byKey = {}
     for (const it of c.items) {
-      const tags = (it.tags || []).filter((t) => c.all || t !== c.id)
+      const tags = (it.tags || []).filter((t) => c.all || (c.multi ? c.tagIds.indexOf(t) >= 0 : t !== c.id))
       for (const t of (tags.length ? tags : [''])) {
         if (!byKey[t]) { byKey[t] = { key: t, label: t ? names[t] || 'Tag' : (c.all ? 'No tag' : 'Only ' + c.name), items: [] }; order.push(byKey[t]) }
         byKey[t].items.push(it)
@@ -3252,13 +3482,17 @@ function wallGroupsRaw(c, by) {
 }
 
 const SPACING = { tight: [32, 120], normal: [80, 240], roomy: [200, 480] }   // [gap between frames, gap between rows]
+// How wide a row can get before it wraps, in wall units (a desktop frame is about 1440). "Fit window"
+// picks the width that lets the whole wall show biggest in the window (see fitRowWidth).
+const ROW_WIDTHS = { narrow: 6000, wide: 16000, line: 1e9 }
 // Lays out the wall. Frame names, row headings and section names stay screen-sized, so the room they
 // need in wall units depends on the zoom. zRef is the zoom the room is sized for: the fit-to-screen zoom,
-// found by wallLayout() (a couple of passes, since the room changes the wall's size).
-function layout(c, zRef) {
+// found by wallLayout() (a couple of passes, since the room changes the wall's size). maxRow is the
+// row width (above).
+function layout(c, zRef, maxRow) {
   const view = wallView()
   const sp = SPACING[view.spacing] || SPACING.normal
-  const GAP = sp[0], LABEL = view.names ? 60 : 16, ROW_GAP = sp[1], MAX_ROW = 9000
+  const GAP = sp[0], LABEL = view.names ? 60 : 16, ROW_GAP = sp[1], MAX_ROW = maxRow || 9000
   const z = Math.max(0.03, Math.min(1, zRef || 0.25)), px = (n) => Math.round(n / z)   // screen px → wall units
   // Sections (clusters within rows) are Figma-style boxes in wall units: padding around the frames, room
   // inside the top for the frame names, and the section's name sitting just above the box.
@@ -3268,43 +3502,70 @@ function layout(c, zRef) {
   let y = 0
   let maxX = 0
   for (const src of wallGroups(c, view.group)) {
-    const items = src.items
     const cl0 = !!src.clustered
-    const above = cl0 ? SEC.title + SEC.top : LABEL          // from the row's top to the frames' top
+    const above = cl0 ? SEC.title + SEC.top : Math.max(LABEL, view.names ? px(labelPx + 12) : 0)   // from the row's top to the frames' top
     const below = cl0 ? SEC.pad : 0                          // under the frames, inside the section
     const g = { label: src.label, y: y + above, items: [], segments: [] }
-    let x = 0, rowY = y + above, rowH = 0, seg = null, prevKey = null
-    const close = () => { if (seg) { g.segments.push(seg); seg = null } }
-    for (const it of items) {
-      // Device frames on the wall: the frame keeps its place inside a bigger block (its chrome around it).
+    // Each frame's size on the wall (device frames: the frame keeps its place inside a bigger block).
+    const boxes = src.items.map((it) => {
       const dev = view.devicePresent === 'wall' ? deviceFor(it) : 'none'
       const n = wallGeo(nodeInfo(it), view, dev)
       const w = Math.max(40, (n && (n.viewW || n.width)) || it.width || 400)
       const h = Math.max(40, (n && (n.viewH || n.height)) || it.height || 300)
       const db = wallDevBox(dev, n, w, h)
       const ins = db ? db.ins : NO_INSETS
-      const ow = w + ins.l + ins.r, oh = h + ins.t + ins.b
-      const cl = cl0 ? clusterOf(it, src.mode) : null
-      const newCluster = cl && prevKey !== null && cl.key !== prevKey
-      if (newCluster && x > 0) x += SEC.between + SEC.pad * 2 - GAP
-      if (x > 0 && x + ow > MAX_ROW) { close(); x = 0; rowY += rowH + below + (cl0 ? px(28) : GAP) + above; rowH = 0 }
-      if (cl && (!seg || newCluster)) { close(); seg = { label: cl.label, x1: x, x2: x + ow, y: rowY, ids: [] } }
-      g.items.push({ it: it, n: n, x: x + ins.l, y: rowY + ins.t, w: w, h: h, dev: db ? dev : 'none', db: db, ins: ins, oy: rowY, oh: oh })
-      if (seg) { seg.x2 = x + ow; seg.ids.push(it.id) }
-      x += ow + GAP; rowH = Math.max(rowH, oh); maxX = Math.max(maxX, x - GAP + (cl0 ? SEC.pad : 0))
-      if (cl) prevKey = cl.key
-    }
-    close()
-    // Sections in a row share its height (its tallest frame), so they line up.
-    g.segments.forEach((sg) => {
-      sg.h = Math.max.apply(null, g.items.filter((p) => p.oy === sg.y).map((p) => p.oh))
-      sg.box = { x: sg.x1 - SEC.pad, y: sg.y - SEC.top, w: sg.x2 - sg.x1 + SEC.pad * 2, h: sg.h + SEC.top + SEC.pad }
+      return { it: it, n: n, w: w, h: h, db: db, dev: db ? dev : 'none', ins: ins, ow: w + ins.l + ins.r, oh: h + ins.t + ins.b }
     })
+    const place = (b, x, top) => g.items.push({ it: b.it, n: b.n, x: x + b.ins.l, y: top + b.ins.t, w: b.w, h: b.h, dev: b.dev, db: b.db, ins: b.ins, oy: top, oh: b.oh })
+    let rowY = y + above, rowH = 0
+    if (!cl0) {
+      // A plain row: frames left to right, wrapping onto a new line when the row is full.
+      let x = 0
+      for (const b of boxes) {
+        if (x > 0 && x + b.ow > MAX_ROW) { x = 0; rowY += rowH + GAP + above; rowH = 0 }
+        place(b, x, rowY)
+        x += b.ow + GAP; rowH = Math.max(rowH, b.oh); maxX = Math.max(maxX, x - GAP)
+      }
+    } else {
+      // A row split into sections (by file, page or channel). Sections are kept whole: each lays out its
+      // own frames (wrapping inside itself only when it's wider than a whole row), then sections sit side
+      // by side and move to a new line as blocks, so one file never ends up split into two sections.
+      const secs = []
+      for (const b of boxes) {
+        const cl = clusterOf(b.it, src.mode), last = secs[secs.length - 1]
+        if (!last || last.key !== cl.key) secs.push({ key: cl.key, label: cl.label, list: [] })
+        secs[secs.length - 1].list.push(b)
+      }
+      for (const sc of secs) {
+        let x = 0, ly = 0, lh = 0
+        sc.w = 0
+        for (const b of sc.list) {
+          if (x > 0 && x + b.ow > MAX_ROW) { ly += lh + GAP + SEC.top; x = 0; lh = 0 }   // room for the next line's names
+          b.lx = x; b.ly = ly
+          x += b.ow + GAP; lh = Math.max(lh, b.oh); sc.w = Math.max(sc.w, x - GAP)
+        }
+        sc.h = ly + lh
+      }
+      let x = 0
+      for (const sc of secs) {
+        if (x > 0 && x + sc.w > MAX_ROW) { x = 0; rowY += rowH + below + px(28) + above; rowH = 0 }
+        const seg = { label: sc.label, x1: x, x2: x + sc.w, y: rowY, h: sc.h, ids: [] }
+        for (const b of sc.list) { place(b, x + b.lx, rowY + b.ly); seg.ids.push(b.it.id) }
+        g.segments.push(seg)
+        maxX = Math.max(maxX, x + sc.w + SEC.pad)
+        x += sc.w + SEC.pad * 2 + SEC.between; rowH = Math.max(rowH, sc.h)
+      }
+      // Sections on the same line share its height (its tallest section), so they line up.
+      g.segments.forEach((sg) => {
+        sg.h = Math.max.apply(null, g.segments.filter((o) => o.y === sg.y).map((o) => o.h))
+        sg.box = { x: sg.x1 - SEC.pad, y: sg.y - SEC.top, w: sg.x2 - sg.x1 + SEC.pad * 2, h: sg.h + SEC.top + SEC.pad }
+      })
+    }
     groups.push(g)
-    y = rowY + rowH + below + (cl0 ? Math.max(ROW_GAP * 0.6, px(36)) : ROW_GAP)
+    y = rowY + rowH + below + (cl0 ? Math.max(ROW_GAP * 0.6, px(36)) : Math.max(ROW_GAP, px(28)))
   }
-  const lastGap = groups.length && groups[groups.length - 1].segments.length ? Math.max(ROW_GAP * 0.6, px(36)) : ROW_GAP
-  return { groups: groups, width: maxX, height: Math.max(0, y - lastGap), zRef: z }
+  const lastGap = groups.length && groups[groups.length - 1].segments.length ? Math.max(ROW_GAP * 0.6, px(36)) : Math.max(ROW_GAP, px(28))
+  return { groups: groups, width: maxX, height: Math.max(0, y - lastGap), zRef: z, maxRow: MAX_ROW }
 }
 // With "Hide" content outside a frame, the wall shows a window instead of the whole render: the frame's
 // own box, or, for a frame shown in a device, the device's screen. It returns a copy of the node sized to
@@ -3350,13 +3611,41 @@ function fitZoomFor(b) {
   return Math.max(0.02, Math.min(1, Math.min((vw - pad * 2 - gutter) / b.width, (vh - pad * 2) / b.height)))
 }
 function wallLayout(c) {
-  let L = layout(c, 0.25)
+  const mode = wallView().rows
+  const maxRow = mode === 'fit' ? fitRowWidth(c) : (ROW_WIDTHS[mode] || 9000)
+  let L = layout(c, 0.25, maxRow)
   for (let i = 0; i < 3; i++) {
     const z = fitZoomFor(L)
     if (Math.abs(z - L.zRef) / L.zRef < 0.05) break
-    L = layout(c, z)
+    L = layout(c, z, maxRow)
   }
   return L
+}
+// "Fit window": tries the row widths that give 1, 2, 3… lines and keeps the one that shows the wall
+// biggest in the window (a wider one wins unless a narrower one is clearly better). Remembered until the
+// frames, their sizes, the view options or the window's size change.
+function fitRowWidth(c) {
+  const vp = $('viewport')
+  const vw = (vp && vp.clientWidth) || 1200, vh = (vp && vp.clientHeight) || 750
+  const key = [vw, vh, JSON.stringify(wallView()), orderItems(c).map((it) => { const n = nodeInfo(it); return it.id + ':' + (n ? (n.viewW || n.width) + 'x' + (n.viewH || n.height) : '') }).join(',')].join('|')
+  if (S.wall.rowFit && S.wall.rowFit.key === key) return S.wall.rowFit.w
+  // Room for labels and section padding depends on the zoom, so each width is laid out at its own fit zoom.
+  const settle = (w) => {
+    let L = layout(c, 0.25, w)
+    for (let i = 0; i < 3; i++) { const z = fitZoomFor(L); if (Math.abs(z - L.zRef) / L.zRef < 0.05) break; L = layout(c, z, w) }
+    return L
+  }
+  const one = settle(ROW_WIDTHS.line)
+  let best = { z: fitZoomFor(one), w: ROW_WIDTHS.line }
+  for (let k = 2; k <= 12; k++) {
+    const w = Math.ceil(one.width / k) + 1
+    if (w < 1200) break
+    const z = fitZoomFor(settle(w))
+    if (z > best.z * 1.03) best = { z: z, w: w }
+  }
+  const w = best.w
+  S.wall.rowFit = { key: key, w: w }
+  return w
 }
 
 function renderWallShell() {
@@ -3398,6 +3687,7 @@ function renderWallBar() {
 function renderWall() {
   if (S.view !== 'wall') return
   const c = campaign()
+  S.wall.multi = !!(c && c.multi)
   const world = $('world'); if (!world) return
   const banner = $('banner')
   banner.innerHTML = S.wall.banner ? '<div class="notice ' + (S.wall.banner.kind === 'error' ? 'error' : 'warn') + '">' + esc(S.wall.banner.text) + '</div>' : ''
@@ -3497,6 +3787,16 @@ window.addEventListener('resize', () => {
   if (S.view !== 'wall') return
   if (S.wall.refocusUntil > Date.now() && S.wall.selected.length) zoomToSelection()
   else if (!S.wall.touched) fit()
+  // "Fit window" rows depend on the window's shape: lay the wall out again once resizing settles.
+  if (wallView().rows === 'fit') {
+    clearTimeout(S.wall.rowFitTimer)
+    S.wall.rowFitTimer = setTimeout(() => {
+      if (S.view !== 'wall' || S.wall.present) return
+      const before = S.wall.bounds && S.wall.bounds.maxRow
+      const c = campaign(); if (!c || !c.items.length || fitRowWidth(c) === before) return
+      S.wall.fitted = S.wall.touched; renderWall()
+    }, 200)
+  }
 })
 // Clicking into a live prototype moves the keyboard into it. Say once how to get Showroom's keys back.
 window.addEventListener('blur', () => {
@@ -3624,7 +3924,7 @@ function renderInspector() {
     const live = S.wall.live && S.wall.live.id === it.id
     if (hasProto(items[0])) html += '<div class="row" style="margin-top:4px"><button class="btn grow" id="insp-play" title="Play the live prototype right here on the wall">' + icon(live ? 'x' : 'play', 14) + (live ? 'Stop prototype' : 'Play prototype') + '</button>' +
       '<button class="btn" id="insp-play-large" title="Play the prototype in a large window over the wall">' + icon('fit', 14) + 'Large</button></div>'
-    html += '<div class="row" style="margin-top:4px"><button class="btn ghost" id="insp-history" style="padding:0 4px">' + icon('clock', 14) + 'History</button><span class="grow"></span><button class="btn ghost danger" id="insp-remove" style="padding:0 4px">' + (editable ? (c.all ? 'Remove all tags' : 'Remove tag') : 'Hide on my wall') + '</button></div>'
+    html += '<div class="row" style="margin-top:4px"><button class="btn ghost" id="insp-history" style="padding:0 4px">' + icon('clock', 14) + 'History</button><span class="grow"></span><button class="btn ghost danger" id="insp-remove" style="padding:0 4px">' + (editable ? (c.all ? 'Remove all tags' : c.multi ? 'Remove these tags' : 'Remove tag') : 'Hide on my wall') + '</button></div>'
   } else {
     html += '<div class="row" style="align-items:flex-start"><div class="grow"><div style="font-weight:600;font-size:13px">' + items.length + ' frames selected</div>'
     const names = items.slice(0, 3).map((it) => esc((nodeInfo(it) || {}).name || it.name)).join(', ')
@@ -3636,7 +3936,7 @@ function renderInspector() {
     html += statusControl(items)
     html += deviceControl(items)
     html += '<div class="row" style="margin-top:10px"><button class="btn primary grow" id="insp-refresh" title="Reload these frames from their files now"' + busy + '>' + icon('refresh', 14) + 'Refresh ' + items.length + ' frames</button></div>'
-    html += '<button class="btn ghost danger" id="insp-remove" style="margin-top:4px;padding:0 4px">' + (c.all ? 'Remove all tags from ' + items.length : 'Remove the tag from ' + items.length) + ' frames</button>'
+    html += '<button class="btn ghost danger" id="insp-remove" style="margin-top:4px;padding:0 4px">' + (c.all ? 'Remove all tags from ' + items.length : c.multi ? 'Remove these tags from ' + items.length : 'Remove the tag from ' + items.length) + ' frames</button>'
   }
   box.innerHTML = html
   box.classList.remove('hidden')
@@ -4046,7 +4346,7 @@ window.onmessage = (event) => {
   if (msg.type === 'state') {
     const firstLoad = S.view === 'loading'
     S.data = msg.data; S.token = msg.token || ''; S.prefs = msg.prefs || {}; S.selection = msg.selection; S.file = msg.file
-    S.editor = msg.editor || 'figma'; S.boardInfo = msg.board || null
+    S.editor = msg.editor || 'figma'; S.boardInfo = msg.board || null; S.me = msg.me || S.me || ''
     if (msg.boardResult) { S.boardJob = null }
     if (firstLoad) S.cache = msg.cache && msg.cache.files ? msg.cache : { files: {} }
     else if (msg.cache && msg.cache.files && !S.wall.busy) mergeCache(msg.cache)
@@ -4081,7 +4381,7 @@ window.onmessage = (event) => {
   if (msg.type === 'error') { toast(msg.message, true); if (S.boardJob) { S.boardJob = null; render() } }
 }
 
-window.showroomTest = { discover: discover, pollIndex: pollIndex, renderWall: renderWall, autoDevice: autoDevice, pageParts: pageParts, deviceView: deviceView, liveBox: liveBox, placementOf: placementOf }
+window.showroomTest = { discover: discover, pollIndex: pollIndex, renderWall: renderWall, autoDevice: autoDevice, pageParts: pageParts, deviceView: deviceView, liveBox: liveBox, placementOf: placementOf, layout: layout, fitRowWidth: fitRowWidth, fitZoomFor: fitZoomFor, campaign: campaign, wallLayout: wallLayout }
 setInterval(() => { pollIndex() }, INDEX_POLL)   // lets the automated tests run a search directly
 send('init')
 </script>

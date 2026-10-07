@@ -27,6 +27,9 @@ const OLD_KEYS = ['cw.data.v1', 'cw.token', 'cw.cache.v1', 'cw.scan.v1', 'cw.pre
 const PANEL_SIZE = { width: 360, height: 640 };
 const MANIFEST_LIMIT = 95000;              // Figma allows 100 kB per plugin data entry
 const ALL_TAGS = '__all';                  // the UI's "All tagged frames" view
+const MULTI_TAGS = '__tags:';              // the UI's view of several tags: '__tags:<id>,<id>'
+// The tags a view id stands for: several, or just the one.
+function viewTags(cid) { return String(cid || '').indexOf(MULTI_TAGS) === 0 ? String(cid).slice(MULTI_TAGS.length).split(',').filter(Boolean) : [cid]; }
 let launchCommand = '';                    // set from figma.command when the plugin starts
 const LINK_LIMIT = 300;                    // most other campaign files one manifest links to
 const ELIGIBLE = ['FRAME', 'COMPONENT', 'COMPONENT_SET', 'INSTANCE', 'GROUP', 'SECTION'];
@@ -246,7 +249,7 @@ async function sendState(extra) {
     type: 'state', data: data, token: token, cache: cache, scan: scan, prefs: prefs,
     selection: selectionInfo(manifest),
     file: { key: currentFileKey(), name: figma.root.name, keyFromApi: !!figma.fileKey, manifest: manifest, flows: flowStarts() },
-    editor: figma.editorType, board: figma.editorType === 'figjam' ? boardSummary() : null,
+    me: whoAmI(), editor: figma.editorType, board: figma.editorType === 'figjam' ? boardSummary() : null,
     // Opened from a frame's "Open in Showroom" / "Edit tags" button in Figma's properties panel (first state only).
     command: launchCommand,
   }, extra || {}));
@@ -376,7 +379,8 @@ async function removeItems(msg) {
     const fileKey = id.slice(0, bar);
     const nodeId = id.slice(bar + 1);
     // ALL_TAGS (the "All tagged frames" view) takes every tag off the frame.
-    const cids = msg.campaignId === ALL_TAGS ? Object.keys(manifest.campaigns).filter((cid) => manifest.campaigns[cid].items[nodeId]) : [msg.campaignId];
+    // Several tags at once: each of them.
+    const cids = msg.campaignId === ALL_TAGS ? Object.keys(manifest.campaigns).filter((cid) => manifest.campaigns[cid].items[nodeId]) : viewTags(msg.campaignId);
     const here = cids.filter((cid) => manifest.campaigns[cid] && manifest.campaigns[cid].items[nodeId]);
     if (fileKey === key && here.length) {
       const node = await figma.getNodeByIdAsync(nodeId);
@@ -389,14 +393,17 @@ async function removeItems(msg) {
       continue;
     }
     // It belongs to another file: only that file can change the team's list. Hide it for you.
-    const list = data.hiddenItems[msg.campaignId] || (data.hiddenItems[msg.campaignId] = []);
-    if (list.indexOf(id) < 0) list.push(id);
+    for (const cid of msg.campaignId === ALL_TAGS ? [ALL_TAGS] : viewTags(msg.campaignId)) {
+      const list = data.hiddenItems[cid] || (data.hiddenItems[cid] = []);
+      if (list.indexOf(id) < 0) list.push(id);
+    }
     hidden += 1;
   }
   if (manifestChanged) writeManifest(manifest);
   await saveData(data);
   const parts = [];
-  if (removed) parts.push((msg.campaignId === ALL_TAGS ? 'Tags removed from ' + (removed === 1 ? 'the frame' : removed + ' frames') : (removed === 1 ? 'Tag removed' : 'Tag removed from ' + removed + ' frames')) + ' for everyone');
+  const several = msg.campaignId === ALL_TAGS || viewTags(msg.campaignId).length > 1;
+  if (removed) parts.push((several ? 'Tags removed from ' + (removed === 1 ? 'the frame' : removed + ' frames') : (removed === 1 ? 'Tag removed' : 'Tag removed from ' + removed + ' frames')) + ' for everyone');
   if (hidden) parts.push((hidden === 1 ? '1 frame lives' : hidden + ' frames live') + ' in other files, so ' + (hidden === 1 ? 'it’s' : 'they’re') + ' hidden on your wall only. Remove ' + (hidden === 1 ? 'it' : 'them') + ' from ' + (hidden === 1 ? 'its' : 'their') + ' file to remove for everyone');
   return { message: parts.join('. ') + '.' };
 }
@@ -517,7 +524,7 @@ async function handle(msg) {
     }
     case 'unhide-items': {
       const data = await loadData();
-      delete data.hiddenItems[msg.campaignId];
+      for (const cid of viewTags(msg.campaignId)) delete data.hiddenItems[cid];
       await saveData(data);
       return sendState({ message: 'Hidden frames shown again.' });
     }
