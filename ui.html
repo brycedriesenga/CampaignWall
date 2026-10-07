@@ -385,9 +385,6 @@ body.presenting .sec { display: none; }
 .dv-live .sk { position: absolute; inset: 0; }
 .dv-live iframe { position: absolute; border: 0; opacity: 0; transition: opacity .3s; }
 .dv-live iframe.in { opacity: 1; }
-.dv-sticky { position: absolute; top: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity .15s, box-shadow .2s; }
-.dv-sticky.stuck { opacity: 1; box-shadow: 0 6px 18px rgba(0,0,0,.14); }
-.dv-sticky img { display: block; width: 100%; height: 100%; }
 .dv-scroll { position: absolute; right: 3px; top: 3px; bottom: 3px; width: 6px; }
 .dv-scroll i { position: absolute; left: 0; right: 0; border-radius: 3px; background: rgba(0,0,0,.35); transition: top .45s cubic-bezier(.2,.7,.2,1); }
 /* Browser window: tab strip + toolbar, neutral (not any real browser) */
@@ -1324,7 +1321,7 @@ function solidFill(doc) {
 }
 // Signs that a frame is a whole page: a header/navigation layer across the top, or a footer along
 // the bottom (direct children, or inside a single wrapper that fills the frame). The header's id and
-// height are kept for the sticky header in Present.
+// height are kept with the frame (they help tell whole pages from page parts).
 function pageParts(doc) {
   const bb = doc && doc.absoluteBoundingBox
   if (!bb || !bb.width) return { hdr: null, ftr: false }
@@ -1395,7 +1392,6 @@ async function syncItems(list, opts) {
           const parts = pageParts(doc)
           fc.nodes[id] = Object.assign({ name: doc.name, hash: hash, proto: proto, hdr: parts.hdr, ftr: parts.ftr }, frameGeometry(doc), {
             url: same ? prev.url : '', urlAt: same ? prev.urlAt : 0,
-            hdrUrl: same ? prev.hdrUrl || '' : '', hdrUrlAt: same ? prev.hdrUrlAt || 0 : 0,
             changedAt: prev.hash && !same ? (Date.parse(fc.lastTouchedAt) || Date.now()) : (prev.changedAt || 0),
           })
         }
@@ -1446,7 +1442,7 @@ async function syncItems(list, opts) {
 }
 
 // ---------- wall view options (saved per person in prefs.wallView) ----------
-const WALL_VIEW_DEFAULTS = { devicePresent: 'on', siteAddress: '', stickyHeader: true, protoStyle: 'legacy', protoPresent: 'auto', bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, edge: 'both', spacing: 'normal', group: 'channel',
+const WALL_VIEW_DEFAULTS = { devicePresent: 'on', siteAddress: '', deviceHeight: 'real', protoStyle: 'legacy', protoPresent: 'auto', bg: 'auto', grid: true, frame: 'border', names: true, meta: true, headings: true, edge: 'both', spacing: 'normal', group: 'channel',
   subChannel: 'file', subFile: 'channel', subNone: 'off' }   // how frames cluster inside each row, per grouping
 // Inside a row, frames can cluster by the other dimension: by file (and page) in channel rows,
 // by channel (or page) in file rows. Each choice: [value, button label].
@@ -1519,7 +1515,8 @@ function renderViewOptions() {
   html += '<div><div class="vo-title">Live prototypes</div>' + seg('protoStyle', [['legacy', 'Clean'], ['kit2', 'With controls']], { legacy: 'Just the prototype, no Figma controls', kit2: 'Adds Figma’s back, forward and restart buttons under the prototype' }) +
     '<div style="height:6px"></div>' + seg('protoPresent', [['auto', 'Play in Present'], ['click', 'Only with ▶']], { auto: 'Prototype frames start playing when you reach them in Present', click: 'Prototypes only play when you press ▶' }) + '</div>'
   html += '<div><div class="vo-title">Device frames</div>' + seg('devicePresent', [['on', 'In Present'], ['wall', 'Wall too'], ['off', 'Off']], { on: 'Site pages show in a browser window or phone when you present them', wall: 'Also show browser and phone chrome around Site pages on the wall', off: 'Present frames on their own' }) +
-    '<label class="row small" style="margin-top:6px;gap:6px"><input type="checkbox" data-vo-toggle="stickyHeader"' + (v.stickyHeader !== false ? ' checked' : '') + '> Keep the page’s header at the top while it scrolls</label>' +
+    '<div class="muted small" style="margin:8px 0 4px">Screen-sized frames in Present</div>' +
+    seg('deviceHeight', [['real', 'Real screen'], ['frame', 'Whole frame']], { real: 'The device is a normal size; the frame fills its screen under the bars and the rest scrolls', frame: 'The device grows so the whole frame shows between the bars' }) +
     '<input class="field" id="vo-site" style="margin-top:6px;height:28px" placeholder="Address in the browser bar, e.g. www.merrell.com" value="' + esc(v.siteAddress || '') + '" aria-label="Address shown in the browser bar"></div>'
   html += '<div>' + toggle('grid', 'Dot grid') + toggle('names', 'Frame names') + toggle('meta', 'File and edit info') + toggle('headings', 'Row headings') + '</div>'
   html += '<div class="row" style="justify-content:space-between"><button class="btn ghost" id="vo-reset" style="height:26px;padding:0 6px">Reset to defaults</button>' +
@@ -1928,9 +1925,7 @@ function deviceHTML(kind, it, n, g, VH, proto) {
   const M = LIVE_MARGIN
   const live = proto ? '<div class="dv-view" style="height:' + VH + 'px"><div class="dv-live">' + skeleton('Loading the prototype…') +
     '<iframe src="' + esc(protoUrl(it, protoStyle(), 'min-zoom')) + '" style="left:' + (-M) + 'px;top:' + (H > VH ? 0 : -M) + 'px;width:' + (W + M * 2) + 'px;height:' + (H > VH ? VH : VH + M * 2) + 'px" allow="fullscreen; clipboard-write" allowfullscreen referrerpolicy="origin" title="Live prototype"></iframe></div></div>' : ''
-  const sticky = n && n.hdr && PH > VH && wallView().stickyHeader !== false
-    ? '<div class="dv-sticky" style="left:' + (n.hdr.x || 0) + 'px;width:' + (n.hdr.w || W) + 'px;height:' + n.hdr.h + 'px">' + (n.hdrUrl ? '<img src="' + esc(n.hdrUrl) + '" alt="" draggable="false">' : '') + '</div>' : ''
-  const page = '<div class="dv-view" style="height:' + VH + 'px' + (n && n.fill ? ';background:' + n.fill : '') + '">' + sticky + '<div class="dv-page" style="width:' + W + 'px;height:' + PH + 'px">' +
+  const page = '<div class="dv-view" style="height:' + VH + 'px' + (n && n.fill ? ';background:' + n.fill : '') + '"><div class="dv-page" style="width:' + W + 'px;height:' + PH + 'px">' +
     (n && n.url ? '<img src="' + esc(n.url) + '" alt="" draggable="false" style="left:' + (-(n.offX || 0)) + 'px;top:' + (-(n.offY || 0)) + 'px;width:' + (n.viewW || W) + 'px;height:' + (n.viewH || H) + 'px">' : skeleton(PHASE_TEXT.image)) +
     '</div>' + (PH > VH ? '<div class="dv-scroll"><i></i></div>' : '') + '</div>'
   const view = live || page
@@ -1991,14 +1986,7 @@ function showDevice(p, opts) {
   if (!p || kind === 'none') { if (stage) stage.remove(); S.wall.dev = null; return }
   const n = p.n || nodeInfo(p.it) || {}
   const g = pageBox(n, p), W = g.W, H = g.H, PH = g.PH
-  // How much of the page fits in the device's window: about a laptop screen, or a phone screen.
-  const full = kind === 'phone' ? Math.round(W * 2.164) - 54 - 112 : Math.round(W * 0.56)
-  // A frame with the rest of the page spilling out below it is the screen itself, so the window is the
-  // frame's height. A live prototype gets the whole frame when it's roughly a screen (Figma's viewer can't
-  // scroll a frame that's taller than its window); a long page prototype scrolls inside Figma's viewer.
-  const VH = PH > H ? (H <= full * 2 ? H : full)
-    : opts.proto ? (H <= full * 1.6 ? H : full)
-    : (H <= full * 1.15 ? H : full)
+  const VH = deviceView(kind, W, H, PH, !!opts.proto, wallView().deviceHeight)
   if (!stage) { stage = document.createElement('div'); stage.id = 'dev'; vp.appendChild(stage) }
   stage.innerHTML = '<div class="dv-fit">' + deviceHTML(kind, p.it, n, g, VH, opts.proto) + '</div>'
   const fitBox = stage.firstChild, dev = fitBox.firstChild
@@ -2010,12 +1998,27 @@ function showDevice(p, opts) {
   fitBox.style.width = (devW * sc) + 'px'; fitBox.style.height = (devH * sc) + 'px'
   fitBox.style.marginBottom = bottom + 'px'
   // A live prototype scrolls itself (trackpad over it), so the keys move between frames.
-  S.wall.dev = { id: p.it.id, y: 0, max: opts.proto ? 0 : Math.max(0, PH - VH), vh: VH, h: PH, s: sc, proto: !!opts.proto,
-    hdr: !opts.proto && n.hdr && PH > VH && wallView().stickyHeader !== false ? n.hdr : null }
+  S.wall.dev = { id: p.it.id, y: 0, max: opts.proto ? 0 : Math.max(0, PH - VH), vh: VH, h: PH, s: sc, proto: !!opts.proto }
   if (opts.proto) { const fr = stage.querySelector('.dv-live iframe'); if (fr) fr.addEventListener('load', () => { fr.classList.add('in'); const w = stage.querySelector('.dv-live .sk'); if (w) setTimeout(() => w.remove(), 320) }) }
   devApply(false)
   hudSync()
-  if (S.wall.dev.hdr && !n.hdrUrl) loadStickyHeader(p.it, n)
+}
+// How tall the device's page area is in Present, in the design's pixels.
+// A real screen: a phone is about 9:19.5 (390 × 844 with its status bar and browser bars), a browser
+// window 16:9 (1536 × 864 including its 88 px of tabs and toolbar). The page shows under the bars and scrolls.
+// mode 'real' (default): always a real screen; a frame shorter than that just shows whole.
+// mode 'frame': a screen-sized frame (one with the page spilling out below it, or about a screen tall)
+//   shows whole between the bars, so the device grows; long pages still get a real screen.
+// A live prototype always gets its whole frame when it's roughly a screen (Figma's player can't be
+// scrolled past its window from here); a long page prototype gets a real screen and scrolls itself.
+function deviceView(kind, W, H, PH, proto, mode) {
+  const bars = kind === 'phone' ? 54 + 112 : 88
+  const screen = kind === 'phone' ? Math.round(W * 2.164) : Math.round(W * 0.5625)
+  const full = screen - bars
+  if (proto) return H <= full * 1.6 ? H : full
+  const screenSized = PH > H ? H <= screen * 2 : H <= full * 1.15
+  if (mode === 'frame' && screenSized) return H
+  return Math.min(PH, full)
 }
 // The page inside a device: the frame's own box is the screen width; the page runs from the frame's top
 // to the bottom of everything rendered (content can spill below a viewport-sized frame). A few pixels of
@@ -2025,32 +2028,10 @@ function pageBox(n, p) {
   const below = n.viewH ? n.viewH - (n.offY || 0) : H
   return { W: W, H: H, PH: below > H + 40 ? below : H }
 }
-// The header layer is rendered once on its own (one image request), then reused until the frame changes.
-async function loadStickyHeader(it, n) {
-  if (!S.token || !n.hdr || S.wall.hdrLoading === it.id) return
-  S.wall.hdrLoading = it.id
-  try {
-    const res = await api('/images/' + it.fileKey + '?ids=' + encodeURIComponent(n.hdr.id) + '&format=png&scale=1')
-    const url = res && res.images && res.images[n.hdr.id]
-    if (url) {
-      n.hdrUrl = url; n.hdrUrlAt = Date.now()
-      S.cache.savedAt = Date.now(); send('save-cache', { cache: S.cache })
-      const layer = document.querySelector('#dev .dv-sticky')
-      if (layer && S.wall.dev && S.wall.dev.id === it.id) { layer.innerHTML = '<img src="' + esc(url) + '" alt="" draggable="false">'; devApply(false) }
-    }
-  } catch (e) { /* no sticky header this time; the page still scrolls */ }
-  S.wall.hdrLoading = ''
-}
 function devApply(animate) {
   const d = S.wall.dev; const stage = $('dev'); if (!d || !stage) return
   const pageEl = stage.querySelector('.dv-page')
   if (pageEl) { pageEl.classList.toggle('anim', !!animate); pageEl.style.transform = 'translateY(' + (-d.y) + 'px)' }
-  const st = stage.querySelector('.dv-sticky')
-  if (st && d.hdr) {
-    const top = d.hdr.y - d.y
-    st.style.top = Math.max(0, top) + 'px'
-    st.classList.toggle('stuck', top < 0 && !!st.firstChild)
-  }
   const thumb = stage.querySelector('.dv-scroll i')
   if (thumb && d.h) { thumb.style.height = (d.vh / d.h * 100) + '%'; thumb.style.top = (d.y / d.h * 100) + '%' }
 }
@@ -3682,7 +3663,7 @@ window.onmessage = (event) => {
   if (msg.type === 'error') { toast(msg.message, true); if (S.boardJob) { S.boardJob = null; render() } }
 }
 
-window.showroomTest = { discover: discover, pollIndex: pollIndex, renderWall: renderWall, autoDevice: autoDevice, pageParts: pageParts }
+window.showroomTest = { discover: discover, pollIndex: pollIndex, renderWall: renderWall, autoDevice: autoDevice, pageParts: pageParts, deviceView: deviceView }
 setInterval(() => { pollIndex() }, INDEX_POLL)   // lets the automated tests run a search directly
 send('init')
 </script>

@@ -533,9 +533,6 @@ function pointer(w, type, target, extra) {
     const idxBefore = $(wb, '#hud-what').textContent
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })); await tick(20)
     check('↓ scrolls the page inside the browser instead of moving on', pageY() > 0 && $(wb, '#hud-what').textContent === idxBefore, pageY() + ' ' + $(wb, '#hud-what').textContent)
-    await tick(60)
-    const stuck = wb.document.querySelector('#dev .dv-sticky')
-    check('the page’s header is rendered once and stays at the top while it scrolls', stuck && stuck.classList.contains('stuck') && /1:50/.test((stuck.querySelector('img') || {}).src || '') && api.calls.filter((x) => /images\/EMAILFILE0001\?ids=1%3A50/.test(x)).length === 1, stuck && stuck.outerHTML)
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })); await tick(20)
     check('↑ scrolls back up', pageY() === 0)
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)
@@ -547,13 +544,26 @@ function pointer(w, type, target, extra) {
     click(wb, '#insp-refresh'); await tick(600)
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'p', bubbles: true })); await tick(100)
     const view = wb.document.querySelector('#dev .dv-view'), pg = wb.document.querySelector('#dev .dv-page')
-    check('content spilling below a frame scrolls in Present: the window is the frame, the page is everything', view && view.style.height === '864px' && pg.style.height === '3000px' && /255, 128, 0/.test(view.style.background), view && view.outerHTML.slice(0, 200))
+    check('content spilling below a frame scrolls in Present: a real 16:9 window (864 with its bars), the page is everything', view && view.style.height === (864 - 88) + 'px' && pg.style.height === '3000px' && /255, 128, 0/.test(view.style.background), view && view.outerHTML.slice(0, 200))
     const wheel = (opts) => $(wb, '#viewport').dispatchEvent(new wb.WheelEvent('wheel', Object.assign({ bubbles: true, cancelable: true }, opts)))
     wheel({ deltaY: 300 }); await tick(10)
     const y1 = pageY()
     wheel({ deltaY: 3, deltaMode: 1 }); await tick(10)
     check('a mouse wheel scrolls it, anywhere over Present (pixels or lines)', y1 > 0 && pageY() > y1, y1 + ' → ' + pageY())
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)
+    const dv = wb.showroomTest.deviceView
+    check('device heights: real screens by default, whole screen-sized frames as an option, long pages a real screen either way',
+      dv('phone', 390, 844, 2400, false, 'real') === 678 && dv('phone', 390, 844, 2400, false, 'frame') === 844 && dv('phone', 390, 600, 600, false, 'real') === 600 &&
+      dv('phone', 390, 3000, 3000, false, 'frame') === 678 && dv('browser', 1536, 864, 3000, false, 'real') === 776 && dv('phone', 390, 844, 2400, true, 'real') === 844)
+    click(wb, '#view-opts'); await tick(10)
+    click(wb, '#viewopts [data-vo="deviceHeight"][data-val="frame"]'); await tick(20)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'p', bubbles: true })); await tick(100)
+    check('View options › “Whole frame” shows a screen-sized frame whole in Present', (wb.document.querySelector('#dev .dv-view') || {}).style.height === '864px' && (bryce.store.get('showroom.prefs').wallView || {}).deviceHeight === 'frame')
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)
+    click(wb, '#view-opts'); await tick(10)
+    click(wb, '#viewopts [data-vo="deviceHeight"][data-val="real"]'); await tick(20)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
     // A prototype frame with a device plays inside it in Present.
     api.files.EMAILFILE0001.nodes['1:5'].interactions = [{ trigger: { type: 'ON_CLICK' }, actions: [{ type: 'NODE', destinationId: '9:9' }] }]
     pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
