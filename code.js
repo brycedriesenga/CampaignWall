@@ -1,6 +1,10 @@
 // Showroom — code.js
 // Runs in Figma's plugin sandbox. It owns this computer's storage, the current selection,
 // this file's identity, the campaign list stored inside this file, and navigation.
+//
+// Naming: in the plugin a group of frames is a TAG (v0.15). Frames can have any number of tags.
+// Inside the code and the stored data a tag is still called a "campaign" (manifest key
+// "campaigns", campaignId, …), so files tagged with earlier builds keep working unchanged.
 // All calls to Figma's REST API happen in ui.html, because only the UI window can use the network.
 //
 // Where campaign membership lives (so the whole team sees the same campaigns):
@@ -22,6 +26,8 @@ const PREFS_KEY = 'showroom.prefs';        // window size, extra folders, etc.
 const OLD_KEYS = ['cw.data.v1', 'cw.token', 'cw.cache.v1', 'cw.scan.v1', 'cw.prefs.v1'];
 const PANEL_SIZE = { width: 360, height: 640 };
 const MANIFEST_LIMIT = 95000;              // Figma allows 100 kB per plugin data entry
+const ALL_TAGS = '__all';                  // the UI's "All tagged frames" view
+let launchCommand = '';                    // set from figma.command when the plugin starts
 const LINK_LIMIT = 300;                    // most other campaign files one manifest links to
 const ELIGIBLE = ['FRAME', 'COMPONENT', 'COMPONENT_SET', 'INSTANCE', 'GROUP', 'SECTION'];
 const DEFAULT_CHANNELS = ['Site', 'Email', 'Social', 'Display ads', 'Amazon', 'Retail', 'Other'];
@@ -151,7 +157,7 @@ function writeManifest(manifest) {
   // Links to other files are only a shortcut for finding them, so drop them before refusing.
   if (json.length > MANIFEST_LIMIT && manifest.links) { delete manifest.links; json = JSON.stringify(manifest); }
   if (json.length > MANIFEST_LIMIT && manifest.layouts) { delete manifest.layouts; json = JSON.stringify(manifest); }
-  if (json.length > MANIFEST_LIMIT) throw new Error('This file has too many campaign frames for one file’s storage. Remove some older campaigns from it first.');
+  if (json.length > MANIFEST_LIMIT) throw new Error('This file has too many tagged frames for one file’s storage. Remove some older tags from it first.');
   figma.root.setSharedPluginData(NS, MANIFEST_KEY, json);
   const page = figma.root.children[0];
   if (page) page.setSharedPluginData(NS, MANIFEST_KEY, json);
@@ -170,8 +176,16 @@ function tagNode(node, campaignId, add) {
   const tags = readTags(node).filter((id) => id !== campaignId);
   if (add) tags.push(campaignId);
   node.setSharedPluginData(NS, 'campaigns', tags.length ? JSON.stringify(tags) : '');
-  if (tags.length) node.setRelaunchData({ open: 'In ' + tags.length + ' campaign' + (tags.length === 1 ? '' : 's') });
-  else node.setRelaunchData({});
+  setRelaunch(node, tags);
+}
+// Figma's properties panel shows "Open in Showroom" and "Edit tags" for a tagged frame, with its tag names.
+function setRelaunch(node, tagIds, manifest) {
+  if (!tagIds.length) { node.setRelaunchData({}); return; }
+  const m = manifest || readManifest();
+  const names = tagIds.map((id) => (m.campaigns[id] && m.campaigns[id].name) || '').filter(Boolean);
+  let text = names.slice(0, 3).join(', ') + (names.length > 3 ? ' +' + (names.length - 3) : '');
+  if (!text) text = tagIds.length + ' tag' + (tagIds.length === 1 ? '' : 's');
+  node.setRelaunchData({ open: text, tags: '' });
 }
 
 function selectionInfo(manifest) {
@@ -205,7 +219,10 @@ async function sendState(extra) {
     selection: selectionInfo(manifest),
     file: { key: currentFileKey(), name: figma.root.name, keyFromApi: !!figma.fileKey, manifest: manifest, flows: flowStarts() },
     editor: figma.editorType, board: figma.editorType === 'figjam' ? boardSummary() : null,
+    // Opened from a frame's "Open in Showroom" / "Edit tags" button in Figma's properties panel (first state only).
+    command: launchCommand,
   }, extra || {}));
+  launchCommand = '';
 }
 
 async function sendSelection() {
@@ -241,20 +258,31 @@ async function addSelection(msg) {
   const fileKey = currentFileKey();
   if (!fileKey) return { needFileKey: true };
   const name = String(msg.campaignName || '').trim();
+  if (!msg.campaignId) {
+    if (!name) throw new Error('Give the tag a name.');
+    msg.campaignId = randomId('c_');
+  }
   const local = localCampaign(data, msg.campaignId, name);
-  const campaignName = name || (local && local.name) || 'Campaign';
+  const campaignName = name || (local && local.name) || 'Tag';
   if (local) local.items = [];
   const manifest = readManifest();
   const camp = manifest.campaigns[msg.campaignId] || (manifest.campaigns[msg.campaignId] = { name: campaignName, updatedAt: Date.now(), items: {} });
-  const page = figma.currentPage;
+  // The selection in Figma, or (from the wall's details) frames of this file by id.
+  const nodes = Array.isArray(msg.nodeIds)
+    ? (await Promise.all(msg.nodeIds.map((id) => figma.getNodeByIdAsync(id)))).filter(Boolean)
+    : figma.currentPage.selection;
   let added = 0;
   let updated = 0;
-  for (const node of page.selection) {
+  for (const node of nodes) {
     if (!isEligible(node)) continue;
+    const page = findPage(node) || figma.currentPage;
     const existing = camp.items[node.id];
+    // A frame has one channel, whatever tags it has: reuse the one it already has elsewhere.
+    const other = Object.values(manifest.campaigns).map((c) => c.items && c.items[node.id]).find(Boolean);
     const channel = msg.channel && msg.channel !== 'auto'
       ? msg.channel
-      : (existing ? existing.channel : guessChannel(node.width, node.height));
+      : (existing ? existing.channel : other ? other.channel : guessChannel(node.width, node.height));
+    if (msg.channel && msg.channel !== 'auto') for (const c of Object.values(manifest.campaigns)) if (c.items && c.items[node.id]) c.items[node.id].channel = msg.channel;
     camp.items[node.id] = {
       name: node.name, w: Math.round(node.width), h: Math.round(node.height), pageName: page.name, channel: channel,
       addedBy: existing ? existing.addedBy : whoAmI(), addedByPhoto: existing ? existing.addedByPhoto || '' : myPhoto(), addedAt: existing ? existing.addedAt : Date.now(), updatedAt: Date.now(),
@@ -265,13 +293,34 @@ async function addSelection(msg) {
     if (hiddenList) data.hiddenItems[msg.campaignId] = hiddenList.filter((id) => id !== fileKey + '|' + node.id);
   }
   writeManifest(manifest);
-  data.activeCampaignId = msg.campaignId;
+  for (const node of nodes) if (isEligible(node)) setRelaunch(node, readTags(node), manifest);
+  if (!msg.keepActive) data.activeCampaignId = msg.campaignId;
   data.hidden = data.hidden.filter((id) => id !== msg.campaignId);
   await saveData(data);
   const parts = [];
   if (added) parts.push(added + ' added');
   if (updated) parts.push(updated + ' updated');
   return { message: (parts.join(', ') || 'Nothing to add') + ' in ' + campaignName + '. Your team will see ' + (added + updated === 1 ? 'it' : 'them') + ' too.' };
+}
+
+// Re-reads the selected frames' names and sizes into every tag they have (the panel's Update button).
+async function updateSelection(msg) {
+  const manifest = readManifest();
+  const page = figma.currentPage;
+  let updated = 0;
+  for (const node of page.selection) {
+    if (!isEligible(node)) continue;
+    let hit = false;
+    for (const c of Object.values(manifest.campaigns)) {
+      const it = c.items && c.items[node.id]; if (!it) continue;
+      Object.assign(it, { name: node.name, w: Math.round(node.width), h: Math.round(node.height), pageName: page.name, updatedAt: Date.now() });
+      if (msg.channel && msg.channel !== 'auto') it.channel = msg.channel;
+      hit = true;
+    }
+    if (hit) { updated += 1; setRelaunch(node, readTags(node), manifest); }
+  }
+  if (updated) writeManifest(manifest);
+  return { message: updated ? (updated === 1 ? 'Frame updated' : updated + ' frames updated') + ' in all its tags.' : 'None of these frames have tags yet.' };
 }
 
 async function removeItems(msg) {
@@ -286,12 +335,16 @@ async function removeItems(msg) {
     const bar = id.indexOf('|');
     const fileKey = id.slice(0, bar);
     const nodeId = id.slice(bar + 1);
-    const camp = manifest.campaigns[msg.campaignId];
-    if (fileKey === key && camp && camp.items[nodeId]) {
-      delete camp.items[nodeId];
-      manifestChanged = true;
+    // ALL_TAGS (the "All tagged frames" view) takes every tag off the frame.
+    const cids = msg.campaignId === ALL_TAGS ? Object.keys(manifest.campaigns).filter((cid) => manifest.campaigns[cid].items[nodeId]) : [msg.campaignId];
+    const here = cids.filter((cid) => manifest.campaigns[cid] && manifest.campaigns[cid].items[nodeId]);
+    if (fileKey === key && here.length) {
       const node = await figma.getNodeByIdAsync(nodeId);
-      if (node && 'setSharedPluginData' in node) tagNode(node, msg.campaignId, false);
+      for (const cid of here) {
+        delete manifest.campaigns[cid].items[nodeId];
+        if (node && 'setSharedPluginData' in node) tagNode(node, cid, false);
+      }
+      manifestChanged = true;
       removed += 1;
       continue;
     }
@@ -303,7 +356,7 @@ async function removeItems(msg) {
   if (manifestChanged) writeManifest(manifest);
   await saveData(data);
   const parts = [];
-  if (removed) parts.push((removed === 1 ? 'Removed' : removed + ' removed') + ' for everyone');
+  if (removed) parts.push((msg.campaignId === ALL_TAGS ? 'Tags removed from ' + (removed === 1 ? 'the frame' : removed + ' frames') : (removed === 1 ? 'Tag removed' : 'Tag removed from ' + removed + ' frames')) + ' for everyone');
   if (hidden) parts.push((hidden === 1 ? '1 frame lives' : hidden + ' frames live') + ' in other files, so ' + (hidden === 1 ? 'it’s' : 'they’re') + ' hidden on your wall only. Remove ' + (hidden === 1 ? 'it' : 'them') + ' from ' + (hidden === 1 ? 'its' : 'their') + ' file to remove for everyone');
   return { message: parts.join('. ') + '.' };
 }
@@ -320,10 +373,10 @@ async function setChannel(msg) {
     const bar = id.indexOf('|');
     const fileKey = id.slice(0, bar);
     const nodeId = id.slice(bar + 1);
-    const camp = manifest.campaigns[msg.campaignId];
-    if (fileKey === key && camp && camp.items[nodeId]) {
-      camp.items[nodeId].channel = msg.channel;
-      camp.items[nodeId].updatedAt = Date.now();
+    // A frame has one channel: change it in every tag the frame has.
+    const camps = fileKey === key ? Object.values(manifest.campaigns).filter((c) => c.items && c.items[nodeId]) : [];
+    if (camps.length) {
+      for (const c of camps) { c.items[nodeId].channel = msg.channel; c.items[nodeId].updatedAt = Date.now(); }
       manifestChanged = true; changed += 1; continue;
     }
     elsewhere += 1;
@@ -369,17 +422,17 @@ async function handle(msg) {
       return sendState({ message: msg.token ? 'Token saved on this computer.' : 'Token removed.' });
     case 'create-campaign': {
       const name = String(msg.name || '').trim();
-      if (!name) throw new Error('Give the campaign a name.');
+      if (!name) throw new Error('Give the tag a name.');
       const data = await loadData();
       const campaign = { id: randomId('c_'), name: name, createdAt: Date.now(), items: [] };
       data.campaigns.push(campaign);
       data.activeCampaignId = campaign.id;
       await saveData(data);
-      return sendState({ message: 'Created “' + name + '”. It appears for your team once you add frames to it.' });
+      return sendState({ message: 'Created the tag “' + name + '”. It appears for your team once frames have it.' });
     }
     case 'rename-campaign': {
       const name = String(msg.name || '').trim();
-      if (!name) throw new Error('Give the campaign a name.');
+      if (!name) throw new Error('Give the tag a name.');
       const data = await loadData();
       const local = localCampaign(data, msg.campaignId, name);
       local.name = name;
@@ -400,14 +453,14 @@ async function handle(msg) {
       if (local && !(local.items || []).length && !msg.shared) data.campaigns = data.campaigns.filter((c) => c.id !== msg.campaignId);
       if (data.activeCampaignId === msg.campaignId) data.activeCampaignId = '';
       await saveData(data);
-      return sendState({ message: msg.shared ? 'Hidden from your list. Frames in files and your team’s view aren’t changed.' : 'Campaign deleted.' });
+      return sendState({ message: msg.shared ? 'Hidden from your list. Frames in files and your team’s view aren’t changed.' : 'Tag deleted.' });
     }
     case 'unhide-campaign': {
       const data = await loadData();
       data.hidden = data.hidden.filter((id) => id !== msg.campaignId);
       data.activeCampaignId = msg.campaignId;
       await saveData(data);
-      return sendState({ message: 'Campaign shown again.' });
+      return sendState({ message: 'Tag shown again.' });
     }
     case 'unhide-items': {
       const data = await loadData();
@@ -424,6 +477,8 @@ async function handle(msg) {
     }
     case 'add-selection':
       return sendState(await addSelection(msg));
+    case 'update-selection':
+      return sendState(await updateSelection(msg));
     case 'remove-item':
       return sendState(await removeItems(msg));
     case 'set-channel': {
@@ -658,7 +713,7 @@ function emptySpot() {
 }
 
 async function boardPlace(msg) {
-  if (figma.editorType !== 'figjam') return { message: 'Open a FigJam board to send a campaign to it.' }
+  if (figma.editorType !== 'figjam') return { message: 'Open a FigJam board to send a tag’s frames to it.' }
   await boardFonts()
   const scale = msg.scale === 0.5 ? 0.5 : 1
   const items = (msg.items || []).map((it) => Object.assign({ campaignId: msg.campaignId }, it))
@@ -800,4 +855,5 @@ setInterval(() => {
   }).catch(() => {});
 }, 3000);
 
+launchCommand = figma.command || '';
 figma.showUI(__html__, { width: PANEL_SIZE.width, height: PANEL_SIZE.height, themeColors: true, title: 'Showroom' });

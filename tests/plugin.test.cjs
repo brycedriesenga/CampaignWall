@@ -184,10 +184,10 @@ function pointer(w, type, target, extra) {
   }
   api.folders['111'] = ['EMAILFILE0001']
   const wb = await boot(bryce, api)
-  check('first run: start a campaign', /Start a campaign/.test(text(wb)))
+  check('first run: start with a tag', /Start with a tag/.test(text(wb)))
   $(wb, '#campaign-name').value = 'Holiday 2026'
   click(wb, '#create'); await tick(60)
-  check('campaign created', /Holiday 2026/.test($(wb, '#campaign').textContent))
+  check('tag created', /Holiday 2026/.test($(wb, '#campaign').textContent))
 
   const a = bryce.mk('1:2', 'Email hero', 'FRAME', 600, 1800)
   const b = bryce.mk('1:3', 'Homepage hero', 'FRAME', 1440, 720)
@@ -204,7 +204,18 @@ function pointer(w, type, target, extra) {
   check('backup copy on first page', bryce.page._d['showroom/manifest'] === bryce.root._d['showroom/manifest'])
   check('nothing kept only on this computer', bryce.store.get('showroom.data').campaigns[0].items.length === 0)
   bryce.setSel([a]); await tick(150)
-  check('re-select shows In campaign', /In campaign/.test(text(wb)) && /Update frame in Holiday 2026/.test(text(wb)))
+  check('re-select shows its tag, with Update', !!wb.document.querySelector('.tagchip [data-tag-go]') && /Holiday 2026/.test($(wb, '.tagbox').textContent) && /Update frame/.test(text(wb)) && !$(wb, '#add'))
+  check('a tagged frame gets “Open in Showroom” / “Edit tags” in Figma’s properties panel, with its tag names', a._r && a._r.open === 'Holiday 2026' && 'tags' in a._r, JSON.stringify(a._r))
+  // A second tag, typed into the panel (no wall needed)
+  $(wb, '#tag-add').value = 'Black Friday'
+  $(wb, '#tag-add').dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await tick(120)
+  const m2 = JSON.parse(bryce.root._d['showroom/manifest'])
+  const bf = Object.keys(m2.campaigns).find((k) => m2.campaigns[k].name === 'Black Friday')
+  check('typing a new tag adds it to the selection, keeping the channel and the active tag', bf && m2.campaigns[bf].items['1:2'] && m2.campaigns[bf].items['1:2'].channel === 'Email' && /Holiday 2026/.test($(wb, '#campaign').selectedOptions[0].textContent) && a._r.open === 'Holiday 2026, Black Friday', JSON.stringify(a._r))
+  check('the panel shows both tags on the frame', wb.document.querySelectorAll('.tagbox .tagchip').length === 2)
+  click(wb, '.tagchip [data-tag-del="' + bf + '"]'); await tick(120)
+  const m3 = JSON.parse(bryce.root._d['showroom/manifest'])
+  check('× takes a tag off the selected frame, right from the panel', !m3.campaigns[bf] && wb.document.querySelectorAll('.tagbox .tagchip').length === 1 && a._r.open === 'Holiday 2026', JSON.stringify(Object.keys(m3.campaigns)))
 
   // connect + wall
   await connect(wb)
@@ -342,11 +353,13 @@ function pointer(w, type, target, extra) {
   // ===== campaign home =====
   click(wb, '#home'); await tick(20)
   const cards = [...wb.document.querySelectorAll('.ccard')]
-  check('home shows each campaign as a card with frames, people and progress', cards.length >= 1 && /Holiday 2026/.test(cards[0].textContent) && /frames/.test(cards[0].textContent) && cards[0].querySelector('.avatars span') && cards[0].querySelector('.progress') && cards.some((c) => c.classList.contains('active')), cards.map((c) => c.textContent).join(' | '))
+  const hcard = cards.find((c) => /Holiday 2026/.test(c.querySelector('.name').textContent))
+  check('home shows each tag as a card with frames, people and progress', hcard && /frames/.test(hcard.textContent) && hcard.querySelector('.avatars span') && hcard.querySelector('.progress') && cards.some((c) => c.classList.contains('active')), cards.map((c) => c.textContent).join(' | '))
+  check('…plus “All tagged frames” first, once there’s more than one tag', /All tagged frames/.test(cards[0].querySelector('.name').textContent) && cards[0].dataset.campaign === '__all')
   cards.find((c) => /Holiday 2026/.test(c.textContent)).click(); await tick(30)
   check('activity shows people’s Figma profile pictures', !!wb.document.querySelector('.activity img[src*="profile/Sam"]'))
   check('panel shows recent activity', /Activity/.test(text(wb)) && /Sam\s*added/.test(text(wb)), text(wb).slice(0, 600))
-  check('picking a card opens that campaign', $(wb, '#campaign') && /Holiday 2026/.test($(wb, '#campaign').selectedOptions[0].textContent))
+  check('picking a card opens that tag', $(wb, '#campaign') && /Holiday 2026/.test($(wb, '#campaign').selectedOptions[0].textContent))
 
   // ===== links between campaign files =====
   const bryceLinks = JSON.parse(bryce.root._d['showroom/manifest']).links || {}
@@ -415,7 +428,7 @@ function pointer(w, type, target, extra) {
   let entries = indexEntries()
   check('Team sync: index created with Bryce’s file and the files his search found', !!entries['f/EMAILFILE0001'] && !!entries['f/ADFILE00002'] && Object.keys(api.vars.INDEXFILE0099.variableCollections).length === 1, JSON.stringify(Object.keys(entries)))
   check('Team sync: entries hold the campaign list, without links', entries['f/ADFILE00002'] && entries['f/ADFILE00002'].campaigns[cid] && !('links' in entries['f/EMAILFILE0001']))
-  check('Team sync shown as on in Settings', /On · 2 campaign files/.test(text(wb)), text(wb).slice(0, 600))
+  check('Team sync shown as on in Settings', /On · 2 tagged files/.test(text(wb)), text(wb).slice(0, 600))
   click(wb, '#back'); await tick(10)
   // Kim: brand-new to the team, only the index file set up, plugin open in an unrelated file.
   const kim = makeEnv({ fileKey: 'KIMFILE00007', fileName: 'Kim scratch', user: 'Kim' })
@@ -711,6 +724,40 @@ function pointer(w, type, target, extra) {
   check('reset restores the defaults', vp().dataset.bg === 'auto' && !vp().classList.contains('no-grid') && vp().dataset.frame === 'border')
 
   {
+    // ===== tags on the wall: the details panel, “All tagged frames”, filtering by tag =====
+    const esc2 = async () => { for (let i = 0; i < 2; i++) { wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10) } }
+    await esc2()
+    const t12 = () => wb.document.querySelector('.fr[data-id="EMAILFILE0001|1:2"]')
+    pointer(wb, 'pointerdown', t12()); pointer(wb, 'pointerup', t12()); await tick(450)
+    $(wb, '#itag-add').value = 'Spring'
+    $(wb, '#itag-add').dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await tick(150)
+    const mS = JSON.parse(bryce.root._d['showroom/manifest'])
+    const sp = Object.keys(mS.campaigns).find((k) => mS.campaigns[k].name === 'Spring')
+    check('the wall’s details can tag a frame from this file', sp && mS.campaigns[sp].items['1:2'] && /Spring/.test($(wb, '#inspector').textContent), $(wb, '#inspector').textContent.slice(0, 300))
+    const otherTile = wb.document.querySelector('.fr[data-id^="ADFILE00002|"]')
+    pointer(wb, 'pointerdown', otherTile); pointer(wb, 'pointerup', otherTile); await tick(450)
+    check('…and shows another file’s frame’s tags read-only', !$(wb, '#itag-add') && /from its own file/.test($(wb, '#inspector').textContent))
+    await esc2()
+    click(wb, '#wall-back'); await tick(60)
+    const pickTag = async (id) => { const sel = $(wb, '#campaign'); sel.value = id; sel.dispatchEvent(new wb.Event('change')); await tick(100) }
+    await pickTag('__all')
+    click(wb, '#open-wall'); await tick(400)
+    const ids = [...wb.document.querySelectorAll('#world .fr')].map((t) => t.dataset.id)
+    check('“All tagged frames” shows every tagged frame once', ids.length >= 4 && new Set(ids).size === ids.length && ids.indexOf('EMAILFILE0001|1:2') >= 0, ids.join(', '))
+    click(wb, '#filter-btn'); await tick(20)
+    click(wb, '#filters [data-fk="tags"][data-fv="' + sp + '"]'); await tick(30)
+    check('filtering by a tag leaves only the frames that have it', wb.document.querySelectorAll('#world .fr:not(.dim)').length === 1 && !t12().classList.contains('dim'))
+    click(wb, '#f-clear'); await tick(20)
+    await esc2()
+    pointer(wb, 'pointerdown', t12()); pointer(wb, 'pointerup', t12()); await tick(450)
+    click(wb, '#inspector [data-itag-del="' + sp + '"]'); await tick(150)
+    check('× in the details takes the tag off', !JSON.parse(bryce.root._d['showroom/manifest']).campaigns[sp])
+    await esc2()
+    click(wb, '#wall-back'); await tick(60)
+    await pickTag(cid)
+    click(wb, '#open-wall'); await tick(400)
+  }
+  {
   // ===== shortcuts, filters, present, remembered position, arranging =====
   const key = (k, extra) => { wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', Object.assign({ key: k, bubbles: true }, extra || {}))); return tick(20) }
   const selIds = () => [...wb.document.querySelectorAll('#world .fr.sel')].map((f) => f.dataset.id)
@@ -930,7 +977,7 @@ function pointer(w, type, target, extra) {
     check('connecting checks each permission separately', okRows.length === 4 && /File info/.test(okRows.join()) && /Version history/.test(okRows.join()) && wn.document.querySelectorAll('.scopes .sc.skip').length === 2, okRows.join(' | '))
     check('step 1 shows as done', wn.document.querySelector('.ob-step').classList.contains('done') && /Connected as/.test(text(wn)))
     click(wn, '#ob-start'); await tick(40)
-    check('finishing setup goes to the panel and is remembered', /Start a campaign/.test(text(wn)) && newbie.store.get('showroom.prefs').onboarded === true)
+    check('finishing setup goes to the panel and is remembered', /Start with a tag/.test(text(wn)) && newbie.store.get('showroom.prefs').onboarded === true)
     click(wn, '#settings'); await tick(10); click(wn, '#open-guide'); await tick(200)
     check('the setup guide can be reopened from Settings', /Welcome to Showroom/.test(text(wn)))
   }
@@ -946,7 +993,7 @@ function pointer(w, type, target, extra) {
   await tick(100)
   check('old token and preferences carry over', oldStore.get('showroom.token') === 'figd_old' && oldStore.get('showroom.prefs').folders.length === 1)
   check('old campaigns and caches are cleared', !oldStore.has('cw.data.v1') && !oldStore.has('cw.cache.v1') && !oldStore.has('cw.token'))
-  check('starts fresh', /Start a campaign/.test(text(wf)))
+  check('starts fresh', /Start with a tag/.test(text(wf)))
 
   // ===== two windows on one computer =====
   const winA = makeEnv({ fileKey: 'EMAILFILE0001', store: new Map() })
@@ -961,6 +1008,15 @@ function pointer(w, type, target, extra) {
   api.fail = 'network'
   click(wb, '#open-wall'); await tick(200)
   check('network error banner', /Couldn’t reach Figma’s API/.test($(wb, '#banner').textContent))
+
+  // ===== “Open in Showroom” / “Edit tags” from Figma's properties panel =====
+  api.fail = null
+  bryce.setSel([a]); bryce.figma.command = 'open'
+  const wOpen = await boot(bryce, api); await tick(500)
+  check('“Open in Showroom” opens the wall at that frame, selected', wOpen.document.body.classList.contains("walling") && !!wOpen.document.querySelector('#world .fr.sel[data-id="EMAILFILE0001|1:2"]'))
+  bryce.figma.command = 'tags'
+  const wt = await boot(bryce, api); await tick(200)
+  check('“Edit tags” opens the panel ready to add a tag', !wt.document.body.classList.contains('walling') && wt.document.activeElement && wt.document.activeElement.id === 'tag-add')
   api.fail = null
 
   console.log(`\n${pass}/${pass + fail} passed`)

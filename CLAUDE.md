@@ -1,6 +1,6 @@
 # Showroom — project notes
 
-Classic (non-generative) Figma plugin. Bryce's team keeps design files in per-channel Figma folders (Site, Email, Social, Ads…). This plugin lets you add specific frames from any of those files to a campaign, then view every campaign frame together at real size on a pan/zoom wall inside the plugin window. It replaces an earlier generative plugin ("Campaign Hub") that copied snapshots between files. Copies went stale and the wall file couldn't see source changes.
+Classic (non-generative) Figma plugin. Bryce's team keeps design files in per-channel Figma folders (Site, Email, Social, Ads…). Showroom is another way to organise that work: frames from any file get **tags** (a campaign, promo, seasonal push…; any number per frame), and you view every frame with a tag together at real size on a pan/zoom wall inside the plugin window, or all tagged frames filtered by tags. It replaces an earlier generative plugin ("Campaign Hub") that copied snapshots between files. Copies went stale and the wall file couldn't see source changes.
 
 **Name:** the plugin was renamed from "Campaign Wall" to **Showroom** on 2026-09-30, and the team started fresh.
 - Internal names now use `showroom`: the plugin data namespace `showroom`, and clientStorage keys `showroom.*`.
@@ -9,6 +9,17 @@ Classic (non-generative) Figma plugin. Bryce's team keeps design files in per-ch
 - The manifest `id` is unchanged. clientStorage is scoped to it, and a new ID would need registering with Figma.
 
 The owner is a designer who vibe-codes. Keep the code plain JavaScript with no build step, explain changes in plain language, and keep files readable.
+
+## Tags (v0.15)
+
+- **Model:** frames belong to tags; that's all. A tag is just a name (no types, no nesting). A frame can have any number of tags.
+- **Naming in code:** internally a tag is still a **campaign**: manifest key `campaigns`, `campaignId`, `allCampaigns()`, `campaign()`, messages like `create-campaign`. Kept so files tagged by earlier builds keep working with no migration. Everything the user sees says "tag".
+- **Per frame, not per tag:** `allCampaigns()` gives every item `it.tags` (ids of all its tags). `statusMap()` and `deviceMap()` merge every tag's entries (newest `at` wins), so a frame's status and device are the same in every tag; they're still saved under the tag you set them from. code.js keeps a frame's **channel** the same in all its tags (`addSelection` reuses it; `setChannel` changes it everywhere).
+- **All tagged frames:** `ALL_TAGS = '__all'` as the active "tag" (in both files). `campaign()` returns `allFramesView(list)`: every tagged item once, `all: true`. Statuses, layouts and hidden frames for it are kept under `'__all'`; `remove-item` with `'__all'` takes every tag off the frame. Rename/delete don't apply to it (Settings hides them). The panel's tag picker lists it first when there are 2+ tags, and home shows it as the first card.
+- **Filter by tag:** `S.wall.filter.tags` (ids); a frame matches when it has every picked tag. Filters shows them as "Also tagged" (or "Tagged" in All).
+- **Panel (`selectionCard`):** the selected frames' tags as `.tagchip`s with counts (`2/3 +` adds to all), × removes the tag from the selected frames that have it, `#tag-add` (with a `<datalist>` of tags) adds by name: `addTagByName` reuses an existing tag (any case) or sends `add-selection` with no `campaignId`, so code.js makes a new one. `keepActive` keeps the tag you're looking at. **Update** sends `update-selection` (names, sizes, page and picked channel saved in every tag the frames have). **Add to …** stays for the active tag.
+- **Wall details (`inspectorTags`):** chips with × and an add field for frames in the current file (`add-selection` with `nodeIds`, so it works from the wall's selection, not Figma's); read-only chips for other files' frames.
+- **Figma's properties panel:** `manifest.json` `relaunchButtons`: `open` "Open in Showroom" and `tags` "Edit tags" (multipleSelection). code.js `setRelaunch(node, tagIds)` sets `{open: '<tag names>', tags: ''}` (names shown under the button). `figma.command` is sent once as `state.command`; `handleLaunch` opens the wall at the frame (`S.wall.focusId`, selected and zoomed in `renderWall`) for `open`, or focuses the panel's tag field for `tags`.
 
 ## Architecture
 
@@ -271,7 +282,7 @@ Rate limits: tier 1 is about 15 requests/min on an Organization plan with a Full
 
 ## Messages (UI → code)
 
-`init`, `save-token`, `create-campaign`, `rename-campaign`, `hide-campaign {shared}`, `unhide-campaign`, `unhide-items`, `set-active {campaignId, campaignName}`, `add-selection {campaignId, campaignName, channel|'auto'}`, `remove-item {itemIds}`, `set-channel {itemIds, channel}`, `mark-seen {seen}`, `set-file-key {url}`, `save-links {links}`, `save-layout {campaignId, layout}`, `save-status {campaignId, changes}`, `save-device {campaignId, changes}`, `board-place {campaignId, campaignName, items, embeds, scale}`, `board-sync {campaignId, items}`, `save-cache`, `save-scan`, `save-prefs`, `resize`, `open-item {fileKey, nodeId, versionId?}`, `notify`.
+`init`, `save-token`, `add-selection {campaignId|'' (new tag), campaignName, channel, keepActive?, nodeIds?}`, `update-selection {channel}`, `create-campaign`, `rename-campaign`, `hide-campaign {shared}`, `unhide-campaign`, `unhide-items`, `set-active {campaignId, campaignName}`, `remove-item {campaignId|'__all', itemIds}`, `set-channel {itemIds, channel}`, `mark-seen {seen}`, `set-file-key {url}`, `save-links {links}`, `save-layout {campaignId, layout}`, `save-status {campaignId, changes}`, `save-device {campaignId, changes}`, `board-place {campaignId, campaignName, items, embeds, scale}`, `board-sync {campaignId, items}`, `save-cache`, `save-scan`, `save-prefs`, `resize`, `open-item {fileKey, nodeId, versionId?}`, `notify`.
 
 Code → UI: `state` (full), `selection`, `error`.
 

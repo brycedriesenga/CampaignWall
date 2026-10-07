@@ -6,7 +6,8 @@ Newest first. Each line is one build on GitHub, with its commit ID.
 
 | Version | Commit | What changed |
 | --- | --- | --- |
-| 0.14.2 | latest on `main` | Scrolling a frame on the wall no longer pans at the ends; its scrollbar fades; prototypes on the wall play inside their device's screen; cleaner Large window |
+| 0.15.0 | latest on `main` | Tags: frames can have any number of tags (campaigns become plain tags); tag and untag from the panel or the wall's details; All tagged frames + filter by tag; Open in Showroom / Edit tags in Figma's properties panel |
+| 0.14.2 | `4bdec90` | Scrolling a frame on the wall no longer pans at the ends; its scrollbar fades; prototypes on the wall play inside their device's screen; cleaner Large window |
 | 0.14.1 | `f3f3f01` | Play controls only on real prototypes; devices on the wall are a real screen and count as the frame for Show/Fade/Hide; scroll a selected frame's hidden page on the wall |
 | 0.14.0 | `b0e55a1` | View options in three tabs (Look, Layout, Present); Hide content outside a frame; ▶ in Present on any frame; prototypes also detected from scrolling and flow starting points |
 | 0.13.1 | `ec10645` | Device frames in Present are a real screen size by default (option: Whole frame for screen-sized frames); sticky header removed |

@@ -2,13 +2,16 @@
 
 *Formerly Campaign Wall.*
 
-A Figma plugin for reviewing a campaign across channels. Add frames from any file, in any channel folder, to a campaign. Then see every frame together, at real size, on one zoomable wall inside the plugin.
+A Figma plugin for organising work across files in ways the folder structure can't. **Tag** frames from any file, in any folder: a campaign, a promo, a seasonal push, anything. A frame can have any number of tags. Then see every frame with a tag together, at real size, on one zoomable wall inside the plugin, or see every tagged frame at once and filter by tags.
 
-The wall reads frames straight from their files through Figma's API, so it's always current. It shows which frames changed since you last looked and lets you step back through each frame's version history. Campaigns are shared: everyone on the team sees the same campaign, whoever added the frames.
+The wall reads frames straight from their files through Figma's API, so it's always current. It shows which frames changed since you last looked and lets you step back through each frame's version history. Tags are shared: everyone on the team sees the same tags, whoever tagged the frames.
 
 ## How it works
 
-- **Adding frames:** select frames in a design file and click **Add to …**. The campaign list is saved **inside that file** as hidden plugin data, so it travels with the file and anyone can read it.
+- **Tagging frames:** select frames in a design file. The panel shows their tags: type a tag name to add one (an existing tag or a new one), click × to take one off, or **Update** to save the frames' new names and sizes. **Add to …** adds them to the tag you're looking at. A frame's tags are saved **inside its own file** as hidden plugin data, so they travel with the file and anyone can read them.
+- **From Figma's properties panel:** a tagged frame shows **Open in Showroom** (with its tag names) and **Edit tags**. Open in Showroom goes straight to the frame on its tag's wall; Edit tags opens the panel ready to add a tag.
+- **All tagged frames:** pick it at the top of the tag list (or the first card on the home screen) to see every tagged frame once. On any wall, Filter › Tagged / Also tagged shows only frames with the tags you pick (all of them).
+- **On the wall:** a frame's details show its tags; add or remove them for frames in the file you're in. A frame's status, channel and device frame belong to the frame, so they're the same whichever tag you look at it through.
 - **Team sync (optional, Enterprise):** one shared "Showroom Index" file keeps a copy of every file's campaign list in hidden variables. Everyone's plugin checks it every 45 seconds, so a frame added anywhere shows up for the team within about a minute. The copy repairs itself from the files, which stay the source of truth.
 - **Finding the team's frames:**
   - **Links:** every file with campaign frames also stores links to the other campaign files it knows of. Opening the plugin in any campaign file is enough to find the rest. A linked file is only read again after it has been edited, which is checked with a quick, cheap request.

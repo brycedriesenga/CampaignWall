@@ -19,12 +19,17 @@
       "https://embed.figma.com",
       "https://www.figma.com"
     ],
-    "reasoning": "Reads campaign frames, file versions and team folders through Figma's own REST API, shows Figma's rendered images and profile pictures, and plays live Figma prototypes through Figma's embed."
+    "reasoning": "Reads tagged frames, file versions and team folders through Figma's own REST API, shows Figma's rendered images and profile pictures, and plays live Figma prototypes through Figma's embed."
   },
   "relaunchButtons": [
     {
       "command": "open",
-      "name": "Open Showroom"
+      "name": "Open in Showroom"
+    },
+    {
+      "command": "tags",
+      "name": "Edit tags",
+      "multipleSelection": true
     }
   ],
   "permissions": [

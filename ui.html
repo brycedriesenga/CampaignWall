@@ -343,6 +343,17 @@ body.presenting .sec { display: none; }
 .fr.willsel::before { content: ''; position: absolute; inset: 0; z-index: 4; pointer-events: none; background: color-mix(in srgb, var(--brand) 16%, transparent); border-radius: inherit; }
 .fr.wdv-on.willsel { outline: none; }
 .fr.wdv-on.willsel .wdv { box-shadow: 0 0 0 calc(2px * var(--inv)) color-mix(in srgb, var(--brand) 80%, transparent), 0 18px 50px rgba(0,0,0,.28); }
+/* Tags on the selection (panel) and on a frame (wall details) */
+.tagbox { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.tagchip { display: inline-flex; align-items: center; height: 24px; border-radius: 6px; background: var(--bg2); border: 1px solid var(--border); overflow: hidden; max-width: 100%; }
+.tagchip.cur { border-color: var(--brand); }
+.tagchip button { height: 100%; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; }
+.tagchip .tc-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.tagchip .tc-part { color: var(--muted); font-size: 10.5px; padding: 0 4px; border-left: 1px solid var(--border); }
+.tagchip .tc-x { color: var(--muted); padding: 0 5px; }
+.tagchip button:hover { background: var(--bg3); color: var(--text); }
+.tagchip.ro { padding: 0 8px; font-size: 11.5px; }
+.tag-input { flex: 1 1 120px; min-width: 120px; height: 26px; font-size: 12px; }
 .marquee { position: absolute; z-index: 2; border: 1px solid var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); pointer-events: none; }
 #viewopts { position: absolute; right: 12px; top: 56px; width: 288px; max-height: calc(100% - 80px); overflow: auto; z-index: 6; padding: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 12px; }
 #viewopts .vo-title { font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
@@ -546,6 +557,7 @@ function icon(name, size) {
     grid: '<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/>',
     search: '<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3 3"/>',
     filter: '<path d="M2.5 3.5h11L9.3 8.6v3.9l-2.6 1.2V8.6z"/>', play: '<path d="M5 3.3v9.4L12.5 8z"/>', stop: '<rect x="4.5" y="4.5" width="7" height="7" rx="1.2"/>', right: '<path d="M6.5 4.5L10 8l-3.5 3.5"/>',
+    tag: '<path d="M2.5 8.2V3.3a.8.8 0 0 1 .8-.8h4.9l5.3 5.3a.8.8 0 0 1 0 1.1l-4.8 4.8a.8.8 0 0 1-1.1 0z"/><circle cx="5.5" cy="5.5" r="1"/>',
     keys: '<rect x="1.5" y="4" width="13" height="8" rx="1.5"/><path d="M4 6.5h.01M6.5 6.5h.01M9 6.5h.01M11.5 6.5h.01M5 9.5h6"/>',
   }
   return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths[name] + '</svg>'
@@ -590,22 +602,35 @@ function allCampaigns() {
     if (!c.name || localAt > c.nameAt) { c.name = lc.name; c.nameAt = Math.max(c.nameAt, localAt) }
   }
   const hidden = (S.data && S.data.hidden) || []
+  // A frame's tags, its status and its device choice belong to the frame, whichever tag you look at it through.
+  const tagsOf = {}
+  for (const id of Object.keys(map)) if (hidden.indexOf(id) < 0) for (const it of map[id].items) (tagsOf[it.id] || (tagsOf[it.id] = [])).indexOf(id) < 0 && tagsOf[it.id].push(id)
+  const sm = statusMap(), dm = deviceMap()
   return Object.keys(map).map((id) => map[id]).filter((c) => hidden.indexOf(c.id) < 0).map((c) => {
     const skip = hiddenItems[c.id] || []
     c.hiddenCount = c.items.filter((it) => skip.indexOf(it.id) >= 0).length
     c.items = c.items.filter((it) => skip.indexOf(it.id) < 0)
-    c.items.forEach((it) => { it.seenHash = seen[it.id] || '' })
-    const sm = statusMap(c.id)
+    c.items.forEach((it) => { it.seenHash = seen[it.id] || ''; it.tags = tagsOf[it.id] || [c.id] })
     c.items.forEach((it) => { const st = sm[it.id]; it.status = st ? st.s || '' : ''; it.statusBy = st ? st.by || '' : ''; it.statusAt = st ? st.at || 0 : 0 })
-    const dm = deviceMap(c.id)
     c.items.forEach((it) => { const dv = dm[it.id]; it.device = dv ? dv.d || 'auto' : 'auto'; it.deviceBy = dv ? dv.by || '' : '' })
     return c
   }).sort((a, b) => a.name.localeCompare(b.name))
 }
+// The view that shows every tagged frame once (filter it by tag on the wall). Saved as the active
+// "tag" ALL_TAGS; statuses, order and hidden frames for it are kept under that id too.
+const ALL_TAGS = '__all'
+function allFramesView(list) {
+  const seen = {}, items = []
+  for (const c of list) for (const it of c.items) if (!seen[it.id]) { seen[it.id] = true; items.push(Object.assign({}, it)) }
+  const skip = ((S.data && S.data.hiddenItems) || {})[ALL_TAGS] || []
+  return { id: ALL_TAGS, name: 'All tagged frames', all: true, shared: true, hiddenCount: items.filter((it) => skip.indexOf(it.id) >= 0).length, items: items.filter((it) => skip.indexOf(it.id) < 0) }
+}
+function tagName(id) { const c = allCampaigns().find((x) => x.id === id); return c ? c.name : '' }
 
 function campaign() {
   if (!S.data) return null
   const list = allCampaigns()
+  if (S.data.activeCampaignId === ALL_TAGS && list.length) return allFramesView(list)
   return list.find((c) => c.id === S.data.activeCampaignId) || list[0] || null
 }
 function nodeInfo(item) {
@@ -1014,8 +1039,8 @@ function searchSummary() {
   if (S.search.error) return 'Search stopped: ' + S.search.error
   const folders = teamFolders().length
   const found = campaignFileCount()
-  if (indexInfo() && !S.index.error) return (S.index.readAt ? 'Team sync on · updated ' + ago(S.index.readAt) : 'Team sync starting…') + ' · ' + found + ' file' + (found === 1 ? '' : 's') + ' with campaign frames'
-  return 'Searched ' + (folders ? folders + ' folder' + (folders === 1 ? '' : 's') : 'linked files') + (S.scan.checkedAt ? ' ' + ago(S.scan.checkedAt) : '') + ' · ' + found + ' file' + (found === 1 ? '' : 's') + ' with campaign frames'
+  if (indexInfo() && !S.index.error) return (S.index.readAt ? 'Team sync on · updated ' + ago(S.index.readAt) : 'Team sync starting…') + ' · ' + found + ' file' + (found === 1 ? '' : 's') + ' with tagged frames'
+  return 'Searched ' + (folders ? folders + ' folder' + (folders === 1 ? '' : 's') : 'linked files') + (S.scan.checkedAt ? ' ' + ago(S.scan.checkedAt) : '') + ' · ' + found + ' file' + (found === 1 ? '' : 's') + ' with tagged frames'
 }
 function renderSearchStatus() {
   const el = $('search-status'); if (el) el.textContent = searchSummary()
@@ -1734,12 +1759,13 @@ function rememberPosition() {
 // ---------- filters (just for you, while the wall is open) ----------
 function wallFilter() {
   const c = campaign()
-  if (!c || S.wall.filter.campaignId !== c.id) S.wall.filter = { campaignId: c ? c.id : '', channels: [], people: [], statuses: [], updated: false }
+  if (!c || S.wall.filter.campaignId !== c.id) S.wall.filter = { campaignId: c ? c.id : '', tags: [], channels: [], people: [], statuses: [], updated: false }
   return S.wall.filter
 }
-function filterActive() { const f = wallFilter(); return !!(f.channels.length || f.people.length || f.statuses.length || f.updated) }
+function filterActive() { const f = wallFilter(); return !!(f.tags.length || f.channels.length || f.people.length || f.statuses.length || f.updated) }
 function matchesFilter(it) {
   const f = wallFilter()
+  if (f.tags.length && !f.tags.every((t) => (it.tags || []).indexOf(t) >= 0)) return false
   if (f.channels.length && f.channels.indexOf(it.channel) < 0) return false
   if (f.people.length && f.people.indexOf(it.addedBy || 'Unknown') < 0) return false
   if (f.statuses.length && f.statuses.indexOf(statusName(it.status)) < 0) return false
@@ -1765,7 +1791,13 @@ function renderFilters() {
     return '<div class="chips">' + keys.map((v) => '<button class="' + (f[key].indexOf(v) >= 0 ? 'on' : '') + '" data-fk="' + key + '" data-fv="' + esc(v) + '">' + esc(v) + '<em>' + counts[v] + '</em></button>').join('') + '</div>'
   }
   const updated = c.items.filter(isUpdated).length
-  let html = '<div><div class="vo-title">Status</div>' + chips('statuses') + '</div>'
+  // Tags: show only frames that also have every tag picked (the frames' other tags, with counts).
+  const tagCounts = {}
+  c.items.forEach((it) => (it.tags || []).forEach((t) => { if (t !== c.id) tagCounts[t] = (tagCounts[t] || 0) + 1 }))
+  const tagIds = Object.keys(tagCounts).sort((a, b) => tagName(a).localeCompare(tagName(b)))
+  let html = ''
+  if (tagIds.length) html += '<div><div class="vo-title">' + (c.all ? 'Tagged' : 'Also tagged') + '</div><div class="chips">' + tagIds.map((t) => '<button class="' + (f.tags.indexOf(t) >= 0 ? 'on' : '') + '" data-fk="tags" data-fv="' + esc(t) + '">' + esc(tagName(t)) + '<em>' + tagCounts[t] + '</em></button>').join('') + '</div></div>'
+  html += '<div><div class="vo-title">Status</div>' + chips('statuses') + '</div>'
   html += '<div><div class="vo-title">Channel</div>' + chips('channels') + '</div>'
   html += '<div><div class="vo-title">Added by</div>' + chips('people') + '</div>'
   html += '<label class="vo-toggle"><span>Only frames updated since you looked <em class="muted" style="font-style:normal">(' + updated + ')</em></span><input type="checkbox" id="f-updated"' + (f.updated ? ' checked' : '') + '></label>'
@@ -1780,7 +1812,7 @@ function renderFilters() {
   $('f-updated').addEventListener('change', (e) => { f.updated = e.target.checked; applyFilter() })
   const clear = $('f-clear'); if (clear) clear.addEventListener('click', () => clearFilters())
 }
-function clearFilters() { const f = wallFilter(); f.channels = []; f.people = []; f.statuses = []; f.updated = false; applyFilter() }
+function clearFilters() { const f = wallFilter(); f.tags = []; f.channels = []; f.people = []; f.statuses = []; f.updated = false; applyFilter() }
 function applyFilter() {
   S.wall.selected = S.wall.selected.filter((id) => { const p = placementOf(id); return p && matchesFilter(p.it) })
   // Toggle classes in place (rather than redrawing) so frames fade in and out smoothly.
@@ -1908,11 +1940,13 @@ function stopPresent() {
 // Space, Page Up/Down). Which device: Auto (from the frame's channel, size and name), or a choice
 // made in the frame's details, shared with the team like statuses (manifest "devices").
 const DEVICES = [['auto', 'Auto'], ['browser', 'Browser'], ['phone', 'Phone'], ['none', 'None']]
-function deviceMap(campaignId) {
+// Device choices per frame, newest wins (like statuses).
+function deviceMap() {
   const out = {}
   const take = (map) => { for (const id of Object.keys(map || {})) { const e = map[id]; if (e && (!out[id] || (e.at || 0) > (out[id].at || 0))) out[id] = e } }
-  take(((S.prefs && S.prefs.devices) || {})[campaignId])
-  for (const src of manifests()) take(src.m.devices && src.m.devices[campaignId])
+  const each = (byTag) => { for (const cid of Object.keys(byTag || {})) take(byTag[cid]) }
+  each((S.prefs && S.prefs.devices) || {})
+  for (const src of manifests()) each(src.m.devices)
   return out
 }
 // Auto: only Site frames that look like whole pages get a device; parts of pages (banners, tiles,
@@ -2126,11 +2160,13 @@ function devWheel(e) {
 const STATUSES = [['', 'No status'], ['draft', 'Draft'], ['review', 'In review'], ['approved', 'Approved']]
 function statusName(s) { const f = STATUSES.find((x) => x[0] === (s || '')); return f ? f[1] : 'No status' }
 function statusBadge(s) { return s ? '<span class="st st-' + esc(s) + '">' + esc(statusName(s)) + '</span>' : '' }
-function statusMap(campaignId) {
+// Statuses per frame: the newest change wins, whichever tag (or file) it was set from.
+function statusMap() {
   const out = {}
   const take = (map) => { for (const id of Object.keys(map || {})) { const e = map[id]; if (e && e.by && e.ph) PHOTOS[e.by] = e.ph; if (e && (!out[id] || (e.at || 0) > (out[id].at || 0))) out[id] = e } }
-  take(((S.prefs && S.prefs.statuses) || {})[campaignId])
-  for (const src of manifests()) take(src.m.statuses && src.m.statuses[campaignId])
+  const each = (byTag) => { for (const cid of Object.keys(byTag || {})) take(byTag[cid]) }
+  each((S.prefs && S.prefs.statuses) || {})
+  for (const src of manifests()) each(src.m.statuses)
   return out
 }
 function statusControl(items) {
@@ -2400,20 +2436,21 @@ function renderPanel() {
   let html = '<div class="view">'
   html += '<div class="top">'
   if (campaigns.length) {
-    html += '<button class="icon" id="home" aria-label="All campaigns" title="All campaigns">' + icon('grid') + '</button>'
-    html += '<select id="campaign" aria-label="Campaign">' + campaigns.map((x) => '<option value="' + esc(x.id) + '"' + (c && x.id === c.id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select>'
-    html += '<button class="icon" id="new-campaign" aria-label="New campaign" title="New campaign">' + icon('plus') + '</button>'
+    html += '<button class="icon" id="home" aria-label="All tags" title="All tags">' + icon('grid') + '</button>'
+    html += '<select id="campaign" aria-label="Tag">' + (campaigns.length > 1 ? '<option value="' + ALL_TAGS + '"' + (c && c.all ? ' selected' : '') + '>All tagged frames</option>' : '') +
+      campaigns.map((x) => '<option value="' + esc(x.id) + '"' + (c && x.id === c.id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select>'
+    html += '<button class="icon" id="new-campaign" aria-label="New tag" title="New tag">' + icon('plus') + '</button>'
   } else html += '<div class="grow" style="font-size:14px;font-weight:600;padding-left:4px">Showroom</div>'
   html += '<button class="icon" id="settings" aria-label="Settings" title="Settings">' + icon('gear') + '</button></div>'
   html += '<div class="scroll">'
 
   if (!campaigns.length || S.creating) {
-    html += '<div class="stack"><div style="font-size:15px;font-weight:600">' + (campaigns.length ? 'New campaign' : 'Start a campaign') + '</div>'
-    html += '<div class="muted small">Add frames from any file, in any channel folder, then see them together on one wall. Your team sees the same campaign.</div>'
-    html += '<input class="field" id="campaign-name" placeholder="e.g. Holiday 2026" maxlength="80" aria-label="Campaign name">'
-    html += '<div class="row"><button class="btn primary grow" id="create">Create campaign</button>' + (campaigns.length ? '<button class="btn" id="cancel-create">Cancel</button>' : '') + '</div>'
+    html += '<div class="stack"><div style="font-size:15px;font-weight:600">' + (campaigns.length ? 'New tag' : 'Start with a tag') + '</div>'
+    html += '<div class="muted small">A tag groups frames from any file, in any folder: a campaign, a promo, a seasonal push, anything. Frames can have several tags, and your team sees the same tags.</div>'
+    html += '<input class="field" id="campaign-name" placeholder="e.g. Holiday 2026" maxlength="80" aria-label="Tag name">'
+    html += '<div class="row"><button class="btn primary grow" id="create">Create tag</button>' + (campaigns.length ? '<button class="btn" id="cancel-create">Cancel</button>' : '') + '</div>'
     if (!campaigns.length && S.token && canSearch()) html += '<div class="muted small" id="search-status">' + esc(searchSummary()) + '</div>'
-    if (!campaigns.length && S.token && !canSearch()) html += '<div class="notice small">Joining your team’s campaigns? Add your team or its folders in Settings so the plugin can find them. Opening the plugin in any file with campaign frames works too.</div>'
+    if (!campaigns.length && S.token && !canSearch()) html += '<div class="notice small">Joining your team’s tags? Add your team or its folders in Settings so the plugin can find them. Opening the plugin in any file with tagged frames works too.</div>'
     html += '</div></div>' + footer() + '</div>'
     $('app').innerHTML = html
     bindPanel(); setTimeout(() => { const el = $('campaign-name'); if (el) el.focus() }, 0)
@@ -2423,35 +2460,10 @@ function renderPanel() {
   // On a FigJam board: send the campaign to the board, or sync it. In design files: the selection.
   if (S.editor === 'figjam') html += boardCard(c)
   else {
-  const sel = S.selection
-  html += '<div class="stack"><div class="label" style="margin:0">Selection</div>'
-  if (!sel.items.length) {
-    html += '<div class="hint"><span class="ico">' + icon('pointer') + '</span><div><div style="font-weight:600">Add frames</div><div class="muted small">Select frames in this file to add them to ' + esc(c.name) + '.</div></div></div>'
-    if (sel.skipped) html += '<div class="notice small">' + sel.skipped + ' selected layer' + (sel.skipped === 1 ? ' isn’t a frame' : 's aren’t frames') + '. Select top-level frames, components or sections.</div>'
-  } else {
-    if (!S.file.key) {
-      html += '<div class="notice warn stack"><div><b>One-time step for this file.</b> Figma didn’t give the plugin this file’s ID. Paste its link (Share › Copy link) so the wall can find these frames.</div>'
-      html += '<div class="row"><input class="field" id="file-link" placeholder="https://www.figma.com/design/…"><button class="btn" id="save-file-link">Save</button></div></div>'
-    }
-    const already = sel.items.filter((it) => it.inCampaigns.indexOf(c.id) >= 0).length
-    html += '<div class="card">'
-    sel.items.slice(0, 4).forEach((it, i) => {
-      if (i) html += '<div class="sep"></div>'
-      const inThis = it.inCampaigns.indexOf(c.id) >= 0
-      html += '<div class="sel-row"><div class="grow"><div class="nm">' + esc(it.name) + '</div><div class="muted small">' + it.width + ' × ' + it.height + ' · ' + esc(S.channelChoice === 'auto' ? it.guess : S.channelChoice) + '</div></div>' + (inThis ? '<span class="pill ok">' + icon('check', 11) + 'In campaign</span>' : '') + '</div>'
-    })
-    if (sel.items.length > 4) html += '<div class="sep"></div><div class="sel-row muted small">+ ' + (sel.items.length - 4) + ' more</div>'
-    html += '</div>'
-    html += '<div><label class="label" for="channel">Channel</label><select class="field" id="channel"><option value="auto"' + (S.channelChoice === 'auto' ? ' selected' : '') + '>Auto (guess from size)</option>' + S.data.channels.map((ch) => '<option' + (S.channelChoice === ch ? ' selected' : '') + '>' + esc(ch) + '</option>').join('') + '</select></div>'
-    const label = already === sel.items.length
-      ? 'Update ' + (sel.items.length === 1 ? 'frame' : sel.items.length + ' frames') + ' in ' + c.name
-      : 'Add ' + (sel.items.length === 1 ? 'frame' : sel.items.length + ' frames') + ' to ' + c.name
-    html += '<button class="btn primary block" id="add"' + (S.file.key ? '' : ' disabled') + '>' + esc(label) + '</button>'
-  }
-  html += '</div>'
+  html += selectionCard(c, campaigns)
   }
 
-  // Campaign summary + wall
+  // The tag's summary + wall
   const byChannel = {}
   c.items.forEach((it) => { byChannel[it.channel] = (byChannel[it.channel] || 0) + 1 })
   const files = new Set(c.items.map((it) => it.fileKey)).size
@@ -2470,21 +2482,79 @@ function renderPanel() {
 
   // Items
   if (c.items.length) {
-    html += '<div><div class="label">Frames in this campaign</div><div>'
+    html += '<div><div class="label">' + (c.all ? 'Every tagged frame' : 'Frames with this tag') + '</div><div>'
     const sorted = c.items.slice().sort((a, b) => channelOrder.indexOf(a.channel) - channelOrder.indexOf(b.channel) || String(a.name).localeCompare(String(b.name)))
     sorted.forEach((it) => {
       const n = nodeInfo(it)
       const name = n && n.name ? n.name : it.name
       const here = it.fileKey === S.file.key
       const where = here ? 'this file' : esc((S.cache.files[it.fileKey] || {}).name || it.fileName)
-      html += '<div class="item' + (S.freshIds && S.freshIds[it.id] && Date.now() - S.freshIds[it.id] < 2500 ? ' new' : '') + '"><button class="open" data-open="' + esc(it.id) + '" title="' + (here ? 'Select in this file' : 'Open in its file') + '"><div class="nm">' + statusBadge(it.status) + esc(name) + (isUpdated(it) ? ' <span class="upd">Updated</span>' : '') + '</div><div class="mt">' + esc(it.channel) + ' · ' + where + (it.addedBy ? ' · added by ' + esc(it.addedBy) : '') + '</div></button>'
-      html += '<button class="icon" data-remove="' + esc(it.id) + '" aria-label="Remove ' + esc(name) + ' from campaign" title="' + (here ? 'Remove from campaign' : 'Hide on my wall (it lives in another file)') + '">' + icon('x', 14) + '</button></div>'
+      html += '<div class="item' + (S.freshIds && S.freshIds[it.id] && Date.now() - S.freshIds[it.id] < 2500 ? ' new' : '') + '"><button class="open" data-open="' + esc(it.id) + '" title="' + (here ? 'Select in this file' : 'Open in its file') + '"><div class="nm">' + statusBadge(it.status) + esc(name) + (isUpdated(it) ? ' <span class="upd">Updated</span>' : '') + '</div><div class="mt">' + esc(it.channel) + ' · ' + where + (it.addedBy ? ' · added by ' + esc(it.addedBy) : '') + '</div>' + otherTags(it, c) + '</button>'
+      html += '<button class="icon" data-remove="' + esc(it.id) + '" aria-label="' + (c.all ? 'Remove all tags from ' : 'Remove the tag from ') + esc(name) + '" title="' + (here ? (c.all ? 'Remove all its tags' : 'Remove the tag from this frame') : 'Hide on my wall (it lives in another file)') + '">' + icon('x', 14) + '</button></div>'
     })
     html += '</div></div>'
   }
   html += '</div>' + footer() + '</div>'
   $('app').innerHTML = html
   bindPanel()
+}
+
+// The selection in this file, with its tags: remove a tag (×), add one by name (new or existing), or
+// update the frames' names and sizes everywhere they're tagged. No need to open the wall.
+function selectionCard(c, tags) {
+  const sel = S.selection
+  let html = '<div class="stack"><div class="label" style="margin:0">Selection</div>'
+  if (!sel.items.length) {
+    html += '<div class="hint"><span class="ico">' + icon('pointer') + '</span><div><div style="font-weight:600">Tag frames</div><div class="muted small">Select frames in this file to tag them' + (c && !c.all ? ', or add them to ' + esc(c.name) : '') + '.</div></div></div>'
+    if (sel.skipped) html += '<div class="notice small">' + sel.skipped + ' selected layer' + (sel.skipped === 1 ? ' isn’t a frame' : 's aren’t frames') + '. Select top-level frames, components or sections.</div>'
+    return html + '</div>'
+  }
+  if (!S.file.key) {
+    html += '<div class="notice warn stack"><div><b>One-time step for this file.</b> Figma didn’t give the plugin this file’s ID. Paste its link (Share › Copy link) so the wall can find these frames.</div>'
+    html += '<div class="row"><input class="field" id="file-link" placeholder="https://www.figma.com/design/…"><button class="btn" id="save-file-link">Save</button></div></div>'
+  }
+  const n = sel.items.length
+  html += '<div class="card">'
+  sel.items.slice(0, 4).forEach((it, i) => {
+    if (i) html += '<div class="sep"></div>'
+    html += '<div class="sel-row"><div class="grow"><div class="nm">' + esc(it.name) + '</div><div class="muted small">' + it.width + ' × ' + it.height + ' · ' + esc(S.channelChoice === 'auto' ? it.guess : S.channelChoice) + '</div></div></div>'
+  })
+  if (n > 4) html += '<div class="sep"></div><div class="sel-row muted small">+ ' + (n - 4) + ' more</div>'
+  html += '</div>'
+  // Tags on the selection: how many of the selected frames have each.
+  const count = {}
+  sel.items.forEach((it) => (it.inCampaigns || []).forEach((t) => { count[t] = (count[t] || 0) + 1 }))
+  const nameOf = (id) => { const t = tags.find((x) => x.id === id); return t ? t.name : 'Tag' }
+  const ids = Object.keys(count).sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
+  html += '<div><div class="label">Tags</div><div class="tagbox">'
+  html += ids.map((t) => '<span class="tagchip' + (c && t === c.id ? ' cur' : '') + '"><button class="tc-name" data-tag-go="' + esc(t) + '" title="Show this tag">' + esc(nameOf(t)) + '</button>' +
+    (count[t] < n ? '<button class="tc-part" data-tag-all="' + esc(t) + '" title="' + count[t] + ' of ' + n + ' selected frames have it. Add it to all">' + count[t] + '/' + n + ' ' + icon('plus', 10) + '</button>' : '') +
+    '<button class="tc-x" data-tag-del="' + esc(t) + '" aria-label="Remove ' + esc(nameOf(t)) + '" title="Remove this tag from the selected frames">' + icon('x', 10) + '</button></span>').join('')
+  const suggest = tags.filter((t) => (count[t.id] || 0) < n)
+  html += '<input class="field tag-input" id="tag-add" list="tag-list" placeholder="' + (ids.length ? 'Add a tag…' : 'Add a tag, e.g. ' + esc((suggest[0] && suggest[0].name) || 'Holiday 2026')) + '" maxlength="80" aria-label="Add a tag"' + (S.file.key ? '' : ' disabled') + '>' +
+    '<datalist id="tag-list">' + suggest.map((t) => '<option value="' + esc(t.name) + '">').join('') + '</datalist></div></div>'
+  html += '<div><label class="label" for="channel">Channel</label><select class="field" id="channel"><option value="auto"' + (S.channelChoice === 'auto' ? ' selected' : '') + '>Auto (guess from size)</option>' + S.data.channels.map((ch) => '<option' + (S.channelChoice === ch ? ' selected' : '') + '>' + esc(ch) + '</option>').join('') + '</select></div>'
+  const frames = n === 1 ? 'frame' : n + ' frames'
+  const inActive = c && !c.all ? (count[c.id] || 0) : 0
+  html += '<div class="row">'
+  if (c && !c.all && inActive < n) html += '<button class="btn primary grow" id="add"' + (S.file.key ? '' : ' disabled') + '>Add ' + frames + ' to ' + esc(c.name) + '</button>'
+  if (ids.length) html += '<button class="btn' + (c && !c.all && inActive < n ? '' : ' primary grow') + '" id="update-sel" title="Save the frames’ current names and sizes (and channel, if you picked one) in all their tags"' + (S.file.key ? '' : ' disabled') + '>' + icon('refresh', 14) + 'Update' + (c && !c.all && inActive < n ? '' : ' ' + frames) + '</button>'
+  return html + '</div></div>'
+}
+// A frame's other tags, as a quiet line in lists.
+function otherTags(it, c) {
+  const others = (it.tags || []).filter((t) => t !== c.id).map(tagName).filter(Boolean)
+  return others.length ? '<div class="mt">' + icon('tag', 10) + ' ' + esc(others.join(', ')) + '</div>' : ''
+}
+// Adds the selected frames to a tag by name: an existing one (any letter case), or a new one.
+function addTagByName(name) {
+  name = String(name || '').trim(); if (!name) return
+  const existing = allCampaigns().find((x) => x.name.trim().toLowerCase() === name.toLowerCase())
+  S.focusTag = true
+  send('add-selection', { campaignId: existing ? existing.id : '', campaignName: existing ? existing.name : name, channel: S.channelChoice, keepActive: !!campaign() })
+}
+function selectedItemIds(tagId) {
+  return S.selection.items.filter((it) => !tagId || (it.inCampaigns || []).indexOf(tagId) >= 0).map((it) => S.file.key + '|' + it.id)
 }
 
 function footer() {
@@ -2495,12 +2565,12 @@ function footer() {
     (folders ? esc(searchSummary()) : 'Connected' + (me && me.handle ? ' as ' + esc(me.handle) : '') + ' · no team folders yet') + '</span>' +
     (!folders ? '<button class="btn ghost" id="connect" style="height:28px">Set up</button>'
       : S.search.busy ? '<button class="btn ghost" id="search-stop" style="height:26px;padding:0 8px" title="Stop searching (what it found so far is kept)">Stop</button>'
-      : '<button class="icon" id="search-now" title="Search every team folder now (full Look back)" aria-label="Search for team campaigns now">' + icon('refresh', 14) + '</button>') + '</div>'
+      : '<button class="icon" id="search-now" title="Search every team folder now (full Look back)" aria-label="Search for team tags now">' + icon('refresh', 14) + '</button>') + '</div>'
 }
 
 function bindPanel() {
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn) }
-  on('campaign', 'change', (e) => { const c = allCampaigns().find((x) => x.id === e.target.value); send('set-active', { campaignId: e.target.value, campaignName: c ? c.name : '' }) })
+  on('campaign', 'change', (e) => { const c = allCampaigns().find((x) => x.id === e.target.value); S.data.activeCampaignId = e.target.value; send('set-active', { campaignId: e.target.value, campaignName: c ? c.name : '' }) })
   on('new-campaign', 'click', () => { S.creating = true; render() })
   on('cancel-create', 'click', () => { S.creating = false; render() })
   on('create', 'click', () => {
@@ -2508,7 +2578,7 @@ function bindPanel() {
     S.creating = false
     // Someone on the team may already have this campaign: join it instead of making a twin.
     const existing = allCampaigns().find((x) => x.name.trim().toLowerCase() === name.toLowerCase())
-    if (existing) { send('set-active', { campaignId: existing.id, campaignName: existing.name }); toast('“' + existing.name + '” already exists, so you’ve joined it.'); return }
+    if (existing) { send('set-active', { campaignId: existing.id, campaignName: existing.name }); toast('The tag “' + existing.name + '” already exists, so you’re using it.'); return }
     send('create-campaign', { name: name })
   })
   on('campaign-name', 'keydown', (e) => { if (e.key === 'Enter') $('create').click() })
@@ -2520,6 +2590,13 @@ function bindPanel() {
   on('unhide-items', 'click', () => send('unhide-items', { campaignId: campaign().id }))
   on('channel', 'change', (e) => { S.channelChoice = e.target.value; render() })
   on('add', 'click', () => { const c = campaign(); send('add-selection', { campaignId: c.id, campaignName: c.name, channel: S.channelChoice }) })
+  on('update-sel', 'click', () => send('update-selection', { channel: S.channelChoice }))
+  on('tag-add', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addTagByName(e.target.value) } })
+  on('tag-add', 'change', (e) => { const v = e.target.value.trim(); if (v && allCampaigns().some((x) => x.name.toLowerCase() === v.toLowerCase())) addTagByName(v) })   // picked from the list
+  document.querySelectorAll('[data-tag-del]').forEach((el) => el.addEventListener('click', () => send('remove-item', { campaignId: el.dataset.tagDel, itemIds: selectedItemIds(el.dataset.tagDel) })))
+  document.querySelectorAll('[data-tag-all]').forEach((el) => el.addEventListener('click', () => { S.focusTag = false; send('add-selection', { campaignId: el.dataset.tagAll, campaignName: tagName(el.dataset.tagAll), channel: S.channelChoice, keepActive: true }) }))
+  document.querySelectorAll('[data-tag-go]').forEach((el) => el.addEventListener('click', () => { S.data.activeCampaignId = el.dataset.tagGo; send('set-active', { campaignId: el.dataset.tagGo, campaignName: tagName(el.dataset.tagGo) }) }))
+  if (S.focusTag) { S.focusTag = false; const ti = $('tag-add'); if (ti && !ti.disabled) setTimeout(() => ti.focus(), 0) }
   on('save-file-link', 'click', () => send('set-file-key', { url: $('file-link').value }))
   on('board-send', 'click', () => sendToBoard('place'))
   on('board-sync', 'click', () => sendToBoard('sync'))
@@ -2580,7 +2657,7 @@ function renderWelcome() {
   const step = (n, done, title, tag, desc, body) => '<div class="ob-step' + (done ? ' done' : '') + '"><div class="ob-num">' + (done ? icon('check', 13) : n) + '</div><div class="ob-body">' +
     '<div class="ob-title">' + title + (tag ? '<em>' + tag + '</em>' : '') + '</div>' + (desc ? '<div class="ob-desc">' + desc + '</div>' : '') + (body || '') + '</div></div>'
   let html = '<div class="view"><div class="scroll" style="padding:0"><div class="welcome">'
-  html += '<div class="hero"><div class="mark">' + icon('wall', 22) + '</div><h1>Welcome to Showroom</h1><div class="lede">Every frame in a campaign, side by side at real size, live from its own file. Three quick steps and you’re in.</div></div>'
+  html += '<div class="hero"><div class="mark">' + icon('wall', 22) + '</div><h1>Welcome to Showroom</h1><div class="lede">Group frames from any file with tags, then see them side by side at real size, live from their own files. Three quick steps and you’re in.</div></div>'
 
   // 1. Token
   let body1 = ''
@@ -2607,7 +2684,7 @@ function renderWelcome() {
   else body2 = '<div class="row"><input class="field" id="ob-team" placeholder="figma.com/files/team/…" aria-label="Team link"><button class="btn" id="ob-team-add"' + (S.token ? '' : ' disabled') + '>Add</button></div>'
   html += step(2, builtInTeam || !!team, 'Find your team', builtInTeam || team ? '' : 'Optional',
     fromIndex ? 'Set up from your Team sync file: ' + esc(team ? teamName(team) : 'your team') + '’s folders are already known.' :
-    builtInTeam ? 'Set up for you: Showroom already knows your team’s folders.' : team ? '<b>' + esc(teamName(team)) + '</b>' + (ts && ts.folders ? ' · ' + ts.folders.length + ' folders found' : ' · searching…') : 'Paste your team’s link (from Figma’s file browser) so Showroom can find campaign frames in every folder.', body2)
+    builtInTeam ? 'Set up for you: Showroom already knows your team’s folders.' : team ? '<b>' + esc(teamName(team)) + '</b>' + (ts && ts.folders ? ' · ' + ts.folders.length + ' folders found' : ' · searching…') : 'Paste your team’s link (from Figma’s file browser) so Showroom can find tagged frames in every folder.', body2)
 
   // 3. Team sync
   let body3 = ''
@@ -2621,7 +2698,7 @@ function renderWelcome() {
       '<li>Share the link (or ask whoever maintains Showroom to add it to the team list). Teammates then only need their token.</li></ol></details>'
   }
   html += step(3, !!idx, 'Turn on Team sync', idx ? '' : 'Optional · Enterprise',
-    idx ? (S.index.error ? '<span style="color:var(--danger)">' + esc(S.index.error) + '</span>' : 'On' + (TEAM.indexFile ? ', set up for you' : '') + '. Campaign changes reach everyone within a minute.') : 'Link a shared “Showroom Index” file the team can edit. Changes then reach everyone within a minute.', body3)
+    idx ? (S.index.error ? '<span style="color:var(--danger)">' + esc(S.index.error) + '</span>' : 'On' + (TEAM.indexFile ? ', set up for you' : '') + '. Tag changes reach everyone within a minute.') : 'Link a shared “Showroom Index” file the team can edit. Changes then reach everyone within a minute.', body3)
 
   html += '<div class="row" style="margin-top:2px"><button class="btn primary grow" id="ob-start"' + (S.token ? '' : ' disabled') + '>Start using Showroom</button><button class="btn ghost" id="ob-skip">Skip for now</button></div>'
   html += '</div></div></div>'
@@ -2742,18 +2819,19 @@ function renderHome() {
   const list = campaigns.filter((c) => !q || c.name.toLowerCase().indexOf(q) >= 0)
     .sort((a, b) => campaignStats(b).last - campaignStats(a).last || a.name.localeCompare(b.name))
   let html = '<div class="view"><div class="top"><div class="brand grow"><span class="mark">' + icon('wall', 14) + '</span>Showroom</div>'
-  html += '<button class="icon" id="home-new" aria-label="New campaign" title="New campaign">' + icon('plus') + '</button>'
+  html += '<button class="icon" id="home-new" aria-label="New tag" title="New tag">' + icon('plus') + '</button>'
   html += '<button class="icon" id="settings" aria-label="Settings" title="Settings">' + icon('gear') + '</button></div><div class="scroll">'
-  if (campaigns.length > 4) html += '<div class="home-search">' + icon('search', 14) + '<input class="field" id="home-q" placeholder="Search campaigns" value="' + esc(S.homeQuery || '') + '" aria-label="Search campaigns"></div>'
-  if (!campaigns.length) html += '<div class="hint"><span class="ico">' + icon('wall') + '</span><div><div style="font-weight:600">No campaigns yet</div><div class="muted small">Start one, or connect your team in Settings to see theirs.</div></div></div>'
-  for (const c of list) {
+  if (campaigns.length > 4) html += '<div class="home-search">' + icon('search', 14) + '<input class="field" id="home-q" placeholder="Search tags" value="' + esc(S.homeQuery || '') + '" aria-label="Search tags"></div>'
+  if (!campaigns.length) html += '<div class="hint"><span class="ico">' + icon('wall') + '</span><div><div style="font-weight:600">No tags yet</div><div class="muted small">Start one, or connect your team in Settings to see theirs.</div></div></div>'
+  const cards = campaigns.length > 1 && !q ? [allFramesView(campaigns)].concat(list) : list
+  for (const c of cards) {
     const st = campaignStats(c)
     const n = st.thumbs.length
     html += '<div class="ccard' + (S.data.activeCampaignId === c.id ? ' active' : '') + '" role="button" tabindex="0" data-campaign="' + esc(c.id) + '">'
     html += n ? '<div class="collage n' + n + '">' + st.thumbs.map((u) => '<div class="t" style="background-image:url(\'' + esc(u) + '\')"></div>').join('') + '</div>'
       : '<div class="collage empty">' + icon('wall', 14) + (c.items.length ? 'Open the wall to load previews' : 'No frames yet') + '</div>'
     if (c.items.length) html += '<button class="wallbtn" data-wall="' + esc(c.id) + '">' + icon('wall', 12) + 'Wall</button>'
-    html += '<div class="body"><div class="row" style="gap:8px"><div class="name grow">' + esc(c.name) + '</div><div class="meta">' + (st.last ? esc(ago(st.last)) : '') + '</div></div>'
+    html += '<div class="body"><div class="row" style="gap:8px"><div class="name grow">' + (c.all ? icon('tag', 12) + ' ' : '') + esc(c.name) + '</div><div class="meta">' + (st.last ? esc(ago(st.last)) : '') + '</div></div>'
     html += '<div class="meta">' + c.items.length + ' frame' + (c.items.length === 1 ? '' : 's') + ' · ' + st.files + ' file' + (st.files === 1 ? '' : 's') + (st.channels.length ? ' · ' + esc(st.channels.join(', ')) : '') + '</div>'
     if (c.items.length) html += '<div class="row" style="gap:10px"><div class="avatars">' + st.people.slice(0, 4).map(avatar).join('') + '</div><div class="grow">' + progressBar(c.items) + '</div></div>'
     html += '</div></div>'
@@ -2793,8 +2871,8 @@ function renderSetup() {
   html += '<div class="row"><button class="btn primary grow" id="test-token">Test and save</button>' + (S.token ? '<button class="btn danger" id="clear-token">Remove</button>' : '') + '</div>'
   html += '<div id="token-result">' + (S.tokenResult || '') + '</div></div>'
 
-  html += '<div class="sep"></div><div class="stack">' + h2('Finding team campaigns')
-  html += '<div class="muted small">Campaign frames are saved inside each design file. Campaign files link to each other, and the plugin also searches your team’s folders, so everyone sees the same campaigns.</div>'
+  html += '<div class="sep"></div><div class="stack">' + h2('Finding team tags')
+  html += '<div class="muted small">Tags are saved inside each design file, with its frames. Tagged files link to each other, and the plugin also searches your team’s folders, so everyone sees the same tags.</div>'
   const statusLine = (st) => st.error ? '<span style="color:var(--danger)">' + esc(st.error) + '</span>' : st.checkedAt ? esc(st.count || 0) + ' files · checked ' + esc(ago(st.checkedAt)) : 'Not searched yet'
   // Team sync: the shared index file (Enterprise).
   const index = indexInfo()
@@ -2802,7 +2880,7 @@ function renderSetup() {
   if (index) {
     const count = Object.keys(S.index.files || {}).filter((k) => hasCampaigns(S.index.files[k])).length
     const line = S.index.error ? '<span style="color:var(--danger)">' + esc(S.index.error) + '</span>'
-      : S.index.readAt ? 'On · ' + count + ' campaign file' + (count === 1 ? '' : 's') + ' · updated ' + esc(ago(S.index.readAt)) : 'Connecting…'
+      : S.index.readAt ? 'On · ' + count + ' tagged file' + (count === 1 ? '' : 's') + ' · updated ' + esc(ago(S.index.readAt)) : 'Connecting…'
     const note = S.index.canWrite === false ? '<div class="small" style="color:var(--warn);margin-top:2px">Read-only: your token can’t write File variables, or you can’t edit this file. You still see the team’s changes; yours reach them through the normal search.</div>'
       : S.index.writeError ? '<div class="small" style="color:var(--warn);margin-top:2px">Couldn’t update the index: ' + esc(S.index.writeError) + '</div>' : ''
     html += '<div class="card"><div class="sel-row"><div class="grow"><div class="nm">' + esc(index.name || 'Index file') + '</div><div class="muted small">' + line + (index.builtIn ? ' · team default' : '') + '</div>' + note + '</div>' +
@@ -2816,7 +2894,7 @@ function renderSetup() {
     html += '<div class="muted small">Which team are you on? This connects you to its Team sync file.</div>' + presetPicker('set-preset-')
     html += '<div class="row"><input class="field" id="index-link" placeholder="Or paste a Team sync file link" aria-label="Index file link"><button class="btn" id="add-index">Add</button></div>'
   } else {
-    html += '<div class="muted small">Optional, needs an Enterprise plan. Make an empty design file (e.g. “Showroom Index”) that the whole team can edit, and paste its link. Campaign changes then reach everyone within a minute.</div>'
+    html += '<div class="muted small">Optional, needs an Enterprise plan. Make an empty design file (e.g. “Showroom Index”) that the whole team can edit, and paste its link. Tag changes then reach everyone within a minute.</div>'
     html += '<div class="row"><input class="field" id="index-link" placeholder="figma.com/design/…/Showroom-Index" aria-label="Index file link"><button class="btn" id="add-index">Add</button></div>'
   }
   // Team: finds every folder by itself.
@@ -2861,14 +2939,14 @@ function renderSetup() {
   }
   html += '</div>'
 
-  if (c) {
-    html += '<div class="sep"></div><div class="stack">' + h2('Campaign')
-    html += '<div class="row"><input class="field" id="rename" value="' + esc(c.name) + '" aria-label="Campaign name"><button class="btn" id="do-rename">Rename</button></div>'
+  if (c && !c.all) {
+    html += '<div class="sep"></div><div class="stack">' + h2('Tag')
+    html += '<div class="row"><input class="field" id="rename" value="' + esc(c.name) + '" aria-label="Tag name"><button class="btn" id="do-rename">Rename</button></div>'
     html += '<button class="btn danger" id="hide">' + (c.shared ? 'Hide “' + esc(c.name) + '” from my list' : 'Delete “' + esc(c.name) + '”') + '</button></div>'
   }
   const hidden = (S.data.hidden || [])
   if (hidden.length) {
-    html += '<div class="stack"><div class="label" style="margin:0">Hidden campaigns</div>' + hidden.map((id) => {
+    html += '<div class="stack"><div class="label" style="margin:0">Hidden tags</div>' + hidden.map((id) => {
       const lc = S.data.campaigns.find((x) => x.id === id)
       let name = lc ? lc.name : ''
       if (!name) for (const src of manifests()) if (src.m.campaigns[id]) { name = src.m.campaigns[id].name; break }
@@ -2955,6 +3033,20 @@ function renderSetup() {
 }
 
 // ---------- wall ----------
+// Opened from a tagged frame's button in Figma's properties panel: "Open in Showroom" goes to that
+// frame on its tag's wall; "Edit tags" opens the panel ready to add a tag.
+function handleLaunch(cmd) {
+  S.view = 'panel'
+  const it = S.selection && S.selection.items[0]
+  const tag = it && (it.inCampaigns || [])[0]
+  if (cmd === 'open' && tag && S.token && S.file.key) {
+    if ((it.inCampaigns || []).indexOf(S.data.activeCampaignId) < 0 && S.data.activeCampaignId !== ALL_TAGS) { S.data.activeCampaignId = tag; send('set-active', { campaignId: tag, campaignName: tagName(tag) }) }
+    S.wall.focusId = S.file.key + '|' + it.id
+    setTimeout(openWall, 0)
+    return
+  }
+  S.focusTag = true
+}
 function openWall() {
   S.view = 'wall'; S.wall.fitted = false; S.wall.selected = []; S.wall.touched = false
   S.wall.synced = false; S.wall.tried = {}; S.wall.retried = {}; S.wall.present = null
@@ -3163,7 +3255,7 @@ function renderWall() {
   const world = $('world'); if (!world) return
   const banner = $('banner')
   banner.innerHTML = S.wall.banner ? '<div class="notice ' + (S.wall.banner.kind === 'error' ? 'error' : 'warn') + '">' + esc(S.wall.banner.text) + '</div>' : ''
-  if (!c || !c.items.length) { world.innerHTML = ''; banner.innerHTML = '<div class="notice">No frames in this campaign yet.</div>'; renderWallBar(); return }
+  if (!c || !c.items.length) { world.innerHTML = ''; banner.innerHTML = '<div class="notice">No frames with this tag yet.</div>'; renderWallBar(); return }
   const L = wallLayout(c)
   S.wall.bounds = L
   S.wall.selected = S.wall.selected.filter((id) => c.items.some((it) => it.id === id))
@@ -3212,6 +3304,8 @@ function renderWall() {
   renderFilterPill(c)
   animateWall(L, c)
   if (!S.wall.fitted) { if (!restorePosition(c.id)) fit(); S.wall.fitted = true } else applyTransform()
+  // Opened for one frame (from Figma's properties panel): select it and zoom to it.
+  if (S.wall.focusId && placementOf(S.wall.focusId)) { const id = S.wall.focusId; S.wall.focusId = null; setSelection([id]); zoomToSelection() }
   syncLive()
   renderInspector()
   renderWallBar()
@@ -3371,13 +3465,14 @@ function renderInspector() {
     if (it.addedBy) html += '<div class="muted small" style="margin-top:2px">Added by ' + esc(it.addedBy) + (it.addedAt ? ' · ' + esc(ago(it.addedAt)) : '') + '</div>'
     if (editable) html += '<div style="margin-top:10px"><label class="label" for="insp-channel">Channel</label>' + channelSelect(it.channel) + '</div>'
     else html += '<div class="muted small" style="margin-top:8px">Channel: <b>' + esc(it.channel) + '</b>. Change it from its own file.</div>'
+    html += inspectorTags(items)
     html += statusControl(items)
     html += deviceControl(items)
     html += '<div class="row" style="margin-top:10px"><button class="btn primary grow" id="insp-open">' + icon('ext', 14) + 'Open in Figma</button><button class="btn" id="insp-refresh" title="Reload this frame from its file now"' + busy + '>' + icon('refresh', 14) + 'Refresh</button></div>'
     const live = S.wall.live && S.wall.live.id === it.id
     if (hasProto(items[0])) html += '<div class="row" style="margin-top:4px"><button class="btn grow" id="insp-play" title="Play the live prototype right here on the wall">' + icon(live ? 'x' : 'play', 14) + (live ? 'Stop prototype' : 'Play prototype') + '</button>' +
       '<button class="btn" id="insp-play-large" title="Play the prototype in a large window over the wall">' + icon('fit', 14) + 'Large</button></div>'
-    html += '<div class="row" style="margin-top:4px"><button class="btn ghost" id="insp-history" style="padding:0 4px">' + icon('clock', 14) + 'History</button><span class="grow"></span><button class="btn ghost danger" id="insp-remove" style="padding:0 4px">' + (editable ? 'Remove from campaign' : 'Hide on my wall') + '</button></div>'
+    html += '<div class="row" style="margin-top:4px"><button class="btn ghost" id="insp-history" style="padding:0 4px">' + icon('clock', 14) + 'History</button><span class="grow"></span><button class="btn ghost danger" id="insp-remove" style="padding:0 4px">' + (editable ? (c.all ? 'Remove all tags' : 'Remove tag') : 'Hide on my wall') + '</button></div>'
   } else {
     html += '<div class="row" style="align-items:flex-start"><div class="grow"><div style="font-weight:600;font-size:13px">' + items.length + ' frames selected</div>'
     const names = items.slice(0, 3).map((it) => esc((nodeInfo(it) || {}).name || it.name)).join(', ')
@@ -3385,10 +3480,11 @@ function renderInspector() {
     html += '<button class="icon" id="insp-close" aria-label="Clear selection">' + icon('x', 14) + '</button></div>'
     const channels = Array.from(new Set(items.map((it) => it.channel)))
     html += '<div style="margin-top:10px"><label class="label" for="insp-channel">Channel</label>' + channelSelect(channels.length === 1 ? channels[0] : '') + '</div>'
+    html += inspectorTags(items)
     html += statusControl(items)
     html += deviceControl(items)
     html += '<div class="row" style="margin-top:10px"><button class="btn primary grow" id="insp-refresh" title="Reload these frames from their files now"' + busy + '>' + icon('refresh', 14) + 'Refresh ' + items.length + ' frames</button></div>'
-    html += '<button class="btn ghost danger" id="insp-remove" style="margin-top:4px;padding:0 4px">Remove ' + items.length + ' from campaign</button>'
+    html += '<button class="btn ghost danger" id="insp-remove" style="margin-top:4px;padding:0 4px">' + (c.all ? 'Remove all tags from ' + items.length : 'Remove the tag from ' + items.length) + ' frames</button>'
   }
   box.innerHTML = html
   box.classList.remove('hidden')
@@ -3401,6 +3497,7 @@ function renderInspector() {
   const play = $('insp-play'); if (play) play.addEventListener('click', () => { if (S.wall.live && S.wall.live.id === items[0].id) stopLive(); else playInPlace(items[0].id) })
   const playL = $('insp-play-large'); if (playL) playL.addEventListener('click', () => { stopLive(); openPlayer(items[0]) })
   box.querySelectorAll('[data-status]').forEach((el) => el.addEventListener('click', () => setStatus(ids, el.dataset.status)))
+  bindInspectorTags(box, items)
   box.querySelectorAll('[data-device]').forEach((el) => el.addEventListener('click', () => setDevice(ids, el.dataset.device)))
   $('insp-remove').addEventListener('click', (e) => {
     const b = e.currentTarget
@@ -3408,6 +3505,39 @@ function renderInspector() {
     setSelection([])
     send('remove-item', { campaignId: c.id, itemIds: ids })
   })
+}
+
+// The frames' tags in the wall's details: remove (×) or add tags for frames in this file. Frames from
+// other files show their tags read-only (only a frame's own file can change them).
+function inspectorTags(items) {
+  const n = items.length, count = {}
+  items.forEach((it) => (it.tags || []).forEach((t) => { count[t] = (count[t] || 0) + 1 }))
+  const editable = items.every((it) => it.fileKey === S.file.key)
+  const ids = Object.keys(count).sort((a, b) => tagName(a).localeCompare(tagName(b)))
+  let html = '<div style="margin-top:10px"><div class="label">Tags</div><div class="tagbox">'
+  html += ids.map((t) => editable
+    ? '<span class="tagchip"><span class="tc-name" style="padding:0 6px">' + esc(tagName(t)) + (count[t] < n ? ' <em class="muted" style="font-style:normal">' + count[t] + '/' + n + '</em>' : '') + '</span><button class="tc-x" data-itag-del="' + esc(t) + '" aria-label="Remove ' + esc(tagName(t)) + '" title="Remove this tag">' + icon('x', 10) + '</button></span>'
+    : '<span class="tagchip ro">' + esc(tagName(t)) + (count[t] < n ? ' ' + count[t] + '/' + n : '') + '</span>').join('')
+  if (editable) html += '<input class="field tag-input" id="itag-add" list="itag-list" placeholder="Add a tag…" maxlength="80" aria-label="Add a tag"><datalist id="itag-list">' +
+    allCampaigns().filter((t) => (count[t.id] || 0) < n).map((t) => '<option value="' + esc(t.name) + '">').join('') + '</datalist>'
+  html += '</div>'
+  if (!editable) html += '<div class="muted small" style="margin-top:4px">Change ' + (n === 1 ? 'its' : 'their') + ' tags from ' + (n === 1 ? 'its own file' : 'their own files') + '.</div>'
+  return html + '</div>'
+}
+function bindInspectorTags(box, items) {
+  const nodeIds = items.map((it) => it.nodeId)
+  box.querySelectorAll('[data-itag-del]').forEach((el) => el.addEventListener('click', () => {
+    const t = el.dataset.itagDel
+    send('remove-item', { campaignId: t, itemIds: items.filter((it) => (it.tags || []).indexOf(t) >= 0).map((it) => it.id) })
+  }))
+  const add = (v) => {
+    v = String(v || '').trim(); if (!v) return
+    const ex = allCampaigns().find((x) => x.name.trim().toLowerCase() === v.toLowerCase())
+    send('add-selection', { campaignId: ex ? ex.id : '', campaignName: ex ? ex.name : v, nodeIds: nodeIds, keepActive: true })
+  }
+  const input = box.querySelector('#itag-add'); if (!input) return
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(input.value) } e.stopPropagation() })
+  input.addEventListener('change', () => { const v = input.value.trim(); if (v && allCampaigns().some((x) => x.name.toLowerCase() === v.toLowerCase())) add(v) })
 }
 
 // ---------- prototype player (TEST) ----------
@@ -3775,6 +3905,7 @@ window.onmessage = (event) => {
       S.view = 'panel'
       if (!S.data.activeCampaignId && allCampaigns().length > 1) S.view = 'home'
       if (!S.prefs.onboarded) { S.view = 'welcome'; if (S.token) setTimeout(checkAccess, 400) }
+      else if (msg.command) handleLaunch(msg.command)
       // Team sync first (one quick read), then the full search if it's due.
       setTimeout(async () => { await pollIndex(); if (S.token && canSearch() && searchIsStale()) discover() }, 300)
     }
