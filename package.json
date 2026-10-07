@@ -1,6 +1,6 @@
 {
   "name": "showroom",
-  "version": "0.15.1",
+  "version": "0.15.2",
   "private": true,
   "description": "Figma plugin: add frames from any file to a campaign and review them together on one live wall.",
   "scripts": {

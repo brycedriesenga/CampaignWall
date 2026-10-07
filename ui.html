@@ -196,6 +196,8 @@ body.presenting .lv-bar span, body.presenting .lv-bar .lv-large { display: none;
 body.presenting .pb, .fr.playing .pb, .fr.playing .lbl { display: none; }   /* the live bar takes the name's place */
 .fr { cursor: default; }
 .fr.dim { opacity: .12; }
+.sec.dragging { z-index: 4; opacity: .9; }
+.sec-t { cursor: grab; }
 .fr.dragging { z-index: 5; opacity: .85; pointer-events: none; box-shadow: 0 calc(12px * var(--inv)) calc(40px * var(--inv)) rgba(0,0,0,.3); }
 .drop-line { position: absolute; z-index: 4; width: calc(4px * var(--inv)); margin-left: calc(-2px * var(--inv)); border-radius: 99px; background: var(--brand); pointer-events: none; }
 #viewport.spacepan, #viewport.spacepan .fr { cursor: grab; }
@@ -2227,6 +2229,9 @@ function startArrange(d) {
   const g = (S.wall.bounds.groups || []).find((grp) => grp.items.indexOf(p) >= 0)
   if (!p || !g) { d.arrange = false; return }
   d.place = p; d.group = g
+  // In a row split into sections (by file or page), a frame can only move within its own section:
+  // sections are rebuilt from the order, so dropping it in another section would just snap it back.
+  d.seg = (g.segments || []).find((sg) => sg.ids.indexOf(p.it.id) >= 0) || null
   d.el = d.target
   d.el.classList.add('dragging')
   $('viewport').classList.add('arranging')
@@ -2236,7 +2241,7 @@ function startArrange(d) {
 function arrangeSlot(d, e) {
   const vp = $('viewport'); const r = vp.getBoundingClientRect(); const z = S.wall.zoom
   const wx = (e.clientX - r.left - S.wall.tx) / z, wy = (e.clientY - r.top - S.wall.ty) / z
-  const others = d.group.items.filter((q) => q !== d.place)
+  const others = d.group.items.filter((q) => q !== d.place && (!d.seg || d.seg.ids.indexOf(q.it.id) >= 0))
   const rowH = {}
   others.forEach((q) => { rowH[q.y] = Math.max(rowH[q.y] || 0, q.h) })
   const after = (q) => wy >= q.y + rowH[q.y] ? true : wy < q.y ? false : wx > q.x + q.w / 2
@@ -2258,9 +2263,13 @@ function endArrange(d, e) {
   $('viewport').classList.remove('arranging')
   if (d.line) d.line.remove()
   const slot = arrangeSlot(d, e)
-  const ids = slot.others.map((q) => q.it.id)
-  ids.splice(slot.index, 0, d.place.it.id)
+  const moved = slot.others.map((q) => q.it.id)
+  moved.splice(slot.index, 0, d.place.it.id)
   const before = d.group.items.map((q) => q.it.id)
+  // The row's new order: the moved frames' slots (the whole row, or just this section) refilled in their new order.
+  const inMove = {}; moved.forEach((id) => { inMove[id] = true })
+  const queue = moved.slice()
+  const ids = before.map((id) => inMove[id] ? queue.shift() : id)
   if (ids.join('|') === before.join('|')) return
   // Let the dropped frame glide from where it was let go, not from its old slot.
   const z = S.wall.zoom
@@ -2272,6 +2281,51 @@ function endArrange(d, e) {
   let placed = false
   for (const g of S.wall.bounds.groups) for (const q of g.items) {
     if (groupIds[q.it.id]) { if (!placed) { full.push.apply(full, ids); placed = true } } else full.push(q.it.id)
+  }
+  saveOrder(full)
+}
+// Sections (by file or page) can be dragged by their name to a new place in their row.
+function startSecArrange(d) {
+  const [gi, si] = d.heading.dataset.seg.split(':').map(Number)
+  const g = S.wall.bounds.groups[gi], sg = g && g.segments[si]
+  if (!sg) { d.secDrag = false; return }
+  d.group = g; d.sec = sg
+  d.secEls = [d.heading.parentNode].concat(sg.ids.map((id) => document.querySelector('#world .fr[data-id="' + cssEsc(id) + '"]')).filter(Boolean))
+  d.secEls.forEach((el) => el.classList.add('dragging'))
+  $('viewport').classList.add('arranging')
+  d.line = document.createElement('div'); d.line.className = 'drop-line'; $('world').appendChild(d.line)
+}
+function secSlot(d, e) {
+  const vp = $('viewport'); const r = vp.getBoundingClientRect(); const z = S.wall.zoom
+  const wx = (e.clientX - r.left - S.wall.tx) / z, wy = (e.clientY - r.top - S.wall.ty) / z
+  const others = d.group.segments.filter((sg) => sg !== d.sec)
+  const after = (sg) => wy >= sg.box.y + sg.box.h ? true : wy < sg.box.y ? false : wx > sg.box.x + sg.box.w / 2
+  return { others: others, index: others.filter(after).length }
+}
+function moveSecArrange(d, e) {
+  const z = S.wall.zoom
+  d.secEls.forEach((el) => { el.style.transform = 'translate(' + ((e.clientX - d.x) / z) + 'px,' + ((e.clientY - d.y) / z) + 'px)' })
+  const slot = secSlot(d, e)
+  const ref = slot.others[slot.index] || slot.others[slot.others.length - 1]
+  if (!ref) { d.line.style.display = 'none'; return }
+  const before = !!slot.others[slot.index]
+  const gap = (SPACING[wallView().spacing] || SPACING.normal)[0]
+  d.line.style.cssText = 'display:block;left:' + (before ? ref.box.x - gap : ref.box.x + ref.box.w + gap) + 'px;top:' + ref.box.y + 'px;height:' + ref.box.h + 'px'
+}
+function endSecArrange(d, e) {
+  d.secEls.forEach((el) => { el.classList.remove('dragging'); el.style.transform = '' })
+  $('viewport').classList.remove('arranging')
+  if (d.line) d.line.remove()
+  const slot = secSlot(d, e)
+  const segs = slot.others.slice(); segs.splice(slot.index, 0, d.sec)
+  if (segs.every((sg, i) => sg === d.group.segments[i])) return
+  // Sections follow their frames' order, so the row's new order is simply each section's frames in turn.
+  const rowIds = [].concat.apply([], segs.map((sg) => sg.ids))
+  const inRow = {}; d.group.items.forEach((q) => { inRow[q.it.id] = true })
+  const full = []
+  let placed = false
+  for (const g of S.wall.bounds.groups) for (const q of g.items) {
+    if (inRow[q.it.id]) { if (!placed) { full.push.apply(full, rowIds); placed = true } } else full.push(q.it.id)
   }
   saveOrder(full)
 }
@@ -3783,6 +3837,7 @@ function bindWall() {
     const pan = !target || e.button === 1 || S.wall.spaceDown || !!S.wall.present || target.classList.contains('dim')
     drag = { x: e.clientX, y: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, tx: S.wall.tx, ty: S.wall.ty, moved: false,
       target: target, heading: e.target.closest('.ch, .sec-t'), additive: e.shiftKey || e.metaKey || e.ctrlKey,
+      secDrag: !!e.target.closest('.sec-t') && !S.wall.present && !S.wall.spaceDown && e.button === 0 && wallView().group !== 'tag',
       box: e.shiftKey && !target && !S.wall.present, arrange: !pan && !(e.shiftKey || e.metaKey || e.ctrlKey) && wallView().group !== 'tag' }   // (rows by tag can repeat a frame)
     vp.setPointerCapture(e.pointerId)
   })
@@ -3792,10 +3847,12 @@ function bindWall() {
     if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 3) {
       drag.moved = true
       if (drag.arrange) startArrange(drag)
+      else if (drag.secDrag) startSecArrange(drag)
       else if (!drag.box) vp.classList.add('panning')
     }
     if (!drag.moved) return
     if (drag.arrange) { moveArrange(drag, e); return }
+    if (drag.secDrag) { moveSecArrange(drag, e); return }
     if (drag.box) {
       const x = Math.min(drag.ox, drag.ox + dx), y = Math.min(drag.oy, drag.oy + dy)
       marquee.style.cssText = 'left:' + x + 'px;top:' + y + 'px;width:' + Math.abs(dx) + 'px;height:' + Math.abs(dy) + 'px'
@@ -3825,6 +3882,7 @@ function bindWall() {
     const d = drag
     drag = null
     if (d.arrange && d.moved) { endArrange(d, e); return }
+    if (d.secDrag && d.moved) { endSecArrange(d, e); return }
     if (d.box && d.moved) {
       marquee.classList.add('hidden')
       document.querySelectorAll('#world .fr.willsel').forEach((el) => el.classList.remove('willsel'))

@@ -164,6 +164,7 @@ Tiles are sized to `absoluteRenderBounds`, because `/images` renders content tha
 
 **Arranging (v0.6):** dragging a frame (no modifier keys) reorders it within its row group; dragging empty space pans.
 - `startArrange`, `moveArrange` (drop line) and `endArrange` → `saveOrder(full)`.
+- **Sections (v0.15.2):** in a row split into sections, a frame only moves within its own section (`d.seg`; `arrangeSlot` only offers that section's frames, so dropping elsewhere lands at the nearest end of it). Before, the drop line could show a spot in another section and the frame snapped back. Sections themselves drag by their name pill: `startSecArrange` / `moveSecArrange` / `endSecArrange` (`secSlot` picks the place among the row's other sections; the new row order is each section's frames in turn, since sections follow their frames' order). A click on the name still selects the section's frames. Both are off when rows are grouped by tag (frames can repeat).
 - The order goes to `prefs.layouts[cid]` (a local copy) and `save-layout` → manifest `layouts[cid] = {order: [itemIds], at, by}`, keeping the 50 newest.
 - `campaignOrder()` takes the newest `at` across all manifests and the local copy. `orderItems()` sorts before grouping, and unknown items go last.
 - `hasShared(m)` (campaigns or layouts) decides publishing to Team sync and `rememberThisFile`. `writeManifest` drops `layouts` after `links` if the manifest is too big.

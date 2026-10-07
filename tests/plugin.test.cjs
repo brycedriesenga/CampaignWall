@@ -151,6 +151,7 @@ async function boot(env, api, { folders, welcome, presets } = {}) {
 }
 
 const $ = (w, sel) => w.document.querySelector(sel)
+const cssEscT = (v) => String(v).replace(/["\\]/g, '\\$&')
 const click = (w, sel) => { const el = $(w, sel); if (!el) throw new Error('no element ' + sel); el.click() }
 const text = (w) => w.document.getElementById('app').textContent
 async function connect(w) {
@@ -825,6 +826,40 @@ function pointer(w, type, target, extra) {
   check('dropping moves the frame within its row', box(tileOf('EMAILFILE0001|1:3')).x > box(tileOf('EMAILFILE0001|1:5')).x)
   const layoutSaved = (JSON.parse(bryce.root._d['showroom/manifest']).layouts || {})[cidNow]
   check('the new order is saved in the file for the team', layoutSaved && layoutSaved.order.indexOf('EMAILFILE0001|1:3') > layoutSaved.order.indexOf('EMAILFILE0001|1:5'), JSON.stringify(layoutSaved))
+  {
+    // Rows split into sections: frames stay in their own section; sections move by their name.
+    click(wb, '#view-opts'); await tick(10)
+    click(wb, '#viewopts [data-vo="group"][data-val="file"]'); await tick(60)
+    await key('Escape')
+    const secs = () => [...wb.document.querySelectorAll('#world .sec')].filter((el) => el.querySelector('.sec-t').dataset.seg.split(':')[0] === gi)
+    const firstMulti = [...wb.document.querySelectorAll('#world .sec-t')].map((t) => t.dataset.seg.split(':')[0]).find((g, i, all) => all.filter((x) => x === g).length >= 2)
+    const gi = firstMulti
+    const T2 = tf()
+    const sBox = (el) => box(el)
+    const names = () => secs().map((el) => el.querySelector('.sec-t').textContent)
+    const before3 = names()
+    const s0 = secs()[0], sLast = secs()[secs().length - 1]
+    const b0 = sBox(s0), bL = sBox(sLast)
+    const pt = (b, fx, fy) => ({ clientX: (b.x + b.w * fx) * T2.z + T2.tx, clientY: (b.y + b.h * fy) * T2.z + T2.ty })
+    // a frame from the first section dropped in the middle of the last one stays in its own section
+    const f0 = [...wb.document.querySelectorAll('#world .fr')].find((t) => { const tb = box(t); return tb.x >= b0.x && tb.x + tb.w <= b0.x + b0.w && tb.y >= b0.y && tb.y <= b0.y + b0.h })
+    const fid = f0.dataset.id
+    pointer(wb, 'pointerdown', f0, pt(box(f0), 0.5, 0.5))
+    pointer(wb, 'pointermove', $(wb, '#viewport'), pt(bL, 0.5, 0.5))
+    pointer(wb, 'pointerup', $(wb, '#viewport'), pt(bL, 0.5, 0.5)); await tick(150)
+    const nb0 = sBox(secs()[0]), nf = box(wb.document.querySelector('.fr[data-id="' + cssEscT(fid) + '"]'))
+    check('a frame dragged into another section stays in its own section', JSON.stringify(names()) === JSON.stringify(before3) && nf.x >= nb0.x && nf.x + nf.w <= nb0.x + nb0.w + 1, names().join(', '))
+    // drag the first section by its name to the end of the row
+    const t0 = secs()[0].querySelector('.sec-t')
+    pointer(wb, 'pointerdown', t0, pt(sBox(secs()[0]), 0.05, 0))
+    pointer(wb, 'pointermove', $(wb, '#viewport'), pt(sBox(secs()[secs().length - 1]), 0.9, 0.5))
+    check('dragging a section shows where it will land', !!wb.document.querySelector('#world .drop-line') && secs()[0].classList.contains('dragging'))
+    pointer(wb, 'pointerup', $(wb, '#viewport'), pt(sBox(secs()[secs().length - 1]), 0.9, 0.5)); await tick(150)
+    check('dropping a section moves it, with its frames, in the row', names()[names().length - 1] === before3[0] && names().length === before3.length, before3.join(', ') + ' → ' + names().join(', '))
+    click(wb, '#view-opts'); await tick(10)
+    click(wb, '#viewopts [data-vo="group"][data-val="channel"]'); await tick(60)
+    await key('Escape')
+  }
   const emptyAt = { clientX: 5, clientY: 700 }
   const before2 = $(wb, '#world').style.transform
   pointer(wb, 'pointerdown', $(wb, '#viewport'), emptyAt); pointer(wb, 'pointermove', $(wb, '#viewport'), { clientX: 60, clientY: 720 }); pointer(wb, 'pointerup', $(wb, '#viewport'), { clientX: 60, clientY: 720 }); await tick(10)

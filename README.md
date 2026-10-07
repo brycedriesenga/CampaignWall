@@ -54,7 +54,7 @@ The wall reads frames straight from their files through Figma's API, so it's alw
   - Arrow keys step from frame to frame.
   - Space+drag pans.
   - Press ? on the wall for the full list.
-- **Arrange:** drag a frame to move it within its row. The new order is saved in the file and synced to the team. Dragging empty space still pans.
+- **Arrange:** drag a frame to move it within its row (within its section, when the row has sections), or drag a section by its name to move it within the row. The new order is saved in the file and synced to the team. Dragging empty space still pans.
 - **Filter:** the funnel button shows only certain channels, people, or frames updated since you last looked. The other frames fade out.
 - **Present:** press P or click **Present**. Use the arrow keys to step through frames, shown as large as fits but never bigger than their real size, and Esc to go back.
 - **Device frames:** Site pages show inside a browser window or a phone.
