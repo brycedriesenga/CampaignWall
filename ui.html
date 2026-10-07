@@ -139,6 +139,9 @@ body.walling input, body.walling textarea { user-select: text; -webkit-user-sele
 .far .lbl .mt { display: none; }
 .fr .crop { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; }
 .fr .crop img { position: absolute; max-width: none; border-radius: 0; }
+.fr .wsb { position: absolute; top: 4px; bottom: 4px; right: calc(4px * var(--inv)); width: calc(5px * var(--inv)); z-index: 4; pointer-events: none; opacity: 0; transition: opacity .2s; }
+.fr.sel .wsb { opacity: 1; }
+.fr .wsb i { position: absolute; left: 0; right: 0; border-radius: 99px; background: rgba(0,0,0,.4); box-shadow: 0 0 0 1px rgba(255,255,255,.5); }
 .fr .edgewrap { position: absolute; inset: 0; overflow: hidden; z-index: 2; pointer-events: none; }   /* above the image */
 .fr .edge { position: absolute; pointer-events: none; }
 #viewport[data-edge="line"] .edge, #viewport[data-edge="both"] .edge { outline: calc(1px * var(--inv)) dashed color-mix(in srgb, var(--brand) 70%, transparent); }
@@ -375,6 +378,7 @@ body.presenting .sec { display: none; }
 .fr.wdv-on .edgewrap { display: none; }   /* the device shows where the screen is */
 .wdv { position: absolute; pointer-events: none; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #1f1f1f; }
 .wdv-bg { position: absolute; pointer-events: none; }
+.fr .wdv-fd { z-index: 2; }
 /* Browser: under the page (the page covers its window), bar above the frame. */
 .wdv-browser { border-radius: 12px 12px 0 0; overflow: hidden; background: #dfe3e8; box-shadow: 0 0 0 1px rgba(0,0,0,.18), 0 18px 50px rgba(0,0,0,.28); }
 /* Phone: a normal-height device lying on top of the page; the screen is see-through and a longer page
@@ -492,7 +496,7 @@ const S = {
   file: { key: '', name: '', keyFromApi: false, manifest: { campaigns: {} } }, channelChoice: 'auto', creating: false,
   search: { busy: false, status: '', error: '' }, history: null, ob: { checks: null, busy: false, error: '' },
   index: { files: {}, vars: {}, colId: '', modeId: '', readAt: 0, error: '', writeError: '', canWrite: null, pauseUntil: 0 },
-  wall: { zoom: 1, tx: 40, ty: 80, selected: [], busy: false, status: '', banner: null, fitted: false,
+  wall: { scrollY: {}, zoom: 1, tx: 40, ty: 80, selected: [], busy: false, status: '', banner: null, fitted: false,
     phase: {}, tried: {}, retried: {}, loaded: {}, pending: false, synced: false,
     filter: { campaignId: '', channels: [], people: [], updated: false }, present: null },
 }
@@ -1849,18 +1853,18 @@ function presentPlaying() {
 function hudSync() {
   const pr = S.wall.present, b = $('hud-play'); if (!pr || !b) return
   const p = placementOf(pr.id)
-  const can = !!p, on = can && presentPlaying()
+  const can = !!(p && hasProto(p.it)), on = can && presentPlaying()
   b.classList.toggle('hidden', !can)
   b.classList.toggle('on', on)
   b.innerHTML = icon(on ? 'stop' : 'play', 14)
-  b.title = (on ? 'Stop the prototype' : hasProto(p.it) ? 'Play the prototype' : 'Play it in Figma’s prototype player (no prototype connections found)') + ' (K)'
+  b.title = (on ? 'Stop the prototype' : 'Play the prototype') + ' (K)'
   b.setAttribute('aria-label', on ? 'Stop the prototype' : 'Play the prototype')
   const hl = $('hud-live'); if (hl) hl.textContent = on ? ' · Live prototype' : hasProto(p.it) ? ' · Prototype' : ''
 }
 // Plays (or stops) the current frame's prototype: inside its device if it has one, else on the wall.
 function presentTogglePlay() {
   const pr = S.wall.present; if (!pr) return
-  const p = placementOf(pr.id); if (!p) return
+  const p = placementOf(pr.id); if (!p || !hasProto(p.it)) return
   clearTimeout(S.wall.autoplayTimer)
   const kind = wallView().devicePresent !== 'off' ? deviceFor(p.it) : 'none'
   if (S.wall.dev && S.wall.dev.id === pr.id && S.wall.dev.proto) showDevice(p, { proto: false })
@@ -1996,9 +2000,12 @@ const NO_INSETS = { t: 0, r: 0, b: 0, l: 0 }
 function wallDevBox(kind, n, w, h) {
   if (kind !== 'browser' && kind !== 'phone') return null
   const fx = (n && n.offX) || 0, fy = (n && n.offY) || 0, fw = (n && n.width) || w
+  // Both are a real screen tall; a longer page runs on below them (shown, faded or hidden, like any
+  // content outside a frame).
+  const full = devScreen(kind, fw).full
   const box = kind === 'browser'
-    ? { x: fx, y: fy - 88, w: fw, h: h - (fy - 88) }
-    : { x: fx - 14, y: fy - 68, w: fw + 28, h: 68 + Math.round(fw * 2.164) - 166 + 126 }
+    ? { x: fx, y: fy - 88, w: fw, h: 88 + full }
+    : { x: fx - 14, y: fy - 68, w: fw + 28, h: 68 + full + 126 }
   return { box: box, ins: { t: Math.max(0, -box.y), l: Math.max(0, -box.x), r: Math.max(0, box.x + box.w - w), b: Math.max(0, box.y + box.h - h) } }
 }
 // The chrome around a frame on the wall, plus the frame's background colour behind the page (so
@@ -2008,18 +2015,22 @@ function wallDeviceHTML(kind, it, n, db, w, h) {
   const b = db.box, pos = (r) => 'left:' + r.x + 'px;top:' + r.y + 'px;width:' + r.w + 'px;height:' + r.h + 'px'
   const fx = (n && n.offX) || 0, fy = (n && n.offY) || 0, fw = (n && n.width) || w
   const fill = (n && n.fill) || '#fff'
-  const bg = '<div class="wdv-bg" style="' + pos({ x: fx, y: fy, w: fw, h: Math.max(0, h - fy) }) + ';background:' + fill + '"></div>'
+  const full = devScreen(kind, fw).full
+  const bg = '<div class="wdv-bg" style="' + pos({ x: fx, y: fy, w: fw, h: Math.max(h - fy, full) }) + ';background:' + fill + '"></div>'
+  // "Fade": the page below the device fades into the canvas, like content outside a frame.
+  const fadeY = fy + full + (kind === 'phone' ? 126 : 0)
+  const fade = h > fadeY + 1 ? '<div class="fd wdv-fd" style="' + pos({ x: 0, y: fadeY, w: w, h: h - fadeY }) + '"></div>' : ''
   if (kind === 'phone') {
     return bg + '<div class="wdv wdv-phone" aria-hidden="true" style="' + pos(b) + '"><div class="dv-status" style="background:' + fill + '"><span class="dv-time">9:41</span><span class="dv-island"></span><span class="dv-sys"><i class="sig"></i><i class="wifi"></i><i class="bat"></i></span></div>' +
       '<div class="dv-mbar"><div class="dv-murl">' + devIcon('aa', 18) + '<span>' + devIcon('lock', 13) + esc(addr.host.replace(/^www\./, '')) + '</span>' + devIcon('reload', 18) + '</div>' +
-      '<div class="dv-mnav">' + devIcon('back', 22) + devIcon('fwd', 22) + devIcon('share', 22) + devIcon('tabs', 22) + '</div></div></div>'
+      '<div class="dv-mnav">' + devIcon('back', 22) + devIcon('fwd', 22) + devIcon('share', 22) + devIcon('tabs', 22) + '</div></div></div>' + fade
   }
   const wide = fw >= 1200
   return '<div class="wdv wdv-browser' + (wide ? ' wide' : '') + '" aria-hidden="true" style="' + pos(b) + '">' +
     '<div class="dv-tabs"><span class="dv-dots"><i></i><i></i><i></i></span><div class="dv-tab"><span class="dv-fav"></span><span class="dv-title">' + esc((n && n.name) || it.name || addr.host) + '</span><span class="dv-x">×</span></div><span class="dv-plus">+</span></div>' +
     '<div class="dv-bar"><span class="dv-nav">' + devIcon('back', 18) + devIcon('fwd', 18) + devIcon('reload', 18) + '</span>' +
     '<div class="dv-url">' + devIcon('lock', 14) + '<span>' + esc(addr.host) + '<em>' + esc(addr.path) + '</em></span>' + (wide ? '<span class="dv-star">' + devIcon('star', 16) + '</span>' : '') + '</div>' +
-    '<span class="dv-tools"><i class="dv-avatar"></i>' + devIcon('menu', 18) + '</span></div></div>' + bg
+    '<span class="dv-tools"><i class="dv-avatar"></i>' + devIcon('menu', 18) + '</span></div></div>' + bg + fade
 }
 // Shows (or, with null, removes) the device stage over the dimmed wall for the frame being presented.
 function showDevice(p, opts) {
@@ -2055,10 +2066,15 @@ function showDevice(p, opts) {
 //   shows whole between the bars, so the device grows; long pages still get a real screen.
 // A live prototype always gets its whole frame when it's roughly a screen (Figma's player can't be
 // scrolled past its window from here); a long page prototype gets a real screen and scrolls itself.
-function deviceView(kind, W, H, PH, proto, mode) {
+// A real screen for a frame W wide: phone 9:19.5 (390 × 844), browser window 16:9 (1536 × 864), each with
+// its bars; full = the page area between them.
+function devScreen(kind, W) {
   const bars = kind === 'phone' ? 54 + 112 : 88
   const screen = kind === 'phone' ? Math.round(W * 2.164) : Math.round(W * 0.5625)
-  const full = screen - bars
+  return { bars: bars, screen: screen, full: screen - bars }
+}
+function deviceView(kind, W, H, PH, proto, mode) {
+  const ds = devScreen(kind, W), screen = ds.screen, full = ds.full
   if (proto) return H <= full * 1.6 ? H : full
   const screenSized = PH > H ? H <= screen * 2 : H <= full * 1.15
   if (mode === 'frame' && screenSized) return H
@@ -3014,11 +3030,11 @@ function layout(c, zRef) {
     let x = 0, rowY = y + above, rowH = 0, seg = null, prevKey = null
     const close = () => { if (seg) { g.segments.push(seg); seg = null } }
     for (const it of items) {
-      const n = wallGeo(nodeInfo(it), view)
-      const w = Math.max(40, (n && (n.viewW || n.width)) || it.width || 400)
-      const h = Math.max(40, (n && (n.viewH || n.height)) || it.height || 300)
       // Device frames on the wall: the frame keeps its place inside a bigger block (its chrome around it).
       const dev = view.devicePresent === 'wall' ? deviceFor(it) : 'none'
+      const n = wallGeo(nodeInfo(it), view, dev)
+      const w = Math.max(40, (n && (n.viewW || n.width)) || it.width || 400)
+      const h = Math.max(40, (n && (n.viewH || n.height)) || it.height || 300)
       const db = wallDevBox(dev, n, w, h)
       const ins = db ? db.ins : NO_INSETS
       const ow = w + ins.l + ins.r, oh = h + ins.t + ins.b
@@ -3044,12 +3060,33 @@ function layout(c, zRef) {
   const lastGap = groups.length && groups[groups.length - 1].segments.length ? Math.max(ROW_GAP * 0.6, px(36)) : ROW_GAP
   return { groups: groups, width: maxX, height: Math.max(0, y - lastGap), zRef: z }
 }
-// With "Hide" content outside a frame, the wall uses the frame's own box: a copy of the node whose
-// render is cropped (n.cropped keeps where the full render sits, for the image inside the tile).
-function wallGeo(n, view) {
+// With "Hide" content outside a frame, the wall shows a window instead of the whole render: the frame's
+// own box, or, for a frame shown in a device, the device's screen. It returns a copy of the node sized to
+// that window; n.cropped keeps where the full render sits, and n.scrollMax how far the rest of the page
+// below can be scrolled inside it (select the frame and scroll over it).
+function wallGeo(n, view, dev) {
   if (!n || view.outside !== 'hide' || !n.viewW || !n.width) return n
-  if (Math.abs(n.viewW - n.width) <= 1 && Math.abs(n.viewH - n.height) <= 1) return n
-  return Object.assign({}, n, { viewW: n.width, viewH: n.height, offX: 0, offY: 0, cropped: { x: n.offX || 0, y: n.offY || 0, w: n.viewW, h: n.viewH } })
+  const fx = n.offX || 0, fy = n.offY || 0
+  const below = n.viewH - fy                            // content from the frame's top down
+  const scr = dev === 'browser' || dev === 'phone' ? devScreen(dev, n.width).full : n.height
+  const h = Math.max(1, Math.min(below, scr))
+  if (fx === 0 && fy === 0 && Math.abs(n.viewW - n.width) <= 1 && n.viewH <= h + 1) return n
+  return Object.assign({}, n, { viewW: n.width, viewH: h, offX: 0, offY: 0, cropped: { x: fx, y: fy, w: n.viewW, h: n.viewH }, scrollMax: Math.max(0, below - h) })
+}
+function wallThumb(n, sy) { const t = n.viewH + n.scrollMax; return 'top:' + (sy / t * 100) + '%;height:' + (n.viewH / t * 100) + '%' }
+// Scrolls a selected frame's hidden page inside its window. Returns false when there's nothing to
+// scroll that way (then the wheel pans the wall as usual).
+function wallScroll(tile, e) {
+  const p = placementOf(tile.dataset.id), n = p && p.n
+  if (!n || !n.scrollMax || !n.cropped || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return false
+  const dy = e.deltaY * (e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 400 : 1) / (S.wall.zoom || 1)
+  const cur = Math.min(n.scrollMax, S.wall.scrollY[p.it.id] || 0)
+  const next = Math.max(0, Math.min(n.scrollMax, cur + dy))
+  if (next === cur) return false
+  S.wall.scrollY[p.it.id] = next
+  const img = tile.querySelector('.crop img'); if (img) img.style.top = (-n.cropped.y - next) + 'px'
+  const th = tile.querySelector('.wsb i'); if (th) th.setAttribute('style', wallThumb(n, next))
+  return true
 }
 // The zoom fit() would pick for a layout.
 function fitZoomFor(b) {
@@ -3137,7 +3174,11 @@ function renderWall() {
       // While the rendered image downloads, keep the skeleton underneath and fade the image in.
       if (n && n.url && !n.missing && !S.wall.loaded[n.url]) body = skeleton(PHASE_TEXT.image) + body.replace('<img ', '<img class="ld" ')
       // Hidden outside content: the full render sits inside a window the size of the frame.
-      if (n && n.cropped && n.url) body = '<div class="crop">' + body.replace('<img ', '<img style="left:' + (-n.cropped.x) + 'px;top:' + (-n.cropped.y) + 'px;width:' + n.cropped.w + 'px;height:' + n.cropped.h + 'px" ') + '</div>'
+      if (n && n.cropped && n.url) {
+        const sy = Math.min(n.scrollMax || 0, S.wall.scrollY[it.id] || 0)
+        body = '<div class="crop">' + body.replace('<img ', '<img style="left:' + (-n.cropped.x) + 'px;top:' + (-n.cropped.y - sy) + 'px;width:' + n.cropped.w + 'px;height:' + n.cropped.h + 'px" ') + '</div>' +
+          (n.scrollMax ? '<div class="wsb" title="Select the frame and scroll over it to see the rest"><i style="' + wallThumb(n, sy) + '"></i></div>' : '')
+      }
       const meta = (fc.name || it.fileName) + (fc.lastTouchedAt ? ' · file edited ' + ago(fc.lastTouchedAt) + (fc.lastTouchedBy ? ' by ' + fc.lastTouchedBy : '') : '')
       const edge = n && n.url && n.viewW && (Math.abs(n.viewW - n.width) > 1 || Math.abs(n.viewH - n.height) > 1)
         ? '<div class="edgewrap">' + fadeBands(p.w, p.h, n.offX, n.offY, n.width, n.height) + '<div class="edge" style="left:' + n.offX + 'px;top:' + n.offY + 'px;width:' + n.width + 'px;height:' + n.height + 'px"></div></div>' : ''
@@ -3306,7 +3347,9 @@ function renderInspector() {
     html += '<button class="icon" id="insp-close" aria-label="Close">' + icon('x', 14) + '</button></div>'
     if (fc.checkedAt) html += '<div class="muted small" style="margin-top:6px">Checked ' + esc(ago(fc.checkedAt)) + (fc.error ? ' · ' + esc(fc.error) : '') + '</div>'
     if (fc.lastTouchedAt) html += '<div class="muted small" style="margin-top:2px">File edited ' + esc(ago(fc.lastTouchedAt)) + (fc.lastTouchedBy ? ' by ' + esc(fc.lastTouchedBy) : '') + (n.changedAt ? ' · this frame changed ' + esc(ago(n.changedAt)) : '') + '</div>'
-    if (n.viewW && (Math.abs(n.viewW - n.width) > 1 || Math.abs(n.viewH - n.height) > 1)) html += '<div class="muted small" style="margin-top:2px">Content extends outside the frame; the dashed line is the frame’s edge.</div>'
+    const ip = placementOf(items[0].id), ig = ip && ip.n
+    if (ig && ig.scrollMax) html += '<div class="muted small" style="margin-top:2px">The rest of the page is hidden below. Scroll over the frame to see it.</div>'
+    else if (n.viewW && (Math.abs(n.viewW - n.width) > 1 || Math.abs(n.viewH - n.height) > 1) && wallView().outside !== 'hide') html += '<div class="muted small" style="margin-top:2px">Content extends outside the frame' + (wallView().edgeLine ? '; the dashed line is the frame’s edge.' : '.') + '</div>'
     if (isUpdated(it)) html += '<div style="margin-top:6px"><span class="upd">Updated since you last marked it seen</span></div>'
     const editable = it.fileKey === S.file.key
     if (it.addedBy) html += '<div class="muted small" style="margin-top:2px">Added by ' + esc(it.addedBy) + (it.addedAt ? ' · ' + esc(ago(it.addedAt)) : '') + '</div>'
@@ -3316,7 +3359,7 @@ function renderInspector() {
     html += deviceControl(items)
     html += '<div class="row" style="margin-top:10px"><button class="btn primary grow" id="insp-open">' + icon('ext', 14) + 'Open in Figma</button><button class="btn" id="insp-refresh" title="Reload this frame from its file now"' + busy + '>' + icon('refresh', 14) + 'Refresh</button></div>'
     const live = S.wall.live && S.wall.live.id === it.id
-    html += '<div class="row" style="margin-top:4px"><button class="btn grow" id="insp-play" title="' + (hasProto(items[0]) ? 'Play the live prototype right here on the wall' : 'No prototype connections or scrolling found in this frame. It still plays in Figma’s player, with any component interactions.') + '">' + icon(live ? 'x' : 'play', 14) + (live ? 'Stop prototype' : 'Play prototype') + '</button>' +
+    if (hasProto(items[0])) html += '<div class="row" style="margin-top:4px"><button class="btn grow" id="insp-play" title="Play the live prototype right here on the wall">' + icon(live ? 'x' : 'play', 14) + (live ? 'Stop prototype' : 'Play prototype') + '</button>' +
       '<button class="btn" id="insp-play-large" title="Play the prototype in a large window over the wall">' + icon('fit', 14) + 'Large</button></div>'
     html += '<div class="row" style="margin-top:4px"><button class="btn ghost" id="insp-history" style="padding:0 4px">' + icon('clock', 14) + 'History</button><span class="grow"></span><button class="btn ghost danger" id="insp-remove" style="padding:0 4px">' + (editable ? 'Remove from campaign' : 'Hide on my wall') + '</button></div>'
   } else {
@@ -3542,6 +3585,9 @@ function bindWall() {
     e.preventDefault()
     // In Present the device covers the wall: the wheel scrolls its page wherever the pointer is.
     if (S.wall.dev && S.wall.present) { devWheel(e); return }
+    // Over a selected frame whose page is hidden below its window, the wheel scrolls that page first.
+    const ft = !S.wall.present && !e.ctrlKey && !e.metaKey && e.target.closest && e.target.closest('.fr')
+    if (ft && S.wall.selected.indexOf(ft.dataset.id) >= 0 && wallScroll(ft, e)) return
     const r = vp.getBoundingClientRect()
     if (e.ctrlKey || e.metaKey) zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top)
     else { S.wall.touched = true; S.wall.tx -= e.deltaX; S.wall.ty -= e.deltaY; applyTransform() }
