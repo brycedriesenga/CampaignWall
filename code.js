@@ -134,6 +134,21 @@ function campaignFlows(manifest) {
   for (const c of Object.values(manifest.campaigns || {})) for (const id of Object.keys(c.items || {})) ids[id] = true;
   return flowStarts().filter((id) => ids[id]).sort();
 }
+// Frames tagged by older builds have an older properties-panel button ("In 1 campaign", no "Edit
+// tags"). Once per file, refresh every tagged frame's buttons (skipped quietly in read-only files).
+async function refreshRelaunch() {
+  try {
+    if (figma.root.getSharedPluginData(NS, 'relaunchV') === '2') return;
+    const m = readManifest();
+    const ids = {};
+    for (const c of Object.values(m.campaigns || {})) for (const id of Object.keys(c.items || {})) ids[id] = true;
+    for (const id of Object.keys(ids)) {
+      const node = await figma.getNodeByIdAsync(id);
+      if (node && 'setRelaunchData' in node) setRelaunch(node, readTags(node), m);
+    }
+    figma.root.setSharedPluginData(NS, 'relaunchV', '2');
+  } catch (e) { /* read-only file */ }
+}
 // Opening the plugin keeps that list up to date (written only when it changed, and only where we can edit).
 function syncFlows() {
   const m = readManifest();
@@ -416,6 +431,7 @@ async function handle(msg) {
     case 'init':
       await carryOverOldStorage();
       syncFlows();
+      refreshRelaunch();
       return sendState();
     case 'save-token':
       await figma.clientStorage.setAsync(TOKEN_KEY, String(msg.token || '').trim());
