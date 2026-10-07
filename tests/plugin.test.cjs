@@ -247,6 +247,16 @@ function pointer(w, type, target, extra) {
   check('Ctrl+A selects all 3', /3 frames selected/.test($(wb, '#inspector').textContent))
   check('wall text unselectable', wb.document.body.classList.contains('walling'))
   wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
+  {
+    // Shift-drag a selection box: frames light up while dragging, then get selected.
+    const vpEl = $(wb, '#viewport')
+    pointer(wb, 'pointerdown', vpEl, { shiftKey: true, clientX: -100000, clientY: -100000 })
+    pointer(wb, 'pointermove', vpEl, { shiftKey: true, clientX: 100000, clientY: 100000 })
+    const lit = wb.document.querySelectorAll('#world .fr.willsel').length
+    pointer(wb, 'pointerup', vpEl, { shiftKey: true, clientX: 100000, clientY: 100000 }); await tick(10)
+    check('a Shift-drag box highlights the frames it touches, then selects them', lit === tiles().length && !wb.document.querySelector('#world .fr.willsel') && wb.document.querySelectorAll('#world .fr.sel').length === lit, lit + ' lit')
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
+  }
   bryce.figma.currentPage.selection = []
   await tick(450)
   const first = tiles()[0]
@@ -530,6 +540,20 @@ function pointer(w, type, target, extra) {
     check('↑ scrolls back up', pageY() === 0)
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)
     check('leaving Present removes the device', !$(wb, '#dev'))
+    // A viewport-sized frame with the rest of the page spilling out below it (not clipped), and an orange fill.
+    Object.assign(api.files.EMAILFILE0001.nodes['1:5'], { absoluteBoundingBox: { x: 0, y: 0, width: 1536, height: 864 }, absoluteRenderBounds: { x: 0, y: 0, width: 1536, height: 3000 },
+      fills: [{ type: 'SOLID', color: { r: 1, g: 0.5, b: 0, a: 1 } }] })
+    pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
+    click(wb, '#insp-refresh'); await tick(600)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'p', bubbles: true })); await tick(100)
+    const view = wb.document.querySelector('#dev .dv-view'), pg = wb.document.querySelector('#dev .dv-page')
+    check('content spilling below a frame scrolls in Present: the window is the frame, the page is everything', view && view.style.height === '864px' && pg.style.height === '3000px' && /255, 128, 0/.test(view.style.background), view && view.outerHTML.slice(0, 200))
+    const wheel = (opts) => $(wb, '#viewport').dispatchEvent(new wb.WheelEvent('wheel', Object.assign({ bubbles: true, cancelable: true }, opts)))
+    wheel({ deltaY: 300 }); await tick(10)
+    const y1 = pageY()
+    wheel({ deltaY: 3, deltaMode: 1 }); await tick(10)
+    check('a mouse wheel scrolls it, anywhere over Present (pixels or lines)', y1 > 0 && pageY() > y1, y1 + ' → ' + pageY())
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)
     // A prototype frame with a device plays inside it in Present.
     api.files.EMAILFILE0001.nodes['1:5'].interactions = [{ trigger: { type: 'ON_CLICK' }, actions: [{ type: 'NODE', destinationId: '9:9' }] }]
     pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
@@ -537,6 +561,11 @@ function pointer(w, type, target, extra) {
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'p', bubbles: true })); await tick(600)
     const devFrame = wb.document.querySelector('#dev .dv-browser .dv-live iframe')
     check('a prototype frame plays live inside its browser window in Present', !!devFrame && /scaling%3Dmin-zoom/.test(devFrame.src) && !wb.document.querySelector('#live .lv') && /Live prototype/.test($(wb, '#hud-what').textContent), ($(wb, '#dev') || {}).innerHTML)
+    check('…showing the whole frame (the window is the frame’s height)', wb.document.querySelector('#dev .dv-view').style.height === '864px')
+    click(wb, '#hud-play'); await tick(20)
+    check('the HUD’s ■ stops the prototype and shows the page again', !$(wb, '#hud-play').classList.contains('hidden') && !wb.document.querySelector('#dev .dv-live') && !!wb.document.querySelector('#dev .dv-page') && /Prototype/.test($(wb, '#hud-what').textContent) && !/Live/.test($(wb, '#hud-what').textContent) && /Play/.test($(wb, '#hud-play').title))
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'k', bubbles: true })); await tick(20)
+    check('…and K (or ▶) plays it again', !!wb.document.querySelector('#dev .dv-live iframe') && /Stop/.test($(wb, '#hud-play').title))
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)
     delete api.files.EMAILFILE0001.nodes['1:5'].interactions
     pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
@@ -558,6 +587,13 @@ function pointer(w, type, target, extra) {
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'p', bubbles: true })); await tick(100)
     check('…and Present uses it', !!wb.document.querySelector('#dev .dv-phone'))
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)
+    click(wb, '#view-opts'); await tick(10)
+    click(wb, '#viewopts [data-vo="devicePresent"][data-val="wall"]'); await tick(30)
+    const ph = tile().querySelector('.wdv-phone'), bgEl = tile().querySelector('.wdv-bg')
+    check('on the wall the phone is a normal height, lying over the page, which runs on below it', ph && ph.style.height === (68 + Math.round(1536 * 2.164) - 166 + 126) + 'px' && ph.style.top === '-68px' &&
+      /--dvt:\s*68px/.test(tile().getAttribute('style')) && !/border-radius/.test(tile().getAttribute('style')) && bgEl && /255, 128, 0/.test(bgEl.style.background), ph && ph.outerHTML.slice(0, 160))
+    click(wb, '#viewopts [data-vo="devicePresent"][data-val="on"]'); await tick(30)
+    wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
     pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
     click(wb, '#inspector [data-device="auto"]'); await tick(150)
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(10)
