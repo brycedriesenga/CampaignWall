@@ -1149,6 +1149,33 @@ function pointer(w, type, target, extra) {
   bryce.setSel([a]); bryce.figma.command = 'open'
   const wOpen = await boot(bryce, api); await tick(500)
   check('“Open in Showroom” opens the wall at that frame, selected', wOpen.document.body.classList.contains("walling") && !!wOpen.document.querySelector('#world .fr.sel[data-id="EMAILFILE0001|1:2"]'))
+  {
+    // The window grows (and the layout can shift) after the wall opens: the zoom keeps the frame centred
+    // until you move the wall yourself.
+    const vpO = wOpen.document.getElementById('viewport')
+    const setSize = (w, h) => { Object.defineProperty(vpO, 'clientWidth', { value: w, configurable: true }); Object.defineProperty(vpO, 'clientHeight', { value: h, configurable: true }); wOpen.dispatchEvent(new wOpen.Event('resize')) }
+    const centre = () => {
+      const m = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\) scale\(([\d.]+)\)/.exec(wOpen.document.getElementById('world').style.transform)
+      const p = wOpen.showroomTest.placementOf('EMAILFILE0001|1:2'), z = Number(m[3])
+      return [(p.x + p.w / 2) * z + Number(m[1]), (p.y + p.h / 2) * z + Number(m[2])]
+    }
+    setSize(1200, 800); await tick(350)
+    let cc = centre()
+    check('…and keeps it centred while the window grows to wall size', Math.abs(cc[0] - 600) < 2 && Math.abs(cc[1] - 400) < 2, cc.join(','))
+    vpO.dispatchEvent(new wOpen.WheelEvent('wheel', { bubbles: true, deltaY: 40, cancelable: true })); await tick(20)
+    setSize(1000, 700); await tick(350)
+    cc = centre()
+    check('…until you move the wall yourself', !(Math.abs(cc[0] - 500) < 2 && Math.abs(cc[1] - 350) < 2), cc.join(','))
+    // Resizing from the corner ends when the button is no longer held, even if the release was missed.
+    const grip = wOpen.document.getElementById('grip')
+    bryce.size = null
+    pointer(wOpen, 'pointerdown', grip, { screenX: 100, screenY: 100, buttons: 1 })
+    pointer(wOpen, 'pointermove', grip, { screenX: 160, screenY: 140, buttons: 1 }); await tick(30)
+    const during = bryce.size && bryce.size.slice()
+    pointer(wOpen, 'pointermove', grip, { screenX: 170, screenY: 150, buttons: 0 }); await tick(30)
+    pointer(wOpen, 'pointermove', grip, { screenX: 400, screenY: 400, buttons: 0 }); await tick(30)
+    check('resizing from the corner stops when the mouse button is up, even if the release was missed', during && bryce.size && bryce.size[0] === during[0] && bryce.size[1] === during[1], JSON.stringify([during, bryce.size]))
+  }
   bryce.figma.command = 'tags'
   const wt = await boot(bryce, api); await tick(200)
   check('“Edit tags” opens the panel ready to add a tag', !wt.document.body.classList.contains('walling') && wt.document.activeElement && wt.document.activeElement.id === 'tag-add')

@@ -1781,6 +1781,16 @@ function zoomToRect(x, y, w, h, opts) {
   if (opts.animate !== false) glide()
   applyTransform()
 }
+// Keeps a frame opened from outside the wall in view while the window and layout settle (see renderWall).
+function refocus() {
+  const h = S.wall.held; if (!h || S.view !== 'wall') return false
+  const p = placementOf(h.id), vp = $('viewport')
+  if (!p || !vp) return false
+  const key = [p.x, p.y, p.w, p.h, vp.clientWidth, vp.clientHeight].join(',')
+  if (key !== h.key) { h.key = key; zoomToRect(p.x, p.y, p.w, p.h, { maxZoom: 2, animate: false }) }
+  return true
+}
+function releaseFocus() { S.wall.held = null }
 function zoomToSelection() {
   const ps = S.wall.selected.map(placementOf).filter(Boolean)
   if (!ps.length) { glide(); fit(); return }
@@ -1821,6 +1831,7 @@ function stepSelection(dir) {
 }
 // Returns true if the key was handled.
 function wallKey(e) {
+  releaseFocus()
   const k = e.key, code = e.code
   if (S.wall.present) {
     if (k === 'Escape') { stopPresent(); return true }
@@ -3409,6 +3420,7 @@ function handleLaunch(cmd) {
   S.focusTag = true
 }
 function openWall() {
+  S.wall.held = null
   S.wall.multi = !!(campaign() || {}).multi
   S.view = 'wall'; S.wall.fitted = false; S.wall.selected = []; S.wall.touched = false
   S.wall.synced = false; S.wall.tried = {}; S.wall.retried = {}; S.wall.present = null
@@ -3740,8 +3752,11 @@ function renderWall() {
   renderFilterPill(c)
   animateWall(L, c)
   if (!S.wall.fitted) { if (!restorePosition(c.id)) fit(); S.wall.fitted = true } else applyTransform()
-  // Opened for one frame (from Figma's properties panel): select it and zoom to it.
-  if (S.wall.focusId && placementOf(S.wall.focusId)) { const id = S.wall.focusId; S.wall.focusId = null; setSelection([id]); zoomToSelection(); S.wall.refocusUntil = Date.now() + 2500 }
+  // Opened for one frame (from Figma's properties panel or the frames list): select it and zoom to it.
+  // The window then grows and the layout can shift (images arrive, rows re-wrap), so the zoom follows
+  // the frame until you pan, zoom, click or press a key (refocus).
+  if (S.wall.focusId && placementOf(S.wall.focusId)) { const id = S.wall.focusId; S.wall.focusId = null; setSelection([id]); S.wall.held = { id: id, key: '' }; refocus() }
+  else refocus()
   syncLive()
   renderInspector()
   renderWallBar()
@@ -3785,7 +3800,7 @@ function bindImageEvents(world) {
 // properties panel centred while it does (otherwise the zoom was worked out for the small panel).
 window.addEventListener('resize', () => {
   if (S.view !== 'wall') return
-  if (S.wall.refocusUntil > Date.now() && S.wall.selected.length) zoomToSelection()
+  if (S.wall.held) refocus()
   else if (!S.wall.touched) fit()
   // "Fit window" rows depend on the window's shape: lay the wall out again once resizing settles.
   if (wallView().rows === 'fit') {
@@ -4168,6 +4183,8 @@ function renderHistory() {
 }
 
 function bindWall() {
+  // Any use of the wall bar (zoom buttons, fit, filters…) stops following a frame opened from outside.
+  document.querySelector('.wallbar').addEventListener('pointerdown', releaseFocus, true)
   $('wall-back').addEventListener('click', closeWall)
   $('wall-refresh').addEventListener('click', () => refreshWall('manual'))
   $('zoom-in').addEventListener('click', () => { const vp = $('viewport'); zoomAt(1.25, vp.clientWidth / 2, vp.clientHeight / 2) })
@@ -4186,6 +4203,7 @@ function bindWall() {
   const vp = $('viewport')
   vp.addEventListener('wheel', (e) => {
     e.preventDefault()
+    releaseFocus()
     // In Present the device covers the wall: the wheel scrolls its page wherever the pointer is.
     if (S.wall.dev && S.wall.present) { devWheel(e); return }
     // Over a selected frame whose page is hidden below its window, the wheel scrolls that page first.
@@ -4202,6 +4220,7 @@ function bindWall() {
   marquee.className = 'marquee hidden'
   vp.appendChild(marquee)
   vp.addEventListener('pointerdown', (e) => {
+    releaseFocus()
     if (e.button !== 0 && e.button !== 1) return
     // Controls floating over the canvas handle their own clicks (capturing the pointer would swallow them).
     if (e.target.closest('#filterpill, #hud, #banner, #arrivals, #live, #dev')) return
@@ -4297,13 +4316,19 @@ function bindWall() {
   const grip = $('grip')
   let rs = null
   grip.addEventListener('pointerdown', (e) => { rs = { x: e.screenX, y: e.screenY, w: window.innerWidth, h: window.innerHeight }; grip.setPointerCapture(e.pointerId); e.stopPropagation() })
+  // The release can happen outside the plugin window (it's resizing under the pointer), so Figma may
+  // never pass on the pointerup. Moving with no button held, or losing the pointer, also ends it.
+  const endResize = () => { if (rs && rs.last) { S.prefs.wallSize = rs.last; send('save-prefs', { prefs: { wallSize: rs.last } }) } rs = null }
   grip.addEventListener('pointermove', (e) => {
     if (!rs) return
+    if (!(e.buttons & 1)) { endResize(); return }
     const size = { width: Math.max(560, Math.round(rs.w + e.screenX - rs.x)), height: Math.max(400, Math.round(rs.h + e.screenY - rs.y)) }
     rs.last = size
     send('resize', size)
   })
-  grip.addEventListener('pointerup', () => { if (rs && rs.last) { S.prefs.wallSize = rs.last; send('save-prefs', { prefs: { wallSize: rs.last } }) } rs = null })
+  grip.addEventListener('pointerup', endResize)
+  grip.addEventListener('pointercancel', endResize)
+  grip.addEventListener('lostpointercapture', endResize)
 
   // Page-wide listeners: added once, not every time the wall opens.
   if (S.docBound) return
