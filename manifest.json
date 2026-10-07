@@ -23,6 +23,10 @@
   },
   "relaunchButtons": [
     {
+      "command": "open-panel",
+      "name": "Open Showroom"
+    },
+    {
       "command": "open",
       "name": "Open in Showroom"
     },

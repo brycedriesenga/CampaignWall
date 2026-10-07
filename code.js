@@ -989,6 +989,17 @@ async function runQuick(cmd, params) {
 }
 if (figma.parameters) figma.parameters.on('input', (ev) => { quickInput(ev).catch(() => ev.result.setSuggestions([])); });
 
+// "Open Showroom" in Figma's properties panel when nothing is selected: a one-click way in, set on
+// the file itself whenever Showroom runs there (skipped quietly in files you can't edit).
+function setFileButton() {
+  try {
+    if (figma.root.getSharedPluginData(NS, 'fileButton') === '1') return;
+    figma.root.setRelaunchData({ 'open-panel': '' });
+    figma.root.setSharedPluginData(NS, 'fileButton', '1');
+  } catch (e) { /* read-only file */ }
+}
+setFileButton();
+
 launchCommand = figma.command || '';
 if (QUICK.indexOf(launchCommand) >= 0) {
   figma.on('run', (ev) => {

@@ -32,7 +32,8 @@ function makeEnv({ fileKey, fileName = 'Holiday Emails', user = 'Bryce', store }
   const page = { type: 'PAGE', id: '0:1', name: 'Emails', _d: {},
     getSharedPluginData(ns, k) { return this._d[ns + '/' + k] || '' }, setSharedPluginData(ns, k, v) { this._d[ns + '/' + k] = v } }
   const root = { name: fileName, children: [page], _d: {},
-    getSharedPluginData(ns, k) { return this._d[ns + '/' + k] || '' }, setSharedPluginData(ns, k, v) { this._d[ns + '/' + k] = v } }
+    getSharedPluginData(ns, k) { return this._d[ns + '/' + k] || '' }, setSharedPluginData(ns, k, v) { this._d[ns + '/' + k] = v },
+    setRelaunchData(d) { this._r = d } }
   const mkNode = makeNodeFactory(page)
   const env = { store, nodes, opened, handlers, root, page, fileKey }
   env.figma = {
@@ -206,6 +207,7 @@ function pointer(w, type, target, extra) {
   check('nothing kept only on this computer', bryce.store.get('showroom.data').campaigns[0].items.length === 0)
   bryce.setSel([a]); await tick(150)
   check('re-select shows its tag, with Update', !!wb.document.querySelector('.tagchip [data-tag-go]') && /Holiday 2026/.test($(wb, '.tagbox').textContent) && /Update frame/.test(text(wb)) && !$(wb, '#add'))
+  check('the file gets an “Open Showroom” button in Figma’s properties panel for when nothing is selected', bryce.root._r && 'open-panel' in bryce.root._r, JSON.stringify(bryce.root._r))
   check('a tagged frame gets “Open in Showroom” / “Edit tags” in Figma’s properties panel, with its tag names', a._r && a._r.open === 'Holiday 2026' && 'tags' in a._r, JSON.stringify(a._r))
   // A second tag, typed into the panel (no wall needed)
   $(wb, '#tag-add').value = 'Black Friday'
