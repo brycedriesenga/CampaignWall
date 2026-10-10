@@ -108,7 +108,7 @@ function makeApi() {
     m = p.match(/^\/v1\/files\/([^/]+)\/versions$/)
     if (m) { const f = api.files[m[1]]; return resp(200, { versions: f.versions || [], pagination: {} }) }
     m = p.match(/^\/v1\/files\/([^/]+)\/nodes$/)
-    if (m) { const f = api.files[m[1]]; const ids = u.searchParams.get('ids').split(','); const out = {}; ids.forEach((id) => { out[id] = f.nodes[id] ? { document: f.nodes[id] } : null }); return resp(200, { nodes: out }) }
+    if (m) { const f = api.files[m[1]]; const ids = u.searchParams.get('ids').split(','); const out = {}; ids.forEach((id) => { out[id] = f.nodes[id] ? Object.assign({ document: f.nodes[id] }, f.components ? { components: f.components, componentSets: f.componentSets || {} } : {}) : null }); return resp(200, { nodes: out }) }
     m = p.match(/^\/v1\/files\/([^/]+)$/)
     if (m) { const f = api.files[m[1]]; if (!f) return resp(404, { err: 'Not found' }); return resp(200, { name: f.name, document: f.env ? f.env.document() : { children: [] } }) }
     m = p.match(/^\/v1\/images\/([^/]+)$/)
@@ -535,6 +535,15 @@ function pointer(w, type, target, extra) {
     check('a header layer across the top and a footer are recognised', parts.hdr && parts.hdr.id === '9:1' && parts.hdr.h === 120 && parts.ftr === true, JSON.stringify(parts))
     check('…inside a single wrapper too, but not a narrow or low "nav"', t.pageParts({ absoluteBoundingBox: box(0, 0, 390, 2000), children: [{ id: 'w', name: 'Content', absoluteBoundingBox: box(0, 0, 390, 2000), children: [{ id: 'h', name: 'Header', absoluteBoundingBox: box(0, 0, 390, 60) }] }] }).hdr.id === 'h' &&
       !t.pageParts({ absoluteBoundingBox: box(0, 0, 1440, 2000), children: [{ id: 'n', name: 'Side nav', absoluteBoundingBox: box(0, 0, 300, 2000) }, { id: 'n2', name: 'Nav', absoluteBoundingBox: box(0, 900, 1440, 80) }] }).hdr)
+    // Headers and footers are also recognised by the component they're an instance of, whatever the layer is called.
+    const comps = { components: { 'C:1': { name: 'Breakpoint=Desktop', componentSetId: 'S:1' }, 'C:2': { name: 'Site Footer' }, 'C:3': { name: 'Button' } }, componentSets: { 'S:1': { name: 'Global Header' } } }
+    const renamed = { absoluteBoundingBox: box(0, 0, 1440, 3000), children: [
+      { id: 'h1', name: 'Frame 427', type: 'INSTANCE', componentId: 'C:1', absoluteBoundingBox: box(0, 0, 1440, 100) },
+      { id: 'f1', name: 'Group 12', type: 'INSTANCE', componentId: 'C:2', absoluteBoundingBox: box(0, 2700, 1440, 300) } ] }
+    const pc = t.pageParts(renamed, comps)
+    check('a renamed header or footer is recognised by its component (or component set)', pc.hdr && pc.hdr.id === 'h1' && pc.hdr.comp === 'Global Header' && pc.ftr === true && pc.ftrComp === 'Site Footer', JSON.stringify(pc))
+    check('…but not without the component list, or for an unrelated component', !t.pageParts(renamed).hdr &&
+      !t.pageParts({ absoluteBoundingBox: box(0, 0, 1440, 3000), children: [{ id: 'b', name: 'Frame 9', type: 'INSTANCE', componentId: 'C:3', absoluteBoundingBox: box(0, 0, 1440, 100) }] }, comps).hdr)
     // Make Bryce's "Desktop" frame a long page, then present it.
     api.files.EMAILFILE0001.nodes['1:5'] = { id: '1:5', name: 'Desktop hero', absoluteBoundingBox: { x: 0, y: 0, width: 1536, height: 3200 },
       children: [{ id: '1:50', name: 'Global Header', absoluteBoundingBox: { x: 0, y: 0, width: 1536, height: 110 } }] }
@@ -553,6 +562,13 @@ function pointer(w, type, target, extra) {
     check('↑ scrolls back up', pageY() === 0)
     wb.document.dispatchEvent(new wb.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(30)
     check('leaving Present removes the device', !$(wb, '#dev'))
+    // The same page with its header renamed: Auto still finds it through the component, and says so.
+    api.files.EMAILFILE0001.nodes['1:5'].children = [{ id: '1:50', name: 'Frame 427', type: 'INSTANCE', componentId: 'C:9', absoluteBoundingBox: { x: 0, y: 0, width: 1536, height: 110 } }]
+    api.files.EMAILFILE0001.components = { 'C:9': { name: 'Breakpoint=Desktop', componentSetId: 'S:9' } }
+    api.files.EMAILFILE0001.componentSets = { 'S:9': { name: 'Global Header' } }
+    pointer(wb, 'pointerdown', tile()); pointer(wb, 'pointerup', tile()); await tick(450)
+    click(wb, '#insp-refresh'); await tick(600)
+    check('Auto names the header component it found', /Auto: browser \(1536 px wide, it has the “Global Header” component\)/.test($(wb, '#inspector').textContent), $(wb, '#inspector').textContent)
     // A viewport-sized frame with the rest of the page spilling out below it (not clipped), and an orange fill.
     Object.assign(api.files.EMAILFILE0001.nodes['1:5'], { absoluteBoundingBox: { x: 0, y: 0, width: 1536, height: 864 }, absoluteRenderBounds: { x: 0, y: 0, width: 1536, height: 3000 },
       fills: [{ type: 'SOLID', color: { r: 1, g: 0.5, b: 0, a: 1 } }] })
@@ -1177,7 +1193,9 @@ function pointer(w, type, target, extra) {
     check('resizing from the corner stops when the mouse button is up, even if the release was missed', during && bryce.size && bryce.size[0] === during[0] && bryce.size[1] === during[1], JSON.stringify([during, bryce.size]))
   }
   bryce.figma.command = 'tags'
-  const wt = await boot(bryce, api); await tick(200)
+  const wt = await boot(bryce, api)
+  // Wait (up to 2 s) for the panel to settle: on a busy machine the first state can arrive late.
+  for (let i = 0; i < 40 && !(wt.document.activeElement && wt.document.activeElement.id === 'tag-add'); i++) await tick(50)
   check('“Edit tags” opens the panel ready to add a tag', !wt.document.body.classList.contains('walling') && wt.document.activeElement && wt.document.activeElement.id === 'tag-add')
 
   // ===== quick actions (Figma's Quick Actions bar), run without Showroom's window =====

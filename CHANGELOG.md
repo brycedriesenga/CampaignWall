@@ -6,7 +6,8 @@ Newest first. Each line is one build on GitHub, with its commit ID.
 
 | Version | Commit | What changed |
 | --- | --- | --- |
-| 0.17.1 | latest on `main` | Fixes: the resize corner no longer keeps resizing after you let go; a frame opened from the frames list (or Open in Showroom) stays centred while the window grows and the wall settles |
+| 0.17.2 | latest on `main` | Device frames: headers and footers are also recognised by their component (e.g. your Global Header), even when the layer is renamed; Auto's reason names the component. Older frames pick it up after a Refresh |
+| 0.17.1 | `fe75f47` | Fixes: the resize corner no longer keeps resizing after you let go; a frame opened from the frames list (or Open in Showroom) stays centred while the window grows and the wall settles |
 | 0.17.0 | `128efb8` | Tag picker with All tagged frames always first and tick boxes to view several tags together (also from home); new frames list with previews, grouped by file; Row width setting (Auto, Narrow, Wide, One line), and a file's section is never split across lines |
 | 0.16.1 | `ec4617d` | “Open Showroom” button in Figma's properties panel when nothing is selected (appears after Showroom has run once in a file). Re-import the plugin if it doesn't show |
 | 0.16.0 | `2e20042` | Quick actions (tag, untag, status, update, open wall) from Figma's Quick Actions bar; editable channel list, shared through Team sync. Re-import the plugin if the new menu doesn't appear |

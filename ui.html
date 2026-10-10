@@ -1505,22 +1505,47 @@ function solidFill(doc) {
 // Signs that a frame is a whole page: a header/navigation layer across the top, or a footer along
 // the bottom (direct children, or inside a single wrapper that fills the frame). The header's id and
 // height are kept with the frame (they help tell whole pages from page parts).
-function pageParts(doc) {
+// A layer counts as a header or footer by its own name, or (v0.17.2) by the component it's an instance
+// of: the /nodes reply lists every component used (names, and the component set a variant belongs to),
+// so a renamed "Frame 427" that's really your Global Header component is still found.
+// comps = { components, componentSets } from that reply.
+function partNames(k, comps) {
+  const names = [k.name || '']
+  const c = k.componentId && comps && comps.components ? comps.components[k.componentId] : null
+  if (c) {
+    names.push(c.name || '')
+    const set = c.componentSetId && comps.componentSets ? comps.componentSets[c.componentSetId] : null
+    if (set) names.push(set.name || '')
+  }
+  return names
+}
+// The component name that matched (for Auto's reason), or '' when the layer's own name did.
+function partMatch(k, comps, re) {
+  const names = partNames(k, comps)
+  if (re.test(names[0])) return { by: '' }
+  const hit = names.slice(1).find((n) => re.test(n))
+  return hit ? { by: hit } : null
+}
+const HEADER_RE = /header|navigation|\bnav\b|masthead|top ?bar|menu ?bar|global/i
+const FOOTER_RE = /footer/i
+function pageParts(doc, comps) {
   const bb = doc && doc.absoluteBoundingBox
   if (!bb || !bb.width) return { hdr: null, ftr: false }
   const ok = (k) => k && k.visible !== false && k.absoluteBoundingBox
   let list = (doc.children || []).filter(ok)
   if (list.length === 1 && list[0].children && list[0].absoluteBoundingBox.width >= bb.width * 0.95) list = list[0].children.filter(ok)
   const wide = (k) => k.absoluteBoundingBox.width >= bb.width * 0.9
+  let topHit = null
   const top = list.find((k) => wide(k) && k.absoluteBoundingBox.y - bb.y <= 40 && k.absoluteBoundingBox.height <= Math.min(420, bb.height * 0.4) &&
-    /header|navigation|\bnav\b|masthead|top ?bar|menu ?bar|global/i.test(k.name || ''))
+    (topHit = partMatch(k, comps, HEADER_RE)))
   // The footer sits at the bottom of the frame, or of the content spilling below it (a viewport-sized frame).
   const rb = doc.absoluteRenderBounds || bb
   const ends = [bb.y + bb.height, rb.y + rb.height]
-  const foot = list.find((k) => wide(k) && ends.some((b) => Math.abs(b - (k.absoluteBoundingBox.y + k.absoluteBoundingBox.height)) <= 40) && /footer/i.test(k.name || ''))
+  let footHit = null
+  const foot = list.find((k) => wide(k) && ends.some((b) => Math.abs(b - (k.absoluteBoundingBox.y + k.absoluteBoundingBox.height)) <= 40) && (footHit = partMatch(k, comps, FOOTER_RE)))
   return {
-    hdr: top ? { id: top.id, h: Math.round(top.absoluteBoundingBox.height), y: Math.max(0, Math.round(top.absoluteBoundingBox.y - bb.y)), x: Math.round(top.absoluteBoundingBox.x - bb.x), w: Math.round(top.absoluteBoundingBox.width) } : null,
-    ftr: !!foot,
+    hdr: top ? { id: top.id, h: Math.round(top.absoluteBoundingBox.height), y: Math.max(0, Math.round(top.absoluteBoundingBox.y - bb.y)), x: Math.round(top.absoluteBoundingBox.x - bb.x), w: Math.round(top.absoluteBoundingBox.width), comp: topHit.by || '' } : null,
+    ftr: !!foot, ftrComp: foot ? footHit.by || '' : '',
   }
 }
 // The frame's corner radius as CSS (e.g. "12px" or "12px 12px 0px 0px"), so borders and shadows follow it.
@@ -1572,8 +1597,8 @@ async function syncItems(list, opts) {
           const same = prev.hash === hash
           // A frame (or anything inside it) with prototype connections can play as a live prototype.
           const proto = /"interactions":\[\{/.test(json) || /"transitionNodeID":"[^"]/.test(json) || /"overflowDirection":"(VERTICAL|HORIZONTAL|BOTH)/.test(json)
-          const parts = pageParts(doc)
-          fc.nodes[id] = Object.assign({ name: doc.name, hash: hash, proto: proto, hdr: parts.hdr, ftr: parts.ftr }, frameGeometry(doc), {
+          const parts = pageParts(doc, { components: entry.components, componentSets: entry.componentSets })
+          fc.nodes[id] = Object.assign({ name: doc.name, hash: hash, proto: proto, hdr: parts.hdr, ftr: parts.ftr, ftrComp: parts.ftrComp }, frameGeometry(doc), {
             url: same ? prev.url : '', urlAt: same ? prev.urlAt : 0,
             changedAt: prev.hash && !same ? (Date.parse(fc.lastTouchedAt) || Date.now()) : (prev.changedAt || 0),
           })
@@ -2106,7 +2131,7 @@ function autoDevice(it) {
   const name = ((n.name || it.name || '') + ' ' + (it.pageName || '')).toLowerCase()
   if (!/site|web|landing|store|shop|ecom/i.test(it.channel || '')) return { d: 'none', why: 'only Site frames get one' }
   // A header or footer layer is the strongest sign of a whole page, whatever the frame is called.
-  const parts = n.hdr ? 'it has a header layer' : n.ftr ? 'it has a footer layer' : ''
+  const parts = n.hdr ? (n.hdr.comp ? 'it has the “' + n.hdr.comp + '” component' : 'it has a header layer') : n.ftr ? (n.ftrComp ? 'it has the “' + n.ftrComp + '” component' : 'it has a footer layer') : ''
   if (parts && w >= 1000 && h >= 600) return { d: 'browser', why: w + ' px wide, ' + parts }
   if (parts && w >= 320 && w <= 500 && h >= 560) return { d: 'phone', why: w + ' px wide, ' + parts }
   if (/\b(banners?|tiles?|promos?|modules?|sections?|cards?|heroe?s?|nav|modals?|components?|iga|ads?)\b|in[- ]?gallery/.test(name)) return { d: 'none', why: 'the name says it’s part of a page' }
